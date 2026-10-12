@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.venv/
+.worktrees/
+__pycache__/
