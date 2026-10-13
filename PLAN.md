@@ -1,46 +1,79 @@
-# Kế hoạch: agent-wallet (FinTechathon 2026, Topic F)
+# Plan: agent-wallet (FinTechathon 2026, Topic F)
 
-To-do nằm ở GitHub Issues của repo này. File này chỉ giữ mục tiêu, phạm vi và các mốc. Sửa file qua PR; người dùng merge là đã duyệt.
+To-do items live in this repo's GitHub Issues. This file holds only the goal, scope, phases and risks. Change it through a PR; a merge by the owner counts as approval.
 
-## Mục tiêu
-Nộp hồ sơ đủ 6 mục cho Topic F (Agent Wallet) trước **20/10/2026 23:59 giờ Bắc Kinh (22:59 giờ Việt Nam)**: một AI wallet agent chỉ hành động trong bản chính sách đầu tư (IPS) do chủ ví đặt, có tx hash thật trên Base Sepolia, có bộ eval chứng minh agent tuân thủ. Điểm: task completion 40%, security và compliance 30%, innovation và interaction 30%, bonus on-chain 0 đến 5.
+Hierarchy: **master plan (this file) → phase (GitHub Milestone) → sprint (Project iteration) → spec (issue labelled `spec`, tickets as sub-issues)**.
 
-## Phạm vi
-- Làm:
-  - Policy engine thuần (allow, deny, escalate), IPS có hash, permission tiers T0, T2, T3 và dừng khẩn cấp.
-  - Audit log chỉ ghi thêm, có chuỗi hash.
-  - Research và chấm điểm rủi ro bằng code (DefiLlama, đọc contract qua RPC).
-  - Planner LLM (OpenAI) và Reader LLM cách ly, chống prompt injection.
-  - Gateway: đề xuất, policy, mô phỏng, ký. Chỉ gateway được gọi bộ ký.
-  - Aave V3 supply và withdraw trên Base Sepolia.
-  - Eval harness 3 lớp, báo cáo JSON và HTML.
-  - API FastAPI làm contract duy nhất; UI tối thiểu bám contract.
-  - Tài liệu nộp: kiến trúc, bảo mật, tự đánh giá, bằng chứng tx hash, deck, video.
-- Không làm (hoặc chỉ khi lõi xong, theo thứ tự cắt):
-  1. Bonus ép luật on-chain (ERC-7715, Safe session keys).
-  2. UI đẹp (Claude Design hoặc AI Studio); giữ UI tối thiểu.
-  3. Ví người dùng ký (T1): chỉ mô tả trong tài liệu.
-  4. CDP Server Wallet: dùng ví thường, khóa trong `.env`, chỉ testnet.
-  5. Reader LLM: thay bằng kiểm tra allowlist thuần.
-  - Uniswap swap: bỏ nếu pool testnet không có thanh khoản.
-- Không bao giờ cắt: test của policy engine, bộ eval, tx hash, báo cáo tự đánh giá bảo mật.
+## Goal
+Submit all 6 required items for Topic F (Agent Wallet) before **20 Oct 2026, 23:59 Beijing time (22:59 Vietnam time)**: an AI wallet agent that acts only inside an Investment Policy Statement (IPS) set by the wallet owner, with real transaction hashes on Base Sepolia and an eval suite that proves the agent complies.
 
-## Các mốc
-Hôm nay là 14/10; còn 6 ngày. Các mốc là mốc tự kiểm của nhóm, đề chỉ có một hạn duy nhất.
-
-| Mốc | Ngày | Xong khi | Issue |
+## Scoring map
+| Criterion | Weight | What earns it | Specs |
 | :--- | :--- | :--- | :--- |
-| M0 Tx hash đầu | 15/10 | Một lệnh Aave supply đi qua gateway, có tx hash trên BaseScan Sepolia | chưa tạo |
-| M1 Lõi an toàn | 17/10 | Policy engine và test lớp A đạt 100%; audit log có chuỗi hash, phát hiện sửa dòng | chưa tạo |
-| M2 Lõi chạy trọn | 18/10 | Research và chấm rủi ro, Planner, gateway, eval harness sinh báo cáo; 4 nhánh quyết định đều có test | chưa tạo |
-| M3 Hồ sơ | 19/10 | UI tối thiểu, README, hướng dẫn deploy, tài liệu kiến trúc và bảo mật, bằng chứng tx hash | chưa tạo |
-| M4 Nộp | 20/10 | Deck, video, repo đã chuyển public, 6 mục đã nộp; để dư thời gian cập nhật trước hạn | chưa tạo |
+| Task completion | 40% | Asset management, execution and risk control all work end to end, with tx hashes | S1, S4, S5, S6 |
+| Security and compliance | 30% | Deterministic policy engine, permission tiers, tamper-evident audit log, injection defence, self-assessment | S2, S3, S5, S8 |
+| Innovation and interaction | 30% | User-set policy enforced as code, explained decisions, eval-backed claims | S2, S5, S6, S7 |
+| On-chain bonus | 0 to 5 | Rule enforcement at wallet or contract layer | cut first |
 
-## Rủi ro và câu hỏi mở
-- Đội chỉ có một người, đề yêu cầu 2 đến 5 người và ít nhất 60% không mang quốc tịch Trung Quốc. Chặn việc đăng ký → việc của người dùng, xử lý ngay.
-- Repo đang private; phải đổi sang public trước hạn nộp và rà secret trong lịch sử commit.
-- RPC Base Sepolia có hỗ trợ `eth_simulateV1` không; nếu không thì dùng `eth_call` hoặc fork bằng anvil → ticket research.
-- Pool Uniswap trên Base Sepolia có thanh khoản không → ticket research.
-- Chưa có địa chỉ Aave V3 Pool trên Base Sepolia xác minh từ tài liệu gốc → ticket research.
-- Nguồn về thị trường ví agent phần lớn là thứ cấp; xác minh từ tài liệu gốc trước khi trích vào hồ sơ.
-- Điều khoản đầy đủ nằm ở Competition Rules trên fintechathon.g-ican.com; chưa đọc → người dùng.
+## Scope
+- In:
+  - Pure policy engine (allow, deny, escalate), hashed IPS, tiers T0, T2, T3 and emergency stop.
+  - Append-only audit log with a hash chain.
+  - Research and risk scoring computed in code (DefiLlama, contract reads over RPC).
+  - Planner LLM (OpenAI) and an isolated Reader LLM; prompt-injection defence.
+  - Gateway: propose, policy, simulate, sign. Only the gateway may call the signer.
+  - Aave V3 supply and withdraw on Base Sepolia.
+  - 3-layer eval harness with JSON and HTML report.
+  - FastAPI as the single contract; a minimal UI that only uses it.
+  - Submission pack: architecture, security design, self-assessment, tx evidence, deck, video.
+- Cut order, first to last, when behind schedule:
+  1. On-chain bonus (ERC-7715, Safe session keys).
+  2. Polished UI (Claude Design or AI Studio); keep the minimal UI.
+  3. User-signed wallet (T1): describe only.
+  4. CDP Server Wallet: use a plain wallet, key in `.env`, testnet only.
+  5. Reader LLM: replace with a pure allowlist check.
+  - Uniswap swap is dropped if the testnet pool has no liquidity.
+- Never cut: policy engine tests, eval suite, tx hashes, security self-assessment.
+
+## Definition of done (every ticket)
+- Independent check passes (read-only command run by the orchestrator).
+- Tests added and passing; CI green.
+- `README.md` updated; PR has a Mermaid diagram; a feature has `docs/architecture/<feature>.md`; data flow or schema changes have an ERD; UI changes have a committed preview image.
+- No secret in the diff; `.env` stays ignored.
+
+## Phases and sprints
+Today is 14 Oct; 6 days remain. One sprint per phase. Up to 3 workers run in parallel (slots are set during `/fleet-setup`).
+
+| Phase | Sprint | Done when | Specs |
+| :--- | :--- | :--- | :--- |
+| P0 Foundations | 14–15 Oct | Research tickets answered (RPC simulation, Aave address, Uniswap liquidity); scaffold merged; funded testnet wallet; **first tx hash** through the gateway | S1 |
+| P1 Safe core | 16–17 Oct | Policy engine and tier tests pass 100%; audit log detects a tampered line; gateway blocks a violating order | S2, S3 |
+| P2 Intelligence and proof | 17–18 Oct | Risk scoring, Planner and Reader, eval harness produce a report; all 4 decision branches have a test | S4, S5, S6 |
+| P3 Package | 19–20 Oct | Minimal UI, README, deploy guide, architecture and security docs, tx evidence, deck, video, repo public, submitted | S7, S8 |
+
+Critical path: scaffold → gateway → policy engine → eval harness → submission pack. Risk scoring, Planner/Reader and the UI hang off it and can run in parallel once the gateway interface is fixed.
+
+## Specs
+| ID | Capability | Phase |
+| :--- | :--- | :--- |
+| S1 | Gateway and execution (Aave supply and withdraw) | P0 |
+| S2 | Policy engine, IPS, permission tiers | P1 |
+| S3 | Audit log (append-only, hash chain) | P1 |
+| S4 | Research and risk scoring | P2 |
+| S5 | Planner, Reader, injection defence | P2 |
+| S6 | Eval harness and report | P2 |
+| S7 | API contract and minimal UI | P3 |
+| S8 | Submission pack | P3 |
+
+Full specs are written for P0 and P1 first; P2 and P3 specs are written after P1 finishes.
+
+## Risks and open questions
+| Risk | Effect | Owner | Check by |
+| :--- | :--- | :--- | :--- |
+| Team has one member; rules require 2 to 5 and at least 60% non-Chinese nationals | Registration invalid | Owner | 14 Oct |
+| Repo is private | Judges cannot open the link | Owner | 19 Oct (switch to public, scan history for secrets) |
+| Base Sepolia RPC may not support `eth_simulateV1` | Simulation falls back to `eth_call` or an anvil fork | Research ticket | 15 Oct |
+| No liquidity in the Uniswap testnet pool | Swap dropped | Research ticket | 15 Oct |
+| Aave V3 Pool address on Base Sepolia not yet verified from primary docs | Wrong contract | Research ticket | 15 Oct |
+| Market claims about agent wallets come from secondary sources | Unreliable citations | Research ticket | 18 Oct |
+| Full Competition Rules not read yet (fintechathon.g-ican.com) | Missed requirement | Owner | 15 Oct |
