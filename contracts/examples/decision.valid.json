@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "order_id": "c1a9e2d4-3f55-4b0a-8e17-9b6d2f4a7c30",
+  "decision": "allow",
+  "rules_hit": [],
+  "reason": "Order is inside every limit of the IPS.",
+  "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+  "decided_at": "2026-10-16T09:00:01Z"
+}

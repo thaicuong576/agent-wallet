@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-wallet:contracts:tier-state",
+  "title": "TierState",
+  "description": "Current permission tier and emergency stop flag. Only the owner changes it; the agent has no path to raise its own tier.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "tier",
+    "emergency_stop",
+    "updated_at",
+    "changed_by"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion"
+    },
+    "tier": {
+      "$ref": "#/$defs/Tier"
+    },
+    "emergency_stop": {
+      "type": "boolean",
+      "description": "When true every order is denied."
+    },
+    "updated_at": {
+      "$ref": "#/$defs/UtcTimestamp"
+    },
+    "changed_by": {
+      "type": "string",
+      "const": "owner"
+    }
+  },
+  "$defs": {
+    "SchemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this contract object. Bump only through the versioning rule in contracts/README.md."
+    },
+    "Tier": {
+      "type": "string",
+      "enum": [
+        "T0",
+        "T1",
+        "T2"
+      ],
+      "description": "T0 read-only, T1 propose-only with user signing (reserved: no v1 code path uses it), T2 bounded autonomy. Approval above a threshold is the rule TIER.APPROVAL_REQUIRED, not a tier."
+    },
+    "UtcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "description": "RFC 3339 timestamp, always UTC with a trailing Z."
+    }
+  }
+}

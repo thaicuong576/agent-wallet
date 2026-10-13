@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-wallet:contracts:risk-inputs",
+  "title": "RiskInputs",
+  "description": "Measured inputs for the risk rules, computed by code from DefiLlama and RPC reads. A null means the measure does not apply to the order or is unavailable.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "as_of",
+    "sources",
+    "protocol",
+    "token",
+    "pool_tvl_usd",
+    "reward_apy_share_bps",
+    "apy_deviation_bps",
+    "stablecoin_depeg_bps",
+    "utilization_bps",
+    "estimated_slippage_bps",
+    "estimated_cost_usd",
+    "estimated_benefit_usd",
+    "data_age_seconds"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion"
+    },
+    "as_of": {
+      "$ref": "#/$defs/UtcTimestamp"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "defillama_yields",
+          "defillama_stablecoins",
+          "rpc_aave_pool",
+          "rpc_uniswap_pool"
+        ]
+      }
+    },
+    "protocol": {
+      "$ref": "#/$defs/Protocol"
+    },
+    "token": {
+      "$ref": "#/$defs/Token"
+    },
+    "pool_tvl_usd": {
+      "$ref": "#/$defs/UsdString"
+    },
+    "reward_apy_share_bps": {
+      "$ref": "#/$defs/Bps",
+      "description": "apyReward / apy, in basis points."
+    },
+    "apy_deviation_bps": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Absolute gap between apy and apyMean30d, in basis points (1 percentage point = 100)."
+    },
+    "stablecoin_depeg_bps": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "utilization_bps": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Bps"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "estimated_slippage_bps": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Bps"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "estimated_cost_usd": {
+      "$ref": "#/$defs/UsdString"
+    },
+    "estimated_benefit_usd": {
+      "$ref": "#/$defs/UsdString"
+    },
+    "data_age_seconds": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "$defs": {
+    "Bps": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000,
+      "description": "Ratio in basis points (10000 = 100%)."
+    },
+    "Protocol": {
+      "type": "string",
+      "enum": [
+        "aave-v3",
+        "uniswap-v3"
+      ]
+    },
+    "SchemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this contract object. Bump only through the versioning rule in contracts/README.md."
+    },
+    "Token": {
+      "type": "string",
+      "enum": [
+        "USDC",
+        "WETH"
+      ]
+    },
+    "UsdString": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,17})(\\.[0-9]{1,6})?$",
+      "description": "Non-negative USD value as a decimal string. Never a float."
+    },
+    "UtcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "description": "RFC 3339 timestamp, always UTC with a trailing Z."
+    }
+  }
+}

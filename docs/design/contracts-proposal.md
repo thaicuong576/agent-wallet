@@ -116,3 +116,18 @@ flowchart LR
   C -.defines.-> PE
   C -.defines.-> LOG
 ```
+
+## Phase B outcome (after advice-1)
+Accepted as proposed, with these changes from the owner and the orchestrator:
+- Q1 basis points confirmed; mapping table is in `contracts/README.md`.
+- Q2 confirmed: tier enum `T0, T1, T2`; `T1` is reserved, no v1 code path uses it; approval is `TIER.APPROVAL_REQUIRED`.
+- Q5 added to v1: `POST /orders/{order_id}/reject` and one `approval` object (`status`, `by`, `at`); rejection is outcome `denied` with `TIER.APPROVAL_REJECTED`. `expired` stays out of v1.
+- The IPS version field is `schema_version` (no `ips_version`); the IPS revision is its hash.
+- Rule codes are single strings with the family prefix; added `TIER.EMERGENCY_STOP_RELEASED` and `POST /emergency-stop/release`; both stop records are `no_action`.
+- `GET /decisions` has `order_id`, `outcome`, `limit` (default 50, max 200) and `cursor`; sorted by `seq`.
+- `ExecutionResult.detail` (max 500 chars) added next to `error_code`.
+- Decisions taken while writing the files, for the owner to check:
+  - The IPS `risk` section gains four required thresholds that draft section 7 names but the sample IPS omits (`max_apy_deviation_bps`, `max_utilization_bps`, `min_benefit_cost_ratio_bps`, `max_data_age_seconds`). Without them, four rules would have no threshold. Values in the examples are illustrative.
+  - The sample IPS has `escalate_above_usd` equal to `per_tx_usd`, so the approval path could never fire; `ips.valid.json` keeps the sample as is and `ips.valid.approval-band.json` uses 50 so the chain example can show a pending approval.
+  - Amounts are capped at 30 digits, so a max-uint256 approval is not representable; `ACCESS.UNLIMITED_APPROVAL` stays as defence in depth.
+  - A `no_action` record carries `rules_hit` and `reason` in a `no_action` object because it has no `Decision`.

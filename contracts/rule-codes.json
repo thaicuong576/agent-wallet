@@ -1,0 +1,152 @@
+[
+  {
+    "code": "ACCESS.TOKEN_NOT_ALLOWED",
+    "family": "ACCESS",
+    "description": "The order uses a token that is not in the IPS universe. Default is deny.",
+    "source": "draft section 3, 6; SEC-03"
+  },
+  {
+    "code": "ACCESS.PROTOCOL_NOT_ALLOWED",
+    "family": "ACCESS",
+    "description": "The order targets a protocol that is not in the IPS universe.",
+    "source": "draft section 3, 6"
+  },
+  {
+    "code": "ACCESS.FUNCTION_NOT_ALLOWED",
+    "family": "ACCESS",
+    "description": "The order calls a function that is not in the IPS universe.",
+    "source": "draft section 3, 6"
+  },
+  {
+    "code": "ACCESS.RECIPIENT_NOT_ALLOWED",
+    "family": "ACCESS",
+    "description": "The order's recipient is not in the IPS universe.",
+    "source": "draft section 3, 6, 8"
+  },
+  {
+    "code": "ACCESS.UNLIMITED_APPROVAL",
+    "family": "ACCESS",
+    "description": "An approve order asks for an unlimited or larger-than-needed allowance. Only the exact amount may be approved.",
+    "source": "draft section 9; SEC-07"
+  },
+  {
+    "code": "LIMIT.PER_TX",
+    "family": "LIMIT",
+    "description": "The order value is above the per-transaction limit.",
+    "source": "draft section 6; SEC-01"
+  },
+  {
+    "code": "LIMIT.PER_DAY",
+    "family": "LIMIT",
+    "description": "The order would push the 24-hour spend above the daily limit.",
+    "source": "draft section 6; SEC-02"
+  },
+  {
+    "code": "LIMIT.TX_PER_HOUR",
+    "family": "LIMIT",
+    "description": "The order would exceed the maximum number of transactions per hour.",
+    "source": "draft section 6"
+  },
+  {
+    "code": "ALLOC.MAX_WEIGHT_PER_ASSET",
+    "family": "ALLOC",
+    "description": "After the order, one asset would be above its maximum portfolio weight.",
+    "source": "draft section 6, 7; AM-03"
+  },
+  {
+    "code": "ALLOC.MIN_STABLE_WEIGHT",
+    "family": "ALLOC",
+    "description": "After the order, the stablecoin weight would be below the minimum.",
+    "source": "draft section 6"
+  },
+  {
+    "code": "ALLOC.WITHIN_REBALANCE_BAND",
+    "family": "ALLOC",
+    "description": "The portfolio is inside the rebalance band, so nothing is done. This is a no-action reason, not a violation.",
+    "source": "draft section 7; AM-02"
+  },
+  {
+    "code": "RISK.POOL_TVL_TOO_LOW",
+    "family": "RISK",
+    "description": "The pool TVL is below the IPS minimum.",
+    "source": "draft section 7"
+  },
+  {
+    "code": "RISK.REWARD_APY_SHARE_TOO_HIGH",
+    "family": "RISK",
+    "description": "Too much of the yield comes from reward tokens.",
+    "source": "draft section 7; AM-04"
+  },
+  {
+    "code": "RISK.APY_UNSTABLE",
+    "family": "RISK",
+    "description": "The current APY deviates from its 30-day mean by more than the IPS allows.",
+    "source": "draft section 7"
+  },
+  {
+    "code": "RISK.DEPEG_TOO_WIDE",
+    "family": "RISK",
+    "description": "A stablecoin involved is further from 1 USD than the IPS allows.",
+    "source": "draft section 7"
+  },
+  {
+    "code": "RISK.UTILIZATION_TOO_HIGH",
+    "family": "RISK",
+    "description": "The lending pool utilization is above the IPS maximum.",
+    "source": "draft section 7"
+  },
+  {
+    "code": "RISK.SLIPPAGE_TOO_HIGH",
+    "family": "RISK",
+    "description": "The simulated or requested slippage is above the IPS maximum.",
+    "source": "draft section 6, 7; SEC-04"
+  },
+  {
+    "code": "RISK.COST_EXCEEDS_BENEFIT",
+    "family": "RISK",
+    "description": "The estimated benefit is below the required multiple of the estimated cost.",
+    "source": "draft section 7"
+  },
+  {
+    "code": "RISK.DATA_STALE",
+    "family": "RISK",
+    "description": "A risk input is older than the IPS maximum age or is missing.",
+    "source": "draft section 14"
+  },
+  {
+    "code": "TIER.READ_ONLY",
+    "family": "TIER",
+    "description": "The tier is T0, so the agent may not place orders.",
+    "source": "draft section 6"
+  },
+  {
+    "code": "TIER.PROPOSE_ONLY",
+    "family": "TIER",
+    "description": "The tier is T1: the order is a proposal only and is never sent by the agent. Reserved; no v1 code path uses T1.",
+    "source": "draft section 6"
+  },
+  {
+    "code": "TIER.EMERGENCY_STOP",
+    "family": "TIER",
+    "description": "The emergency stop is engaged. Orders are denied while it is engaged and the engaging record uses this code. It is a status, not a violation.",
+    "source": "draft section 6; CMP-03"
+  },
+  {
+    "code": "TIER.EMERGENCY_STOP_RELEASED",
+    "family": "TIER",
+    "description": "The owner released the emergency stop. It is a status, not a violation.",
+    "source": "draft section 6"
+  },
+  {
+    "code": "TIER.APPROVAL_REQUIRED",
+    "family": "TIER",
+    "description": "The order is above the approval threshold and waits for the owner. This is the T3 behaviour; it is a rule, not a tier.",
+    "source": "draft section 6, 9; CMP-02"
+  },
+  {
+    "code": "TIER.APPROVAL_REJECTED",
+    "family": "TIER",
+    "description": "The owner rejected a pending order.",
+    "source": "owner decision on ticket 3; CMP-02"
+  }
+]

@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-wallet:contracts:portfolio-state",
+  "title": "PortfolioState",
+  "description": "Agent wallet snapshot used by the policy engine and the UI. Values are computed by code; USD figures use mainnet reference prices.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "as_of",
+    "price_source",
+    "positions",
+    "total_value_usd",
+    "spent_24h_usd",
+    "tx_count_1h"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "$ref": "#/$defs/SchemaVersion"
+    },
+    "as_of": {
+      "$ref": "#/$defs/UtcTimestamp"
+    },
+    "price_source": {
+      "type": "string",
+      "enum": [
+        "mainnet_reference"
+      ]
+    },
+    "positions": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "required": [
+          "token",
+          "location",
+          "balance",
+          "price_usd",
+          "value_usd",
+          "weight_bps"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "$ref": "#/$defs/Token"
+          },
+          "location": {
+            "type": "string",
+            "enum": [
+              "wallet",
+              "aave-v3"
+            ]
+          },
+          "balance": {
+            "$ref": "#/$defs/Amount"
+          },
+          "price_usd": {
+            "$ref": "#/$defs/UsdString"
+          },
+          "value_usd": {
+            "$ref": "#/$defs/UsdString"
+          },
+          "weight_bps": {
+            "$ref": "#/$defs/Bps"
+          }
+        }
+      }
+    },
+    "total_value_usd": {
+      "$ref": "#/$defs/UsdString"
+    },
+    "spent_24h_usd": {
+      "$ref": "#/$defs/UsdString",
+      "description": "USD value of executed orders in the last 24 hours (for LIMIT.PER_DAY)."
+    },
+    "tx_count_1h": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Executed transactions in the last hour (for LIMIT.TX_PER_HOUR)."
+    }
+  },
+  "$defs": {
+    "Amount": {
+      "type": "object",
+      "description": "Token amount as an integer string in the smallest unit plus decimals. Zero allowed. Never a float.",
+      "required": [
+        "value",
+        "decimals"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]{0,29})$"
+        },
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 36
+        }
+      }
+    },
+    "Bps": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000,
+      "description": "Ratio in basis points (10000 = 100%)."
+    },
+    "SchemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Version of this contract object. Bump only through the versioning rule in contracts/README.md."
+    },
+    "Token": {
+      "type": "string",
+      "enum": [
+        "USDC",
+        "WETH"
+      ]
+    },
+    "UsdString": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,17})(\\.[0-9]{1,6})?$",
+      "description": "Non-negative USD value as a decimal string. Never a float."
+    },
+    "UtcTimestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "description": "RFC 3339 timestamp, always UTC with a trailing Z."
+    }
+  }
+}

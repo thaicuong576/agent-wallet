@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "order_id": "7f3c2a10-5b1e-4c6d-9a2f-1d8e4b7c0a11",
+  "decision": "deny",
+  "rules_hit": [
+    {
+      "code": "LIMIT.PER_TX",
+      "evidence": {
+        "order_usd": "150.00",
+        "per_tx_usd": "100"
+      }
+    }
+  ],
+  "reason": "Order value 150.00 USD is above the per-transaction limit of 100 USD.",
+  "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+  "decided_at": "2026-10-16T08:55:01Z"
+}

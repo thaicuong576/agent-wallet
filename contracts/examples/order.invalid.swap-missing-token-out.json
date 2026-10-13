@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "order_id": "5d2e8b7a-1c4f-4a96-8e03-7b1a9c6d2f48",
+  "created_at": "2026-10-16T09:00:00Z",
+  "proposed_by": "planner",
+  "protocol": "uniswap-v3",
+  "function": "exactInputSingle",
+  "token": "USDC",
+  "amount": {
+    "value": "20000000",
+    "decimals": 6
+  },
+  "recipient": "self",
+  "max_slippage_bps": 50
+}

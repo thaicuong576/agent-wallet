@@ -1,0 +1,263 @@
+openapi: 3.1.0
+info:
+  title: agent-wallet API
+  version: "1.0.0"
+  summary: The single contract between the minimal UI, the eval harness and the backend.
+  description: >
+    Data contracts v1. Every object carries an integer `schema_version`.
+    Errors use RFC 7807 (`application/problem+json`). No authentication when run
+    locally. A policy `deny` is not an HTTP error: it is a 200 response carrying
+    a DecisionRecord. No endpoint writes the IPS.
+servers:
+  - url: http://localhost:8000
+tags:
+  - name: orders
+  - name: audit
+  - name: state
+  - name: owner
+
+paths:
+  /orders:
+    post:
+      tags: [orders]
+      operationId: submitOrder
+      summary: Submit an order for policy evaluation and, if allowed, execution.
+      description: >
+        The order id is client-generated. The same id never executes twice:
+        replaying the same body returns the stored latest record for that order;
+        the same id with a different body is a 409 problem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "schemas/order.schema.json" }
+      responses:
+        "200":
+          description: Latest DecisionRecord for the order (denied, pending_approval, executed or failed).
+          content:
+            application/json:
+              schema: { $ref: "schemas/decision-record.schema.json" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /orders/{order_id}/approve:
+    post:
+      tags: [owner]
+      operationId: approveOrder
+      summary: Approve a pending order (owner only). Appends a record.
+      parameters: [{ $ref: "#/components/parameters/OrderId" }]
+      responses:
+        "200":
+          description: The appended DecisionRecord (executed or failed).
+          content:
+            application/json:
+              schema: { $ref: "schemas/decision-record.schema.json" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /orders/{order_id}/reject:
+    post:
+      tags: [owner]
+      operationId: rejectOrder
+      summary: Reject a pending order (owner only). Appends a denied record with TIER.APPROVAL_REJECTED.
+      parameters: [{ $ref: "#/components/parameters/OrderId" }]
+      responses:
+        "200":
+          description: The appended DecisionRecord (denied).
+          content:
+            application/json:
+              schema: { $ref: "schemas/decision-record.schema.json" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /decisions:
+    get:
+      tags: [audit]
+      operationId: listDecisions
+      summary: List audit records, sorted by seq ascending.
+      description: >
+        `seq` is assigned by the log, never by the caller.
+        Paginate by passing the opaque `next_cursor` of the previous page as `cursor`.
+      parameters:
+        - name: order_id
+          in: query
+          schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+        - name: outcome
+          in: query
+          schema: { type: string, enum: [no_action, denied, pending_approval, executed, failed] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: cursor
+          in: query
+          description: Opaque cursor from a previous response.
+          schema: { type: string, maxLength: 512 }
+      responses:
+        "200":
+          description: One page of records.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, items, next_cursor]
+                additionalProperties: false
+                properties:
+                  schema_version: { type: integer, const: 1 }
+                  items:
+                    type: array
+                    items: { $ref: "schemas/decision-record.schema.json" }
+                  next_cursor: { type: [string, "null"] }
+        "422": { $ref: "#/components/responses/Problem" }
+  /portfolio:
+    get:
+      tags: [state]
+      operationId: getPortfolio
+      summary: Current agent wallet snapshot.
+      responses:
+        "200":
+          description: Portfolio state.
+          content:
+            application/json:
+              schema: { $ref: "schemas/portfolio-state.schema.json" }
+  /ips:
+    get:
+      tags: [state]
+      operationId: getIps
+      summary: Read the active IPS and its hash. There is no write endpoint.
+      responses:
+        "200":
+          description: The IPS and the SHA-256 of its canonical JSON.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, ips, ips_hash]
+                additionalProperties: false
+                properties:
+                  schema_version: { type: integer, const: 1 }
+                  ips: { $ref: "schemas/ips.schema.json" }
+                  ips_hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+  /tier:
+    get:
+      tags: [state]
+      operationId: getTier
+      summary: Current tier and emergency stop flag.
+      responses:
+        "200":
+          description: Tier state.
+          content:
+            application/json:
+              schema: { $ref: "schemas/tier-state.schema.json" }
+    put:
+      tags: [owner]
+      operationId: setTier
+      summary: Set the tier (owner only). The agent has no path to this endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schema_version, tier]
+              additionalProperties: false
+              properties:
+                schema_version: { type: integer, const: 1 }
+                tier: { type: string, enum: [T0, T1, T2] }
+      responses:
+        "200":
+          description: The new tier state.
+          content:
+            application/json:
+              schema: { $ref: "schemas/tier-state.schema.json" }
+        "422": { $ref: "#/components/responses/Problem" }
+  /emergency-stop:
+    post:
+      tags: [owner]
+      operationId: engageEmergencyStop
+      summary: Engage the emergency stop (owner only). Appends a no_action record with TIER.EMERGENCY_STOP.
+      responses:
+        "200":
+          description: The appended DecisionRecord.
+          content:
+            application/json:
+              schema: { $ref: "schemas/decision-record.schema.json" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /emergency-stop/release:
+    post:
+      tags: [owner]
+      operationId: releaseEmergencyStop
+      summary: Release the emergency stop (owner only). Appends a no_action record with TIER.EMERGENCY_STOP_RELEASED.
+      responses:
+        "200":
+          description: The appended DecisionRecord.
+          content:
+            application/json:
+              schema: { $ref: "schemas/decision-record.schema.json" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /eval/report:
+    get:
+      tags: [audit]
+      operationId: getEvalReport
+      summary: Latest eval report. Loose envelope in v1; frozen when S6 starts.
+      responses:
+        "200":
+          description: Eval report.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, generated_at, metrics, scenarios]
+                properties:
+                  schema_version: { type: integer, const: 1 }
+                  generated_at: { type: string, pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$" }
+                  metrics:
+                    type: object
+                    description: Metric name to value (integers in basis points or counts).
+                    additionalProperties: { type: integer }
+                  scenarios:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, layer, passed]
+                      properties:
+                        id: { type: string, pattern: "^(AM|SEC|CMP)-[0-9]{2}$" }
+                        layer: { type: string, enum: [A, B, C] }
+                        passed: { type: boolean }
+                        rule_codes:
+                          type: array
+                          items: { type: string, pattern: "^[A-Z]+\\.[A-Z0-9_]+$" }
+                        tx_hash: { type: [string, "null"], pattern: "^0x[0-9a-f]{64}$" }
+        "404": { $ref: "#/components/responses/Problem" }
+
+components:
+  parameters:
+    OrderId:
+      name: order_id
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
+  responses:
+    Problem:
+      description: >
+        RFC 7807 problem. `type` is one of urn:agent-wallet:problem:invalid-request (422),
+        not-found (404), order-id-conflict (409), not-pending (409),
+        emergency-stop-state (409).
+      content:
+        application/problem+json:
+          schema: { $ref: "#/components/schemas/Problem" }
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: { type: string, pattern: "^urn:agent-wallet:problem:[a-z-]+$" }
+        title: { type: string }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        detail: { type: string, maxLength: 500 }
+        instance: { type: string }
+        errors:
+          type: array
+          description: Field-level validation failures for 422.
+          items:
+            type: object
+            required: [path, message]
+            properties:
+              path: { type: string }
+              message: { type: string }

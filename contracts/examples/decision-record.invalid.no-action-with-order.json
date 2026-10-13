@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "seq": 3,
+  "order_id": null,
+  "order": {
+    "schema_version": 1,
+    "order_id": "c1a9e2d4-3f55-4b0a-8e17-9b6d2f4a7c30",
+    "created_at": "2026-10-16T09:00:00Z",
+    "proposed_by": "planner",
+    "protocol": "aave-v3",
+    "function": "supply",
+    "token": "USDC",
+    "amount": {
+      "value": "80000000",
+      "decimals": 6
+    },
+    "recipient": "self"
+  },
+  "decision": null,
+  "no_action": {
+    "rules_hit": [
+      {
+        "code": "TIER.EMERGENCY_STOP",
+        "evidence": {
+          "engaged_by": "owner"
+        }
+      }
+    ],
+    "reason": "Emergency stop engaged by the owner; all orders are denied until released."
+  },
+  "outcome": "no_action",
+  "execution": null,
+  "approval": null,
+  "tier": "T2",
+  "emergency_stop": true,
+  "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+  "created_at": "2026-10-16T10:00:00Z",
+  "prev_hash": "eb661a1e9af816c339ac980a5b6d95e3098e7a8fa77b67b7df14a3e9103b4e22",
+  "hash": "96bde6bcbfcb4aa8f66bb7e44c2b8233d6213ba22bf2eb0e748a8bcda9f2ec75"
+}
