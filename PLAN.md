@@ -67,6 +67,21 @@ Critical path: scaffold → gateway → policy engine → eval harness → submi
 
 Full specs are written for P0 and P1 first; P2 and P3 specs are written after P1 finishes.
 
+## Working agreement (CI/CD)
+The owner has delegated review to the orchestrator for this project. This overrides the fleet default that every merge is the owner's gate.
+
+- **Merge on green.** The orchestrator squash-merges a PR when all hold: CI is green, its own independent check passes, the diff stays inside the ticket's scope, the Docs items of the definition of done are present, and the ticket is `rủi-ro-thấp`.
+- **Escalate to the owner only for:**
+  - anything touching keys, funds, the signer, or wallet permissions (`rủi-ro-cao`);
+  - a new or changed dependency, CI or deploy configuration;
+  - a change to the IPS schema or to a permission tier;
+  - switching the repo to public, or any submission action;
+  - a scope or cut-order decision, or a business assumption;
+  - the same item failing review twice, or CI that cannot be made green.
+- **CI is mandatory from the scaffold ticket on:** lint, unit tests (policy engine layer A), secret scan, and a check that no module other than the gateway calls the signer.
+- Every merge is followed by closing the worker session and releasing its slot.
+- The orchestrator reports to the owner in a short digest per sprint: merged, escalated, next.
+
 ## Risks and open questions
 | Risk | Effect | Owner | Check by |
 | :--- | :--- | :--- | :--- |
