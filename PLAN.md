@@ -17,7 +17,7 @@ Submit all 6 required items for Topic F (Agent Wallet) before **20 Oct 2026, 23:
 
 ## Scope
 - In:
-  - Pure policy engine (allow, deny, escalate), hashed IPS, tiers T0, T2, T3 and emergency stop.
+  - Pure policy engine (allow, deny, escalate), hashed IPS, tiers T0, T1 (reserved) and T2, an approval rule above a threshold (`TIER.APPROVAL_REQUIRED`, with approve and reject), and an emergency stop that can be released.
   - Append-only audit log with a hash chain.
   - Research and risk scoring computed in code (DefiLlama, contract reads over RPC).
   - Planner LLM (OpenAI) and an isolated Reader LLM; prompt-injection defence.
