@@ -72,3 +72,11 @@ erDiagram
 2. **Canonical JSON serialization**: Dict keys are sorted with compact separators `(",", ":")` without ASCII escaping, ensuring byte-identical reproduction across environments.
 3. **Thread-safe writes**: Internal `threading.RLock` combined with SQLite immediate transactions guarantees strictly increasing `seq` without sequence gaps during concurrent appends.
 4. **No signer access**: `core.audit` never touches private keys or imports `core.signer` (enforced by `tests/test_signer_boundary.py`).
+
+## Reads used by the runner and the gateway
+
+- **Indexes**: `idx_audit_order_id` on `order_id` and `idx_audit_created_at` on `created_at` keep idempotency lookups and window queries cheap. They add no columns and do not touch the hash chain.
+- **`find_by_order_id(order_id)`** returns the latest record (highest `seq`) for an order, or `None`. The gateway uses it for audit-backed idempotency.
+- **Ledger** (`core.runner.ledger.AuditLedger`): the day spend and the hourly transaction count are derived from this log, not from caller input. Only records with outcome `executed` count; `approve` calls are excluded from spend; `denied`, `failed`, `pending_approval` and `no_action` never count.
+- **`order_intents`** lives in the same SQLite file as a separate insert-only table. An intent without an `executed` or `failed` record means a crash between sign and append and requires manual reconcile.
+

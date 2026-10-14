@@ -66,6 +66,12 @@ class SqliteAuditSink(AuditSink):
                     );
                     """
                 )
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_audit_order_id ON audit_records(order_id);"
+                )
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_records(created_at);"
+                )
                 # Enforce append-only at the database engine level
                 self._conn.execute(
                     """
@@ -197,6 +203,18 @@ class SqliteAuditSink(AuditSink):
             cursor = self._conn.execute("SELECT hash FROM audit_records ORDER BY seq DESC LIMIT 1;")
             row = cursor.fetchone()
             return row[0] if row is not None else self.GENESIS_PREV_HASH
+
+    def find_by_order_id(self, order_id: str) -> dict[str, Any] | None:
+        """Return the latest record (by seq DESC) matching order_id, or None."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT payload FROM audit_records WHERE order_id = ? ORDER BY seq DESC LIMIT 1;",
+                (order_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            return json.loads(row[0])
 
     def __len__(self) -> int:
         with self._lock:
