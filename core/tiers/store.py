@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import sqlite3
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +38,17 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _locked(method):  # type: ignore[no-untyped-def]
+    """Serialise access to the one shared SQLite connection across threads (API and job threads)."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
+
+
 class TierStore:
     """Persistent SQLite store for tier permissions, emergency stop, and approval queue."""
 
@@ -45,6 +58,7 @@ class TierStore:
         if self._db_path_str != ":memory:" and not self._db_path_str.startswith("file:"):
             Path(self._db_path_str).parent.mkdir(parents=True, exist_ok=True)
 
+        self._lock = threading.RLock()
         self._conn = sqlite3.connect(self._db_path_str, check_same_thread=False, timeout=5.0)
         self._conn.execute("PRAGMA foreign_keys = ON;")
         self._conn.execute("PRAGMA busy_timeout = 5000;")
@@ -52,6 +66,7 @@ class TierStore:
             self._conn.execute("PRAGMA journal_mode = WAL;")
         self._init_db()
 
+    @_locked
     def _init_db(self) -> None:
         cur = self._conn.cursor()
         cur.execute(
@@ -104,6 +119,7 @@ class TierStore:
             raise InvalidTierError(f"Invalid tier: '{state.get('tier')}'. Must be T0, T1, or T2.")
         _VALIDATOR.validate(state)
 
+    @_locked
     def get_tier_state(self) -> dict[str, Any]:
         """Read the singleton tier state object, strictly validating against the schema."""
         cur = self._conn.cursor()
@@ -127,6 +143,7 @@ class TierStore:
         self.validate_tier_state(state)
         return state
 
+    @_locked
     def update_tier_value(self, tier: str, updated_at: str) -> None:
         """Update permission tier (T0 | T1 | T2) by the owner."""
         if tier not in ALLOWED_TIERS:
@@ -156,6 +173,7 @@ class TierStore:
         )
         self._conn.commit()
 
+    @_locked
     def update_stop_flag(self, stopped: bool, updated_at: str) -> None:
         """Engage or release emergency stop flag."""
         if not isinstance(stopped, bool):
@@ -183,6 +201,7 @@ class TierStore:
         )
         self._conn.commit()
 
+    @_locked
     def insert_request(self, order_id: str, requested_at: str) -> None:
         """Enqueue an approval request for an escalated order."""
         if not order_id or not isinstance(order_id, str):
@@ -208,6 +227,7 @@ class TierStore:
         )
         self._conn.commit()
 
+    @_locked
     def resolve_request(
         self,
         order_id: str,
@@ -254,6 +274,7 @@ class TierStore:
         )
         self._conn.commit()
 
+    @_locked
     def get_approval(self, order_id: str) -> dict[str, Any] | None:
         """Get the stored approval record for an order_id, or None if unknown."""
         cur = self._conn.cursor()
@@ -276,6 +297,7 @@ class TierStore:
             "decided_by": row[4],
         }
 
+    @_locked
     def list_pending_orders(self) -> list[str]:
         """List all order IDs currently waiting in pending status, ordered by requested_at."""
         cur = self._conn.cursor()
@@ -289,6 +311,7 @@ class TierStore:
         )
         return [str(row[0]) for row in cur.fetchall()]
 
+    @_locked
     def close(self) -> None:
         """Close database connection."""
         self._conn.close()

@@ -276,3 +276,35 @@ def test_no_change_to_which_methods_are_mutators() -> None:
         "close",
     }
     assert store_public == expected_store_public
+
+
+def test_one_store_is_safe_across_threads(tmp_path: Path) -> None:
+    """One TierStore shared by several threads (API and job threads) never raises."""
+    store = TierStore(tmp_path / "threads.sqlite")
+    owner = OwnerControls(store)
+    view = TierView(store)
+    errors: list[Exception] = []
+    stop_event = threading.Event()
+
+    def reader() -> None:
+        try:
+            while not stop_event.is_set():
+                view.is_stopped()
+                view.current()
+                view.pending_orders()
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=reader, daemon=True) for _ in range(4)]
+    for t in threads:
+        t.start()
+    try:
+        for _ in range(50):
+            owner.engage_stop()
+            owner.release_stop()
+    finally:
+        stop_event.set()
+        for t in threads:
+            t.join(timeout=5.0)
+        store.close()
+    assert not errors, f"Unexpected concurrency errors encountered: {errors}"
