@@ -1,13 +1,35 @@
 # One command: docker compose up --build
+# Needs POSTGRES_PASSWORD in .env (python -m core.gateway.setup generates it once it exists).
 services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: agent_wallet
+      POSTGRES_DB: agent_wallet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_wallet -d agent_wallet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build: .
     ports:
       - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
     env_file:
       - path: .env
         required: false
     environment:
       AGENT_WALLET_DATA_DIR: /app/data
+      DATABASE_URL: postgresql://agent_wallet:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/agent_wallet
     volumes:
       - ./data:/app/data
+
+volumes:
+  pgdata:

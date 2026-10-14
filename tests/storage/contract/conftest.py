@@ -1,7 +1,7 @@
 """Backend fixture of the storage contract suite (design 5.3).
 
-``sqlite`` is the only backend today. The Postgres backend (ticket P2) adds a ``postgres`` entry
-to ``BACKENDS`` and every test in this directory then runs against it too.
+Every test here runs on ``sqlite`` and on ``postgres``. The ``postgres`` parameter is skipped
+unless ``TEST_DATABASE_URL`` is set (CI service container, local compose).
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ import pytest
 
 from core.gateway.intents import IntentStore
 from core.storage.sqlite import SqliteTenantStores, open_tenant
+from tests.storage.test_pg_support import SKIP_REASON, TEST_DATABASE_URL, PgContractBackend
 
 OWNER_A = "0x" + "a" * 40
 OWNER_B = "0x" + "b" * 40
@@ -68,11 +69,20 @@ class SqliteBackend:
                 pass
 
 
-BACKENDS: dict[str, Callable[[Path], Any]] = {"sqlite": SqliteBackend}
+def _postgres_backend(_data_dir: Path) -> Any:
+    if not TEST_DATABASE_URL:
+        pytest.skip(SKIP_REASON)
+    return PgContractBackend()
+
+
+BACKENDS: dict[str, Callable[[Path], Any]] = {
+    "sqlite": SqliteBackend,
+    "postgres": _postgres_backend,
+}
 
 
 @pytest.fixture(params=sorted(BACKENDS))
-def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[SqliteBackend]:
+def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Any]:
     be = BACKENDS[request.param](tmp_path / "data")
     try:
         yield be
@@ -81,7 +91,7 @@ def backend(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[SqliteBa
 
 
 @pytest.fixture
-def stores(backend: SqliteBackend) -> SqliteTenantStores:
+def stores(backend: Any) -> Any:
     return backend.open(OWNER_A)
 
 
