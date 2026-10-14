@@ -15,48 +15,43 @@ ROOT_DIR = pathlib.Path(__file__).resolve().parents[2]
 OPENAPI_FILE = ROOT_DIR / "contracts" / "openapi.yaml"
 
 
+def _app_operations() -> dict[str, set[str]]:
+    """Path to HTTP methods of every route the app mounts, read from its generated schema.
+
+    `app.routes` no longer lists included routers' routes individually, so the schema is the
+    reliable view. Framework docs routes are not in it; `/health` is the unauthenticated probe.
+    """
+    schema = create_app().openapi()
+    return {
+        path: {method.upper() for method in item}
+        for path, item in schema["paths"].items()
+        if path != "/health"
+    }
+
+
 def test_routes_equal_openapi_paths() -> None:
     """The OpenAPI path set equals the app's contract route set."""
     openapi_spec: dict[str, Any] = yaml.safe_load(OPENAPI_FILE.read_text(encoding="utf-8"))
     openapi_paths = set(openapi_spec["paths"].keys())
 
-    app = create_app()
-
-    # Routes defined on the FastAPI app excluding framework auto-docs
-    internal_docs_routes = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
-    all_app_routes = {route.path for route in app.routes}
-
-    # Contract endpoints mapped from openapi.yaml
-    app_contract_routes = {
-        route.path
-        for route in app.routes
-        if route.path not in internal_docs_routes and route.path != "/health"
-    }
+    app_contract_routes = set(_app_operations())
 
     assert app_contract_routes == openapi_paths, (
         f"Difference: {app_contract_routes ^ openapi_paths}"
     )
     # Confirm health probe is also present and unauthenticated
-    assert "/health" in all_app_routes
+    assert "/health" in create_app().openapi()["paths"]
 
 
 def test_http_methods_match_openapi() -> None:
-    """Every operation method defined in openapi.yaml is mounted on the FastAPI app."""
+    """Every operation method defined in openapi.yaml is mounted on the FastAPI app, and back."""
     openapi_spec: dict[str, Any] = yaml.safe_load(OPENAPI_FILE.read_text(encoding="utf-8"))
-
-    app = create_app()
-    route_methods: dict[str, set[str]] = {}
-    for route in app.routes:
-        if hasattr(route, "methods"):
-            route_methods.setdefault(route.path, set()).update(route.methods)
+    route_methods = _app_operations()
 
     for path, path_item in openapi_spec["paths"].items():
         assert path in route_methods, f"Path {path} missing from app routes"
-        for method in path_item.keys():
-            expected_method = method.upper()
-            assert expected_method in route_methods[path], (
-                f"Method {expected_method} missing on path {path}"
-            )
+        declared = {method.upper() for method in path_item}
+        assert declared == route_methods[path], f"Methods differ on {path}"
 
 
 def test_default_app_instantiation_without_arguments(

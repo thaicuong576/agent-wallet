@@ -5,9 +5,12 @@ info:
   summary: The single contract between the minimal UI, the eval harness and the backend.
   description: >
     Data contracts v1. Every object carries an integer `schema_version`.
-    Errors use RFC 7807 (`application/problem+json`). No authentication when run
-    locally. A policy `deny` is not an HTTP error: it is a 200 response carrying
-    a DecisionRecord. No endpoint writes the IPS.
+    Errors use RFC 7807 (`application/problem+json`). Authentication: `single` mode
+    uses the owner token; `multi` mode uses a wallet session cookie. See
+    `AGENT_WALLET_MODE`. A policy `deny` is not an HTTP error: it is a 200 response
+    carrying a DecisionRecord. **The IPS can only be set from the preset list**
+    (`PUT /policy` with a preset id and a fresh owner signature). No endpoint
+    accepts an IPS body.
 servers:
   - url: http://localhost:8000
 tags:
@@ -15,6 +18,9 @@ tags:
   - name: audit
   - name: state
   - name: owner
+  - name: auth
+  - name: agent
+  - name: jobs
 
 paths:
   /orders:
@@ -25,7 +31,9 @@ paths:
       description: >
         The order id is client-generated. The same id never executes twice:
         replaying the same body returns the stored latest record for that order;
-        the same id with a different body is a 409 problem.
+        the same id with a different body is a 409 problem. In `multi` mode orders are
+        proposed with `origin: planner`; `mint` and `transfer` are rejected there with
+        `422 owner-only-function`.
       requestBody:
         required: true
         content:
@@ -226,7 +234,300 @@ paths:
                         tx_hash: { type: [string, "null"], pattern: "^0x[0-9a-f]{64}$" }
         "404": { $ref: "#/components/responses/Problem" }
 
+  /auth/nonce:
+    post:
+      tags: [auth]
+      operationId: authNonce
+      summary: Issue a single-use sign-in nonce and the exact message to sign.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              additionalProperties: false
+              properties:
+                address: { type: string, pattern: "^0x[0-9a-fA-F]{40}$" }
+      responses:
+        "200":
+          description: Nonce and message.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nonce, message, expires_at]
+                properties:
+                  nonce: { type: string, pattern: "^[0-9a-f]{40}$" }
+                  message: { type: string, maxLength: 1000 }
+                  expires_at: { $ref: "#/components/schemas/UtcTimestamp" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /auth/verify:
+    post:
+      tags: [auth]
+      operationId: authVerify
+      summary: "Verify the wallet signature and start a session (Set-Cookie aw_session)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address, nonce, signature]
+              additionalProperties: false
+              properties:
+                address: { type: string, pattern: "^0x[0-9a-fA-F]{40}$" }
+                nonce: { type: string, pattern: "^[0-9a-f]{40}$" }
+                signature: { type: string, pattern: "^0x[0-9a-fA-F]{130}$" }
+      responses:
+        "200":
+          description: "Session started. `token` is present only when bearer clients are enabled."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionStarted" }
+        "401": { $ref: "#/components/responses/Problem" }
+  /auth/logout:
+    post:
+      tags: [auth]
+      operationId: authLogout
+      summary: Revoke the current session.
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200":
+          description: Session revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+        "401": { $ref: "#/components/responses/Problem" }
+  /auth/step-up:
+    post:
+      tags: [auth]
+      operationId: authStepUp
+      summary: Issue a fresh-signature challenge for one named action.
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, params]
+              additionalProperties: false
+              properties:
+                action: { type: string, enum: [release_stop, tier_raise, policy_change, withdraw, approve] }
+                params: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: "Challenge. Send header X-Step-Up with value <challenge_id>.<signature> on the action request."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [challenge_id, message, expires_at]
+                properties:
+                  challenge_id: { type: string, pattern: "^[0-9a-f]{32}$" }
+                  message: { type: string, maxLength: 1000 }
+                  expires_at: { $ref: "#/components/schemas/UtcTimestamp" }
+        "401": { $ref: "#/components/responses/Problem" }
+  /me:
+    get:
+      tags: [auth]
+      operationId: getMe
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200":
+          description: Current owner.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Me" } } }
+        "401": { $ref: "#/components/responses/Problem" }
+  /agent:
+    get:
+      tags: [agent]
+      operationId: getAgent
+      summary: Agent wallet address, live balances and the gas floor.
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200":
+          description: Agent wallet state.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Agent" } } }
+        "401": { $ref: "#/components/responses/Problem" }
+  /topups:
+    post:
+      tags: [agent]
+      operationId: registerTopup
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tx_hash]
+              additionalProperties: false
+              properties:
+                tx_hash: { type: string, pattern: "^0x[0-9a-f]{64}$" }
+      responses:
+        "202":
+          description: "Registered; poll GET /topups/{tx_hash}."
+          content: { application/json: { schema: { $ref: "#/components/schemas/Topup" } } }
+        "422": { $ref: "#/components/responses/Problem" }
+  /topups/{tx_hash}:
+    get:
+      tags: [agent]
+      operationId: getTopup
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: tx_hash, in: path, required: true, schema: { type: string, pattern: "^0x[0-9a-f]{64}$" } }
+      responses:
+        "200":
+          description: Top-up status.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Topup" } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /agent/mint:
+    post:
+      tags: [agent]
+      operationId: mintTestUsdc
+      summary: Mint test USDC to the agent wallet through the gateway (testnet only; the faucet enforces its own limits).
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_usdc]
+              additionalProperties: false
+              properties:
+                amount_usdc: { type: string, pattern: "^[1-9][0-9]{0,6}$", description: "Whole USDC, 1 to 9999999. No cap in our contract: the Aave faucet enforces its own on-chain maximum and cooldown." }
+      responses:
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /agent/withdraw:
+    post:
+      tags: [agent]
+      operationId: withdrawToOwner
+      summary: "Transfer USDC or ETH from the agent wallet to the owner address. Needs a step-up signature."
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: X-Step-Up, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, amount]
+              additionalProperties: false
+              properties:
+                token: { type: string, enum: [USDC, ETH] }
+                amount: { $ref: "schemas/order.schema.json#/$defs/PositiveAmount" }
+      responses:
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+  /presets:
+    get:
+      tags: [state]
+      operationId: listPresets
+      responses:
+        "200":
+          description: Fixed list of presets shipped with the service.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, items]
+                properties:
+                  schema_version: { type: integer, const: 1 }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [preset_id, title, summary, ips_hash, limits]
+                      properties:
+                        preset_id: { type: string, pattern: "^[a-z][a-z0-9-]{1,31}$" }
+                        title: { type: string }
+                        summary: { type: string, description: "Plain-language description." }
+                        ips_hash: { type: string, pattern: "^[0-9a-f]{64}$" }
+                        limits: { type: object, additionalProperties: { type: string } }
+  /runs:
+    post:
+      tags: [jobs]
+      operationId: startRun
+      summary: Run one agent cycle (Reader, Planner, gateway) as a job.
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                note: { type: string, maxLength: 2000, description: "Untrusted text for the Reader." }
+                planner: { type: string, enum: [auto, scripted_hostile], default: auto }
+      responses:
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+  /jobs:
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      summary: Recent jobs of the session owner, newest first.
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200":
+          description: Jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Job" }
+        "401": { $ref: "#/components/responses/Problem" }
+  /jobs/{job_id}:
+    get:
+      tags: [jobs]
+      operationId: getJob
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: job_id, in: path, required: true, schema: { type: string, pattern: "^[0-9a-f]{32}$" } }
+      responses:
+        "200":
+          description: Job.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
+        "404": { $ref: "#/components/responses/Problem" }
+  /audit/verify:
+    get:
+      tags: [audit]
+      operationId: verifyAudit
+      security: [{ SessionCookie: [] }]
+      summary: Recompute the owner's hash chain on the server.
+      responses:
+        "200":
+          description: Result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, records, first_bad_seq]
+                properties:
+                  ok: { type: boolean }
+                  records: { type: integer, minimum: 0 }
+                  first_bad_seq: { type: [integer, "null"] }
+
 components:
+  securitySchemes:
+    SessionCookie: { type: apiKey, in: cookie, name: aw_session }
+    OwnerToken: { type: http, scheme: bearer }
   parameters:
     OrderId:
       name: order_id
@@ -234,15 +535,105 @@ components:
       required: true
       schema: { type: string, pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" }
   responses:
+    JobAccepted:
+      description: "Job accepted. Poll GET /jobs/{job_id}."
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [job_id, status]
+            properties:
+              job_id: { type: string, pattern: "^[0-9a-f]{32}$" }
+              status: { type: string, enum: [queued] }
     Problem:
       description: >
         RFC 7807 problem. `type` is one of urn:agent-wallet:problem:invalid-request (422),
         not-found (404), order-id-conflict (409), not-pending (409),
-        emergency-stop-state (409).
+        emergency-stop-state (409), unauthenticated (401), signature-invalid (401),
+        step-up-required (401), csrf (403), owner-only-function (422), job-in-progress (409),
+        rate-limited (429, `Retry-After`), custody-unavailable (503), gas-below-floor (409),
+        stopped (409), service-unavailable (503).
       content:
         application/problem+json:
           schema: { $ref: "#/components/schemas/Problem" }
   schemas:
+    UtcTimestamp:
+      type: string
+      pattern: "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"
+    SessionStarted:
+      type: object
+      required: [address, expires_at]
+      properties:
+        address: { type: string, pattern: "^0x[0-9a-f]{40}$" }
+        expires_at: { $ref: "#/components/schemas/UtcTimestamp" }
+        token: { type: string, description: "Only when bearer clients are enabled (AGENT_WALLET_ALLOW_BEARER=1)." }
+    Me:
+      type: object
+      required: [address, agent_address, mode, chain_id]
+      properties:
+        address: { type: string, pattern: "^0x[0-9a-f]{40}$" }
+        agent_address: { type: string, pattern: "^0x[0-9a-fA-F]{40}$" }
+        mode: { type: string, enum: [single, multi, replay] }
+        chain_id: { type: integer, const: 84532 }
+        tier: { type: string, enum: [T0, T1, T2] }
+        emergency_stop: { type: boolean }
+    TokenBalance:
+      type: object
+      description: "A balance in the smallest unit; unlike an order amount it may be zero."
+      required: [value, decimals]
+      properties:
+        value: { type: string, pattern: "^[0-9]{1,30}$" }
+        decimals: { type: integer, minimum: 0, maximum: 36 }
+    Agent:
+      type: object
+      required: [address, eth_wei, gas_floor_wei, usdc, ausdc, price_source, custody]
+      properties:
+        address: { type: string }
+        eth_wei: { type: string, pattern: "^[0-9]+$" }
+        gas_floor_wei: { type: string, pattern: "^[0-9]+$" }
+        suggested_topup_wei: { type: string, pattern: "^[0-9]+$" }
+        usdc: { $ref: "#/components/schemas/TokenBalance" }
+        ausdc: { $ref: "#/components/schemas/TokenBalance" }
+        price_source: { type: string, const: mainnet_reference }
+        custody: { type: string, const: "custodial-testnet" }
+    Topup:
+      type: object
+      required: [tx_hash, status]
+      properties:
+        tx_hash: { type: string }
+        status: { type: string, enum: [pending, confirmed, failed, rejected] }
+        amount_wei: { type: string }
+        block_number: { type: integer }
+        explorer_url: { type: string }
+    Job:
+      type: object
+      required: [job_id, kind, status, planner_client, order_ids, created_at]
+      properties:
+        job_id: { type: string }
+        kind: { type: string, enum: [run, mint, withdraw] }
+        status: { type: string, enum: [queued, running, succeeded, denied, failed, interrupted] }
+        planner_client: { type: string, enum: [openai, scripted, fallback, none] }
+        order_ids: { type: array, items: { type: string }, description: "Ids only; fetch records from /decisions." }
+        error_code: { type: [string, "null"] }
+        created_at: { $ref: "#/components/schemas/UtcTimestamp" }
+        finished_at: { type: [string, "null"] }
+        records:
+          type: array
+          description: "Summaries of the audit records this job produced (GET /jobs/{job_id} only). The audit log stays the truth."
+          items:
+            type: object
+            required: [seq, outcome, planner_client]
+            properties:
+              seq: { type: integer }
+              order_id: { type: [string, "null"] }
+              outcome: { type: string }
+              function: { type: [string, "null"] }
+              token: { type: [string, "null"] }
+              amount: { type: [object, "null"] }
+              rule_codes: { type: array, items: { type: string } }
+              reason: { type: [string, "null"] }
+              tx_hash: { type: [string, "null"] }
+              planner_client: { type: string, enum: [openai, scripted, fallback, none] }
     Problem:
       type: object
       required: [type, title, status]

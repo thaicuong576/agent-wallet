@@ -76,3 +76,29 @@ flowchart TD
 | Agent cannot reach approve or stop | `pytest tests/api/test_owner.py::test_agent_facing_cannot_reach_approve_or_stop -q` |
 | Responses validate against contract schemas | `pytest tests/api/test_state_and_audit.py -q` |
 | Independent check passes | `pytest tests/api -q` (31 passed) |
+
+## Webapp routes (ticket A3)
+
+The wallet-session routes of design 12.2 are mounted by `create_app` on every start; the existing routes above are unchanged and the single-owner token mode keeps working. Without `AGENT_WALLET_MODE=multi` no webapp services are attached and every session route answers `503 service-unavailable` (fail closed); `/presets` and `/health` stay public. Detail, the ERD and the job table are in [`webapp.md`](webapp.md); sign-in and step-up are in [`auth.md`](auth.md).
+
+| Route | Method | Auth | Module |
+| :--- | :--- | :--- | :--- |
+| `/auth/nonce`, `/auth/verify` | `POST` | none | `api/auth.py` |
+| `/auth/logout` | `POST` | session | `api/auth.py` |
+| `/auth/step-up` | `POST` | session | `api/auth.py` |
+| `/me`, `/agent` | `GET` | session | `api/wallet.py` |
+| `/topups` | `POST` | session | `api/wallet.py` |
+| `/topups/{tx_hash}` | `GET` | session | `api/wallet.py` |
+| `/presets` | `GET` | none | `api/wallet.py` (one placeholder preset; ticket A4 replaces it) |
+| `/audit/verify` | `GET` | session | `api/wallet.py` (`verify_chain` on the owner's chain) |
+| `/agent/mint`, `/runs` | `POST` | session | `api/jobs.py` |
+| `/agent/withdraw` | `POST` | session plus step-up `withdraw` | `api/jobs.py` |
+| `/jobs`, `/jobs/{job_id}` | `GET` | session | `api/jobs.py` |
+
+Rules enforced here: the owner address comes only from `require_session` (no route has an owner parameter or body field; extra body fields are `422`); a foreign `job_id` or `tx_hash` is `404`; problems use the 12.1 slugs (`job-in-progress` 409 with the active `job_id`, `rate-limited` 429 with `Retry-After`, `custody-unavailable` 503); `origin="owner"` appears only in `api/jobs.py`.
+
+| Claim | Proving check |
+| :--- | :--- |
+| App routes and methods equal `contracts/openapi.yaml` | `pytest tests/api/test_routes.py -q` (reads the app's generated schema, since included routers hide their routes from `app.routes`) |
+| Session routes reject anonymous callers; withdraw needs a bound step-up | `pytest tests/webapp/test_routes.py -q` |
+| A session for A cannot read or act on B | `pytest tests/webapp/test_routes.py -k "session_a or foreign or owner_query or chain_verifies" -q` |
