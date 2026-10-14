@@ -21,6 +21,7 @@ from core.gateway.gateway import Gateway
 from core.gateway.policy import (
     DEFAULT_IPS_HASH,
     DenyAllPolicy,
+    EnginePolicy,
     Policy,
 )
 
@@ -28,6 +29,7 @@ __all__ = [
     "Gateway",
     "Policy",
     "DenyAllPolicy",
+    "EnginePolicy",
     "AuditSink",
     "InMemoryAuditSink",
     "GatewayError",
