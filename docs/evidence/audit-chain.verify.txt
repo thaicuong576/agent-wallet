@@ -1,0 +1,1 @@
+OK: verified 2 records in docs\evidence\audit-chain.jsonl (hash chain intact)
