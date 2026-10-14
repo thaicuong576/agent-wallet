@@ -606,7 +606,9 @@
         "approve",
         "supply",
         "withdraw",
-        "exactInputSingle"
+        "exactInputSingle",
+        "mint",
+        "transfer"
       ]
     },
     "Order": {
@@ -738,6 +740,101 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "token": {
+                "const": "ETH"
+              }
+            },
+            "required": [
+              "token"
+            ]
+          },
+          "then": {
+            "properties": {
+              "amount": {
+                "properties": {
+                  "decimals": {
+                    "const": 18
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "function": {
+                "const": "mint"
+              }
+            },
+            "required": [
+              "function"
+            ]
+          },
+          "then": {
+            "properties": {
+              "token": {
+                "const": "USDC"
+              },
+              "recipient": {
+                "const": "self"
+              },
+              "protocol": {
+                "const": "aave-v3"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "function": {
+                "const": "transfer"
+              }
+            },
+            "required": [
+              "function"
+            ]
+          },
+          "then": {
+            "properties": {
+              "recipient": {
+                "const": "owner"
+              },
+              "protocol": {
+                "const": "wallet"
+              },
+              "token": {
+                "enum": [
+                  "USDC",
+                  "ETH"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "recipient": {
+                "const": "owner"
+              }
+            },
+            "required": [
+              "recipient"
+            ]
+          },
+          "then": {
+            "properties": {
+              "function": {
+                "const": "transfer"
+              }
+            }
+          }
         }
       ]
     },
@@ -765,7 +862,8 @@
       "type": "string",
       "enum": [
         "aave-v3",
-        "uniswap-v3"
+        "uniswap-v3",
+        "wallet"
       ]
     },
     "Reason": {
@@ -779,7 +877,8 @@
       "enum": [
         "self",
         "aave_pool",
-        "uniswap_router"
+        "uniswap_router",
+        "owner"
       ]
     },
     "RuleCode": {
@@ -838,7 +937,8 @@
       "type": "string",
       "enum": [
         "USDC",
-        "WETH"
+        "WETH",
+        "ETH"
       ]
     },
     "TxHash": {

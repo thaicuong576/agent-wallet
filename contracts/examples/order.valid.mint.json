@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "order_id": "0c7e2b10-9a3d-4c5e-8b1f-2e7d3c0a4b51",
+  "created_at": "2026-10-16T09:00:00Z",
+  "proposed_by": "owner",
+  "protocol": "aave-v3",
+  "function": "mint",
+  "token": "USDC",
+  "amount": {
+    "value": "10000000000",
+    "decimals": 6
+  },
+  "recipient": "self"
+}

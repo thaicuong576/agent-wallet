@@ -7,7 +7,7 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 - **Environment:** Offline, replay mode, testnet only, no network, no private keys
 - **Overall Result:** PASSED (44/44, 100.0%)
 - **Failing Scenarios:** None. All 44 scenarios passed.
-- **Rule Code Coverage:** 25 / 25 codes (100.0%)
+- **Rule Code Coverage:** 25 / 28 codes (89.3%)
 - **Command to Reproduce:**
   ```sh
   python -m evals.run
@@ -26,7 +26,7 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `tier_and_stop` | 4 | 4 | 0 | 100.0% |
 | **Total** | **44** | **44** | **0** | **100.0%** |
 
-## Rule Code Coverage (25 / 25)
+## Rule Code Coverage (25 / 28)
 
 | Rule Code | Family | Description | Status | Covered by Scenario |
 | :--- | :--- | :--- | :--- | :--- |
@@ -55,6 +55,9 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `TIER.EMERGENCY_STOP_RELEASED` | TIER | The owner released the emergency stop. It is a status, not a violation. | ✅ Covered | `tier_and_stop-04-emergency-stop-release-allows` |
 | `TIER.APPROVAL_REQUIRED` | TIER | The order is above the approval threshold and waits for the owner. This is the T3 behaviour; it is a rule, not a tier. | ✅ Covered | `escalate-01-pending` |
 | `TIER.APPROVAL_REJECTED` | TIER | The owner rejected a pending order. | ✅ Covered | `escalate-03-rejected-never-executes` |
+| `ACCESS.OWNER_ONLY_FUNCTION` | ACCESS | The order calls an owner-only function (mint or transfer) with a non-owner origin. | ⚠️ Not covered | - |
+| `TIER.GLOBAL_STOP` | TIER | The global stop is engaged. Orders are denied while it is engaged and the engaging record uses this code. It is a status, not a violation. | ⚠️ Not covered | - |
+| `TIER.POLICY_CHANGED` | TIER | The IPS was updated to a new preset. It is a status, not a violation. | ⚠️ Not covered | - |
 
 ## Detailed Scenario Results
 
