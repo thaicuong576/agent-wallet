@@ -1,10 +1,7 @@
-"""HTTP API. The contract is contracts/openapi.yaml; this module grows to match it."""
+"""HTTP API entrypoint matching contracts/openapi.yaml."""
 
-from fastapi import FastAPI
+from api.app import create_app
 
-app = FastAPI(title="agent-wallet", version="0.1.0")
+app = create_app()
 
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+__all__ = ["app", "create_app"]
