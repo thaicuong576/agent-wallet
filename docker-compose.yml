@@ -1,0 +1,13 @@
+# One command: docker compose up --build
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_PATH: /app/data/agent_wallet.db
+    volumes:
+      - ./data:/app/data
