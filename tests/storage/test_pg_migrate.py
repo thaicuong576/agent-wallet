@@ -119,3 +119,10 @@ def test_check_fails_closed_on_unmigrated_database() -> None:
     with empty_schema() as dsn:
         with pytest.raises(MigrationError, match="not migrated"):
             check_schema(dsn)
+
+
+def test_data_api_roles_are_closed_by_a_migration() -> None:
+    """Hosted providers expose `public` to anon and authenticated; the schema must close that."""
+    text = (migrate.MIGRATIONS_DIR / "0002_close_data_api.sql").read_text(encoding="utf-8")
+    assert "REVOKE ALL ON ALL TABLES IN SCHEMA public FROM" in text
+    assert "'anon'" in text and "'authenticated'" in text
