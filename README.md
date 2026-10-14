@@ -46,7 +46,7 @@ The webapp UI (plain HTML, CSS and JS modules, no build step, no external assets
 uvicorn api.main:app                                  # then open http://127.0.0.1:8000/ui/
 # no backend needed for a look around: http://127.0.0.1:8000/ui/?fixtures=1&demo=1
 ```
-`?fixtures=1` answers every call from `ui/fixtures/*.json` and a stub wallet (a banner chip says so). `&demo=1` starts signed in and funded; `&scenario=hostile` starts with a blocked hostile order in the feed. Without it the page talks to the session routes of the design (wallet sign-in, HttpOnly cookie) through `ui/api.js`; those routes arrive with the backend tickets. Previews: [`docs/previews/`](docs/previews/). Design note: [`docs/architecture/ui.md`](docs/architecture/ui.md).
+`?fixtures=1` answers every call from `ui/fixtures/*.json` and a stub wallet (a banner chip says so). `&demo=1` starts signed in and funded; `&scenario=hostile` starts with a blocked hostile order in the feed. Without it the page is live: it talks to the session routes through `ui/api.js` (wallet sign-in, HttpOnly cookie, `X-AW-CSRF` header) and needs the API started with `AGENT_WALLET_MODE=multi`, a session secret, a keystore secret and `AGENT_WALLET_PUBLIC_ORIGIN` set to the address in the browser bar (see `docs/architecture/api.md`). Fund, Mint, Run, Withdraw, stop and approvals work from the page; the live Dashboard shows only the signed-in owner's own balances. Previews: [`docs/previews/`](docs/previews/). Design note: [`docs/architecture/ui.md`](docs/architecture/ui.md).
 
 ## How it works
 ```mermaid

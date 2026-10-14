@@ -1,6 +1,8 @@
 // Dashboard: agent address, balances with the gas floor, allocation, today's spend, tier.
 import { formatAmount, formatWei } from "../explain.js";
 import { copyButton } from "./onboard.js";
+import { actionsCard } from "./actions.js";
+import { chainChip } from "./jobs.js";
 
 export function render(ctx) {
   const { el, api } = ctx;
@@ -9,6 +11,9 @@ export function render(ctx) {
   const body = el("div");
   root.append(body);
 
+  // Built once: a reload after a job must not wipe the job's result.
+  const actions = actionsCard(ctx);
+
   async function load() {
     body.replaceChildren(el("p", "note", "Loading balances…"));
     const me = await ctx.refreshSession();
@@ -16,12 +21,26 @@ export function render(ctx) {
       body.replaceChildren(el("p", "empty", "Connect a wallet to see your agent."));
       return;
     }
-    const [a, p, i, t] = await Promise.allSettled([api.agent(), api.portfolio(), api.ips(), api.tier()]);
+    // GET /portfolio and /ips are not per owner yet, so outside the demo only the owner's own
+    // balances (GET /agent) feed the cards: nothing is shown rather than another owner's numbers.
+    const none = Promise.reject(new Error("not per owner"));
+    none.catch(() => {});
+    const [a, p, i, t] = await Promise.allSettled([
+      api.agent(),
+      api.fixtures ? api.portfolio() : none,
+      api.fixtures ? api.ips() : none,
+      api.tier(),
+    ]);
     body.replaceChildren();
-    body.append(identity(a, t), balances(a), allocation(p), spend(p, i));
+    const chain = chainChip(ctx);
+    body.append(identity(a, t, chain.node), balances(a));
+    if (api.fixtures) body.append(allocation(p), spend(p, i));
+    else body.append(walletSplit(a));
+    body.append(actions);
+    chain.check();
   }
 
-  function identity(a, t) {
+  function identity(a, t, chainNode) {
     const card = el("div", "card");
     card.append(el("h2", "", "Agent wallet"));
     if (a.status === "fulfilled") {
@@ -41,7 +60,7 @@ export function render(ctx) {
     } else {
       tier.append(el("span", "status error", "Tier unavailable."));
     }
-    card.append(tier);
+    card.append(tier, chainNode);
     return card;
   }
 
@@ -80,6 +99,39 @@ export function render(ctx) {
     }
     const label = el("span", "chip neutral", "Reference price: " + String(v.price_source).replace(/_/g, " "));
     card.append(el("p", "note", "Prices are mainnet reference values, not testnet market prices. "), label);
+    return card;
+  }
+
+  function walletSplit(a) {
+    const card = el("div", "card");
+    card.append(el("h2", "", "Allocation"));
+    if (a.status !== "fulfilled") {
+      card.append(el("p", "status error", "Allocation unavailable."));
+      return card;
+    }
+    const wallet = BigInt(a.value.usdc.value);
+    const lent = BigInt(a.value.ausdc.value);
+    const total = wallet + lent;
+    if (total === 0n) {
+      card.append(el("p", "empty", "No positions yet. Mint test USDC, then run the agent."));
+      return card;
+    }
+    const parts = [
+      ["USDC in wallet", wallet],
+      ["aUSDC lent on Aave", lent],
+    ].filter(([, v]) => v > 0n);
+    const bar = el("div", "alloc-bar");
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", "Split between wallet USDC and lent aUSDC, shares add to 100 percent");
+    const list = el("ul", "legend");
+    parts.forEach(([name, v], idx) => {
+      const pct = Number((v * 1000n) / total) / 10;
+      const seg = el("span", "seg seg-" + idx);
+      seg.style.width = pct + "%";
+      bar.append(seg);
+      list.append(el("li", "", name + ": " + pct.toFixed(1) + "%, " + formatAmount({ value: v.toString(), decimals: 6 }) + " USDC"));
+    });
+    card.append(bar, list, el("p", "note", "Split by token amount. Spend limits and prices arrive per owner in a later release."));
     return card;
   }
 

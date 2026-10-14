@@ -1,5 +1,6 @@
 // Onboarding stepper: Connect, Fund, Mint, Policy, Run. Each step says what it will ask the wallet.
 import { explainError, formatAmount, formatWei, parseUnits, shortHash } from "../explain.js";
+import { txLink } from "./feed.js";
 
 const STEPS = [
   { id: "connect", title: "Connect", asks: "Your wallet will ask you to connect and to sign a login message. Signing is free and sends no transaction." },
@@ -21,7 +22,11 @@ export function render(ctx) {
     const me = await ctx.refreshSession();
     const data = { me, agent: null, policy: null, jobs: [] };
     if (me) {
-      const [a, p, j] = await Promise.allSettled([api.agent(), api.policy(), api.jobs()]);
+      const [a, p, j] = await Promise.allSettled([
+        api.agent(),
+        api.fixtures ? api.policy() : Promise.resolve(null),
+        api.jobs(),
+      ]);
       data.agent = a.status === "fulfilled" ? a.value : null;
       data.policy = p.status === "fulfilled" ? p.value : null;
       data.jobs = j.status === "fulfilled" && Array.isArray(j.value.items) ? j.value.items : [];
@@ -38,7 +43,8 @@ export function render(ctx) {
       connect: Boolean(data.me),
       fund: Boolean(a) && eth > 0n && eth >= floor,
       mint: Boolean(a) && (a.usdc.value !== "0" || a.ausdc.value !== "0"),
-      policy: Boolean(data.policy && data.policy.preset_id),
+      // There is no policy route yet, so outside the demo the default preset applies.
+      policy: api.fixtures ? Boolean(data.policy && data.policy.preset_id) : Boolean(data.me),
       run: data.jobs.some((j) => j.kind === "run"),
     };
   }
@@ -69,11 +75,17 @@ export function render(ctx) {
   }
 
   function summary(id, data) {
-    if (id === "connect") return "Connected as " + shortHash(data.me.address) + ".";
+    if (id === "connect") {
+      return "Connected as " + shortHash(data.me.address) + ". Agent address: " + (data.me.agent_address || "not created yet") + ".";
+    }
     if (id === "fund") return "Agent has " + formatWei(data.agent.eth_wei) + " ETH for gas.";
     if (id === "mint")
       return "Agent holds " + formatAmount(data.agent.usdc) + " USDC and " + formatAmount(data.agent.ausdc) + " aUSDC.";
-    if (id === "policy") return "Policy preset: " + data.policy.preset_id + ".";
+    if (id === "policy") {
+      return data.policy && data.policy.preset_id
+        ? "Policy preset: " + data.policy.preset_id + "."
+        : "The default conservative preset applies. Choosing another preset arrives with a later release.";
+    }
     return "";
   }
 
@@ -129,11 +141,21 @@ export function render(ctx) {
       addr.append(el("span", "label", "Agent address: "), el("code", "", data.agent ? data.agent.address : "unavailable"));
       if (data.agent) addr.append(copyButton(ctx, data.agent.address));
       box.append(addr);
+      if (data.agent) {
+        box.append(
+          el(
+            "p",
+            "note",
+            "Gas floor: about " + formatWei(data.agent.gas_floor_wei) + " ETH (an estimate: 2 × the current base fee × 500,000 gas). Balance now: " + formatWei(data.agent.eth_wei) + " ETH.",
+          ),
+        );
+      }
+      const sent = el("p", "");
       if (data.agentError) box.append(el("p", "status error", data.agentError));
       const input = el("input");
       input.type = "text";
       input.inputMode = "decimal";
-      input.value = "0.01";
+      input.value = (data.agent && formatWei(data.agent.suggested_topup_wei)) || "0.01";
       input.id = "fund-amount";
       input.setAttribute("aria-label", "ETH amount to send");
       const label = el("label", "", "ETH to send (Base Sepolia test ETH)");
@@ -145,25 +167,38 @@ export function render(ctx) {
             const wei = parseUnits(input.value, 18);
             if (wei === null || wei === 0n) throw new Error("Enter an amount such as 0.01.");
             if (!data.agent) throw new Error("The agent address is not available yet.");
+            await ctx.wallet.ensureBaseSepolia();
             const hash = await ctx.wallet.sendTransaction({
               from: data.me.address,
               to: data.agent.address,
               valueWei: wei.toString(),
             });
             msg.textContent = "Sent. Waiting for confirmation…";
-            await api.registerTopup(hash);
+            const link = txLink(el, hash);
+            if (link) sent.replaceChildren(link);
+            // The node may not know the transaction for a few seconds after the wallet sent it.
+            for (let i = 0; ; i++) {
+              try {
+                await api.registerTopup(hash);
+                break;
+              } catch (e) {
+                if (!(e && e.status === 422) || i >= 6) throw e;
+                await ctx.wait(3000);
+              }
+            }
             for (let i = 0; i < 40; i++) {
               const t = await api.topupStatus(hash);
               if (t.status === "confirmed") return true;
               if (t.status === "failed" || t.status === "rejected") {
                 throw new Error("The top-up was " + t.status + ".");
               }
-              await new Promise((r) => setTimeout(r, api.fixtures ? 0 : 3000));
+              await ctx.wait(3000);
             }
             throw new Error("Still pending. Check again in a minute.");
           },
           { before: [label, input] },
         ),
+        sent,
       );
       return box;
     },

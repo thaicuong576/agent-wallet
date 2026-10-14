@@ -7,6 +7,8 @@ export class TestWallet extends WalletAdapter {
     this.address = address;
     this.reject = reject;
     this.calls = [];
+    this.signed = [];
+    this.sent = [];
   }
   get id() {
     return "test";
@@ -32,11 +34,13 @@ export class TestWallet extends WalletAdapter {
   async signMessage(address, message) {
     this.calls.push("signMessage");
     this._maybeReject();
+    this.signed.push(message);
     return "0x" + "ab".repeat(65);
   }
   async sendTransaction({ from, to, valueWei }) {
     this.calls.push("sendTransaction");
     this._maybeReject();
+    this.sent.push({ from, to, valueWei });
     return "0x" + "cd".repeat(32);
   }
   onChange() {
