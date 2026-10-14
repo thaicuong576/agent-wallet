@@ -227,7 +227,13 @@ def test_duplicate_approval_request_raises(owner: OwnerControls):
 def test_tierview_has_no_mutating_attributes():
     """TierView has no attribute that mutates state (assert on the public names)."""
     public_names = [attr for attr in dir(TierView) if not attr.startswith("_")]
-    expected_read_only = {"approval_status", "current", "is_stopped", "pending_orders"}
+    expected_read_only = {
+        "approval_status",
+        "current",
+        "get_approval",
+        "is_stopped",
+        "pending_orders",
+    }
     assert set(public_names) == expected_read_only
 
     mutating_stems = {

@@ -240,7 +240,13 @@ def test_schema_validation_and_existing_tier_rules_unchanged(tmp_path: Path) -> 
 def test_no_change_to_which_methods_are_mutators() -> None:
     """TierView remains purely read-only and TierStore exposes exactly the expected mutators."""
     view_public = {attr for attr in dir(TierView) if not attr.startswith("_")}
-    assert view_public == {"approval_status", "current", "is_stopped", "pending_orders"}
+    assert view_public == {
+        "approval_status",
+        "current",
+        "get_approval",
+        "is_stopped",
+        "pending_orders",
+    }
 
     store_mutators = {
         "update_tier_value",
