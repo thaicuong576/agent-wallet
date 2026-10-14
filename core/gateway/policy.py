@@ -49,8 +49,19 @@ class EnginePolicy:
         else:
             self.ips_hash = compute_ips_hash(ips)
 
-    def evaluate(self, order: dict[str, Any]) -> dict[str, Any]:
-        """Evaluate an order against IPS rules, portfolio state, and risk inputs."""
+    def evaluate(
+        self,
+        order: dict[str, Any],
+        *,
+        origin: str = "planner",
+        tier: str = "T2",
+        emergency_stop: bool = False,
+        global_stop: bool = False,
+    ) -> dict[str, Any]:
+        """Evaluate an order against IPS rules, portfolio state, and risk inputs.
+
+        `origin`, `tier` and the stops are set by the gateway (code), never read from the order.
+        """
         state = self.get_state()
         risk_inputs = self.get_risk_inputs() if self.get_risk_inputs is not None else None
         now: datetime | None = None
@@ -67,7 +78,16 @@ class EnginePolicy:
             order=order,
             risk_inputs=risk_inputs,
             now=now,
+            origin=origin,
+            tier=tier,
+            emergency_stop=emergency_stop,
+            global_stop=global_stop,
         )
+
+        # Check approval threshold. Owner functions (mint, transfer) are owner-origin actions, not
+        # agent spend: they never escalate on the IPS approval threshold (design 7.3).
+        if order.get("function") in ("mint", "transfer"):
+            return decision
 
         # Check approval threshold: if allowed by policy engine, check approval.escalate_above_usd
         if decision.get("decision") == "allow":

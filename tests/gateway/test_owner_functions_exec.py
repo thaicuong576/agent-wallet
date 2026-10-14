@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -173,3 +174,48 @@ def test_planner_origin_mint_and_transfer_never_sign() -> None:
         assert rec["outcome"] == "denied"
     assert signer.calls == []
     assert len(sink.records) == 2
+
+
+def _real_policy_gateway() -> tuple[Gateway, FakeSigner, InMemoryAuditSink]:
+    """The production EnginePolicy adapter, not a test double."""
+    from core.gateway.policy import EnginePolicy
+
+    ips = load_ips(EXAMPLES / "ips.valid.json")
+    signer = FakeSigner(address=WALLET)
+    sink = InMemoryAuditSink()
+    gw = Gateway(
+        policy=EnginePolicy(
+            ips, lambda: json.loads((EXAMPLES / "portfolio-state.valid.json").read_text())
+        ),
+        simulator=OkSimulator(),
+        signer=signer,
+        audit_sink=sink,
+        tx_builder=AaveTxBuilder(_rpc(), WALLET, clock=lambda: NOW),
+        global_stop=lambda: False,
+        owner_address=OWNER,
+        ips_hash=ips.hash,
+    )
+    return gw, signer, sink
+
+
+def test_production_policy_adapter_lets_owner_mint_through_without_escalation() -> None:
+    """A 1,000 USDC mint is above the IPS approval threshold but is not agent spend."""
+    gw, signer, _ = _real_policy_gateway()
+    rec = gw.propose(_order("mint", "USDC", "1000000000", 6), origin="owner")
+    assert rec["outcome"] == "executed", rec["decision"]
+    assert len(signer.calls) == 1
+
+
+def test_production_policy_adapter_denies_planner_origin_mint() -> None:
+    gw, signer, _ = _real_policy_gateway()
+    rec = gw.propose(_order("mint", "USDC", "1000000000", 6))
+    assert rec["outcome"] == "denied"
+    assert rec["decision"]["rules_hit"][0]["code"] == "ACCESS.OWNER_ONLY_FUNCTION"
+    assert signer.calls == []
+
+
+def test_production_policy_adapter_transfer_to_owner_executes() -> None:
+    gw, signer, _ = _real_policy_gateway()
+    rec = gw.propose(_order("transfer", "USDC", "500000000", 6), origin="owner")
+    assert rec["outcome"] == "executed", rec["decision"]
+    assert len(signer.calls) == 1
