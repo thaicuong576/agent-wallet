@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agent-wallet owner console</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <h1>agent-wallet owner console</h1>
+  <p class="meta"><span class="chip">Mode: testnet</span> <span class="chip">Chain: Base Sepolia (84532)</span></p>
+</header>
+<main>
+  <section aria-labelledby="h-token">
+    <h2 id="h-token">Owner token</h2>
+    <label for="token">Token (kept in this page's memory only)</label>
+    <input id="token" type="password" autocomplete="off" spellcheck="false">
+    <p id="token-note" class="note" role="status"></p>
+  </section>
+
+  <section aria-labelledby="h-tier">
+    <h2 id="h-tier">Tier and emergency stop</h2>
+    <p id="tier-state" role="status">Loading…</p>
+    <div class="row">
+      <button id="btn-stop" type="button" class="danger" disabled>Stop</button>
+      <button id="btn-release" type="button" disabled>Release</button>
+    </div>
+    <p id="owner-msg" class="note" role="status"></p>
+  </section>
+
+  <section aria-labelledby="h-pending">
+    <h2 id="h-pending">Pending approvals</h2>
+    <ul id="pending" class="cards"></ul>
+  </section>
+
+  <section aria-labelledby="h-decisions">
+    <h2 id="h-decisions">Decisions</h2>
+    <ul id="decisions" class="cards"></ul>
+  </section>
+
+  <section aria-labelledby="h-audit">
+    <h2 id="h-audit">Audit chain</h2>
+    <p class="note">Browser check only. Authoritative verification is <code>python -m core.audit.verify</code>.</p>
+    <div class="row"><button id="btn-verify" type="button">Check chain</button></div>
+    <p id="chain-status" role="status">Not checked yet.</p>
+    <ul id="records" class="cards"></ul>
+  </section>
+</main>
+<script src="chain.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
