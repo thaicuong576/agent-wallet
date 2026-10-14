@@ -2,7 +2,7 @@
 
 Scope: the agent-wallet system as built in this repository, testnet only (Base Sepolia, chain 84532). This report covers the permission-tier implementation and the known-risk list that the competition asks for. It states what is enforced and which test proves it, and it lists what is not done yet. Status values are `enforced` (code and test exist), `partial` and `open`.
 
-Last updated against `main` at the commit that merged the TierStore WAL and audit transaction fixes. The runner tickets (T2, T3, T5) are tracked in `docs/design/runner/design.md`; items that depend on them are marked `open`.
+Last updated against `main` after the runner tickets T1 to T4 and T5a merged. The remaining runner tickets (T5b, T6, T7) are tracked in `docs/design/runner/design.md`; items that depend on them are marked `partial` or `open`.
 
 ## 1. Principles
 1. The LLM proposes, code decides. The model never holds a key and cannot call the signer.
@@ -45,15 +45,16 @@ Who can change what:
 | C10 | Prompt-injection defence: Reader returns structured facts only; Planner output must validate against the order schema; an out-of-universe recipient or token is still decided by the engine | enforced | `tests/agent`, 12 injection eval scenarios |
 | C11 | Secrets: `.env` ignored, names only in `.env.example`, secret scan in CI | enforced | `scripts/check_no_secrets.py`, CI |
 | C12 | The owner token lives in page memory only; API strings are rendered as text, never HTML | enforced | `tests/ui` |
+| C14 | Concurrent proposes are serialised by a cross-process lock held from limit read to audit append; a lock timeout denies with nothing signed | enforced | `tests/gateway/test_lock.py` |
 | C13 | Emergency stop and tier state are shared by API and runner through one persistent file | partial | `tests/tiers/test_shared_file.py` covers two stores on one file; the end-to-end API-to-runner test lands with the runner (T5) |
 
 ## 4. Known-risk list
 
 | ID | Risk | Severity | Status | Mitigation or plan |
 | :--- | :--- | :--- | :--- | :--- |
-| K1 | Idempotency is held in memory: after a gateway restart the same `order_id` could execute again | High | open | Runner ticket T3 moves it to the audit log plus an intents table; test names in design section 10 |
-| K2 | `spent_24h_usd` and `tx_count_1h` are supplied by the caller of the engine, so daily and hourly limits depend on an honest caller | High | open | Ticket T3 derives them from the audit log; per-transaction, universe and allocation rules are not affected |
-| K3 | A crash between signing and recording leaves an executed transaction without a record | Medium | open | Ticket T3: an intent without a record raises `ReconcileRequired` and never re-signs; the `reconcile` owner tool (T7) is the first cut candidate |
+| K1 | Idempotency used to be held in memory (a restart could re-execute an `order_id`) | High | enforced | Idempotency is now read from the audit log; the same id after a restart returns the stored record and never signs again (`tests/gateway/test_idempotency.py`) |
+| K2 | `spent_24h_usd` and `tx_count_1h` are supplied by the caller of the engine, so daily and hourly limits depend on an honest caller | High | partial | `AuditLedger` derives both from executed records (`tests/runner/test_ledger.py`) and the portfolio reader fills them only from the ledger; the end-to-end runner wiring (T5b) closes it |
+| K3 | A crash between signing and recording leaves an executed transaction without a record | Medium | partial | An insert-only intent is written before signing; an intent without a record raises `ReconcileRequired` and never re-signs (`tests/gateway/test_intents.py`). The owner `reconcile` tool (T7) that appends the truthful record is not built and is the first cut candidate |
 | K4 | Prices are reference values, not testnet market prices; a record that says USD is a reference valuation | Medium | accepted | Every portfolio state is labelled `price_source: mainnet_reference`; unknown tokens deny |
 | K5 | A falsified or stale risk input could let a benign-looking order through | Medium | partial | Risk data is read from chain by `OnchainAaveRiskProvider`; stale or missing data denies `RISK.DATA_STALE`; per-transaction caps bound the loss |
 | K6 | One public RPC endpoint; an RPC that lies could mislead simulation and balances | Medium | accepted | Testnet only; endpoint is configurable; no mainnet funds |
