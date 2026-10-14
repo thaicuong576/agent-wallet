@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "owner": "0x1111111111111111111111111111111111111111",
+  "objective": "Keep capital stable, earn yield from stablecoin lending",
+  "universe": {
+    "tokens": [],
+    "protocols": [
+      "aave-v3",
+      "uniswap-v3"
+    ],
+    "functions": [
+      "approve",
+      "supply",
+      "withdraw",
+      "exactInputSingle"
+    ],
+    "recipients": [
+      "self",
+      "aave_pool",
+      "uniswap_router"
+    ]
+  },
+  "allocation": {
+    "max_weight_per_asset_bps": 4000,
+    "min_stable_weight_bps": 6000,
+    "rebalance_band_bps": 500
+  },
+  "risk": {
+    "min_pool_tvl_usd": "50000000",
+    "max_depeg_bps": 50,
+    "max_slippage_bps": 50,
+    "max_reward_apy_share_bps": 5000,
+    "max_apy_deviation_bps": 300,
+    "max_utilization_bps": 9000,
+    "min_benefit_cost_ratio_bps": 20000,
+    "max_data_age_seconds": 7200
+  },
+  "limits": {
+    "per_tx_usd": "100",
+    "per_day_usd": "300",
+    "max_tx_per_hour": 5
+  },
+  "approval": {
+    "escalate_above_usd": "100"
+  }
+}

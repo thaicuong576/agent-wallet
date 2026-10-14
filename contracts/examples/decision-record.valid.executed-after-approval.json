@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "seq": 2,
+  "order_id": "c1a9e2d4-3f55-4b0a-8e17-9b6d2f4a7c30",
+  "order": {
+    "schema_version": 1,
+    "order_id": "c1a9e2d4-3f55-4b0a-8e17-9b6d2f4a7c30",
+    "created_at": "2026-10-16T09:00:00Z",
+    "proposed_by": "planner",
+    "protocol": "aave-v3",
+    "function": "supply",
+    "token": "USDC",
+    "amount": {
+      "value": "80000000",
+      "decimals": 6
+    },
+    "recipient": "self"
+  },
+  "decision": {
+    "schema_version": 1,
+    "order_id": "c1a9e2d4-3f55-4b0a-8e17-9b6d2f4a7c30",
+    "decision": "escalate",
+    "rules_hit": [
+      {
+        "code": "TIER.APPROVAL_REQUIRED",
+        "evidence": {
+          "order_usd": "80.00",
+          "escalate_above_usd": "50"
+        }
+      }
+    ],
+    "reason": "Order value 80.00 USD is above the approval threshold of 50 USD; the owner must approve.",
+    "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+    "decided_at": "2026-10-16T09:00:01Z"
+  },
+  "no_action": null,
+  "outcome": "executed",
+  "execution": {
+    "schema_version": 1,
+    "order_id": "c1a9e2d4-3f55-4b0a-8e17-9b6d2f4a7c30",
+    "status": "executed",
+    "tx_hash": "0x4963a3d8e22c9d4a71c013f61aed299aa19ace9a0d8abf79f7aeca220e4d3fe7",
+    "chain_id": 84532,
+    "block_number": 12345678,
+    "gas_used": 152000,
+    "error_code": null,
+    "detail": null,
+    "executed_at": "2026-10-16T09:07:40Z"
+  },
+  "approval": {
+    "status": "approved",
+    "by": "owner",
+    "at": "2026-10-16T09:07:30Z"
+  },
+  "tier": "T2",
+  "emergency_stop": false,
+  "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+  "created_at": "2026-10-16T09:07:41Z",
+  "prev_hash": "b1991974bdeadb0f39f2316ae2042745dafac5517028b0046fae0b5ce4b3b652",
+  "hash": "eb661a1e9af816c339ac980a5b6d95e3098e7a8fa77b67b7df14a3e9103b4e22"
+}

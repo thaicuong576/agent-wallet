@@ -1,0 +1,42 @@
+{
+  "as_of": "2026-10-16T08:59:00Z",
+  "price_source": "mainnet_reference",
+  "positions": [
+    {
+      "token": "USDC",
+      "location": "wallet",
+      "balance": {
+        "value": "500000000",
+        "decimals": 6
+      },
+      "price_usd": "1.00",
+      "value_usd": "500.00",
+      "weight_bps": 5556
+    },
+    {
+      "token": "USDC",
+      "location": "aave-v3",
+      "balance": {
+        "value": "300000000",
+        "decimals": 6
+      },
+      "price_usd": "1.00",
+      "value_usd": "300.00",
+      "weight_bps": 3333
+    },
+    {
+      "token": "WETH",
+      "location": "wallet",
+      "balance": {
+        "value": "40000000000000000",
+        "decimals": 18
+      },
+      "price_usd": "2500.00",
+      "value_usd": "100.00",
+      "weight_bps": 1111
+    }
+  ],
+  "total_value_usd": "900.00",
+  "spent_24h_usd": "120.00",
+  "tx_count_1h": 1
+}

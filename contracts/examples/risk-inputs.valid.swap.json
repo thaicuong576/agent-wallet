@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-16T08:58:30Z",
+  "sources": [
+    "defillama_yields",
+    "rpc_uniswap_pool"
+  ],
+  "protocol": "uniswap-v3",
+  "token": "USDC",
+  "pool_tvl_usd": "120000000.00",
+  "reward_apy_share_bps": 1200,
+  "apy_deviation_bps": 80,
+  "stablecoin_depeg_bps": null,
+  "utilization_bps": null,
+  "estimated_slippage_bps": 30,
+  "estimated_cost_usd": "0.40",
+  "estimated_benefit_usd": "3.10",
+  "data_age_seconds": 90
+}

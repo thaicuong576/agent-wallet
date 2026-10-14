@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "order_id": "c1a9e2d4-3f55-4b0a-8e17-9b6d2f4a7c30",
+  "decision": "escalate",
+  "rules_hit": [
+    {
+      "code": "TIER.APPROVAL_REQUIRED",
+      "evidence": {
+        "order_usd": "80.00",
+        "escalate_above_usd": "50"
+      }
+    }
+  ],
+  "reason": "Order value 80.00 USD is above the approval threshold of 50 USD; the owner must approve.",
+  "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+  "decided_at": "2026-10-16T09:00:01Z"
+}

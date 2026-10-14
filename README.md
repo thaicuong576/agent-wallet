@@ -23,6 +23,8 @@ The LLM proposes and code decides; the LLM never holds a key. Execution is on Ba
 | `PLAN.md` | Goal, scope, phases, milestones, risks |
 | `AGENTS.md` | Conventions for the agents that build this repo |
 | `docs/` | Documentation index: competition rules, design notes, architecture, evidence (see `docs/README.md`) |
+| `contracts/` | Data contracts v1: JSON Schemas, OpenAPI, rule codes, examples (see `contracts/README.md`) |
+| `docs/architecture/` | Architecture notes, one per feature, each with a Mermaid diagram (see `docs/architecture/contracts.md`) |
 | `.env.example` | Environment variable names (never values) |
 
 ## Submission

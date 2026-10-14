@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "seq": 0,
+  "order_id": "7f3c2a10-5b1e-4c6d-9a2f-1d8e4b7c0a11",
+  "order": {
+    "schema_version": 1,
+    "order_id": "7f3c2a10-5b1e-4c6d-9a2f-1d8e4b7c0a11",
+    "created_at": "2026-10-16T08:55:00Z",
+    "proposed_by": "planner",
+    "protocol": "aave-v3",
+    "function": "supply",
+    "token": "USDC",
+    "amount": {
+      "value": "150000000",
+      "decimals": 6
+    },
+    "recipient": "self"
+  },
+  "decision": {
+    "schema_version": 1,
+    "order_id": "7f3c2a10-5b1e-4c6d-9a2f-1d8e4b7c0a11",
+    "decision": "deny",
+    "rules_hit": [
+      {
+        "code": "LIMIT.PER_TX",
+        "evidence": {
+          "order_usd": "150.00",
+          "per_tx_usd": "100"
+        }
+      }
+    ],
+    "reason": "Order value 150.00 USD is above the per-transaction limit of 100 USD.",
+    "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+    "decided_at": "2026-10-16T08:55:01Z"
+  },
+  "no_action": null,
+  "outcome": "denied",
+  "execution": null,
+  "approval": null,
+  "tier": "T2",
+  "emergency_stop": false,
+  "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+  "created_at": "2026-10-16T08:55:01Z",
+  "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "hash": "NOT-A-HASH"
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "order_id": "c1a9e2d4-3f55-4b0a-8e17-9b6d2f4a7c30",
+  "status": "executed",
+  "tx_hash": null,
+  "chain_id": 84532,
+  "block_number": 12345678,
+  "gas_used": 152000,
+  "error_code": null,
+  "detail": null,
+  "executed_at": "2026-10-16T09:07:40Z"
+}
