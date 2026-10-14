@@ -21,6 +21,15 @@ cp .env.example .env            # optional; the API starts without keys
 docker compose up --build       # API on http://localhost:8000
 ```
 
+## Run the UI
+A minimal owner console (plain HTML, CSS and JS, no build step, no external assets) is served by the API at `/ui`.
+
+```sh
+export AGENT_WALLET_OWNER_TOKEN=<a throwaway value>   # without it owner controls answer 503
+uvicorn api.main:app                                  # then open http://127.0.0.1:8000/ui
+```
+Type the owner token into the page; it stays in memory only. Without it, Stop, Release, Approve and Reject are disabled. The audit chain check runs in the browser; authoritative verification is `python -m core.audit.verify`. Design note: [`docs/architecture/ui.md`](docs/architecture/ui.md).
+
 ## How it will work
 ```mermaid
 flowchart LR
@@ -61,6 +70,7 @@ Environment variable names only (see `.env.example`). Values live in `.env`, whi
 | `contracts/` | Data contracts v1: JSON Schemas, OpenAPI, rule codes, examples (see `contracts/README.md`) |
 | `core/` | Gateway, signer, policy engine, audit log, protocol adapters |
 | `api/` | FastAPI app |
+| `ui/` | Static owner console served at `/ui` |
 | `tests/` | pytest suite |
 | `scripts/` | Repository checks (secret scan) |
 | `docs/` | Competition rules, design notes, architecture notes (see `docs/README.md`) |
