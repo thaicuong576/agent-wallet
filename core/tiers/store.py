@@ -45,8 +45,11 @@ class TierStore:
         if self._db_path_str != ":memory:" and not self._db_path_str.startswith("file:"):
             Path(self._db_path_str).parent.mkdir(parents=True, exist_ok=True)
 
-        self._conn = sqlite3.connect(self._db_path_str, check_same_thread=False)
+        self._conn = sqlite3.connect(self._db_path_str, check_same_thread=False, timeout=5.0)
         self._conn.execute("PRAGMA foreign_keys = ON;")
+        self._conn.execute("PRAGMA busy_timeout = 5000;")
+        if self._db_path_str != ":memory:":
+            self._conn.execute("PRAGMA journal_mode = WAL;")
         self._init_db()
 
     def _init_db(self) -> None:
@@ -87,7 +90,7 @@ class TierStore:
             self.validate_tier_state(default_state)
             cur.execute(
                 """
-                INSERT INTO tier_state (
+                INSERT OR IGNORE INTO tier_state (
                     id, schema_version, tier, emergency_stop, updated_at, changed_by
                 ) VALUES (1, 1, 'T0', 0, ?, 'owner')
                 """,
