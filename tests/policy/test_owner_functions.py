@@ -307,7 +307,7 @@ def test_transfer_eth_valid_allowed(
 def test_origin_inside_the_order_body_is_ignored(
     loaded_ips: LoadedIps, valid_state: dict[str, Any]
 ) -> None:
-    """Origin is a code-set argument only: a field in the order body can never grant owner origin."""
+    """Origin is a code-set argument only; an order-body field never grants owner origin."""
     order = {**_make_mint_order(), "origin": "owner"}
     decision = evaluate(loaded_ips, valid_state, order)
     codes = [h["code"] for h in decision["rules_hit"]]
