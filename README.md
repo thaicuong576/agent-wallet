@@ -2,7 +2,23 @@
 
 An AI wallet agent for FinTechathon 2026 (Topic F, Agent Wallet). The agent holds its own funded wallet and acts only inside an Investment Policy Statement (IPS) set by the owner. A deterministic policy engine decides every order, and an eval suite measures whether the agent complies.
 
-> Status: scaffold. The contracts, toolchain, CI and Docker image are in place; the gateway, policy engine and signer are the next tickets. Execution is on Base Sepolia (testnet) only.
+> Status: the safe core is built and tested (policy engine, tiers, gateway, signer, audit chain, risk provider, planner and reader, API, owner UI, eval harness). Two transactions are on Base Sepolia (testnet only). The agent runner that ties the planner to the gateway end to end is in progress; see the known-risk list.
+
+## For judges: verify in five minutes, no keys needed
+```sh
+python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scriptsctivate
+pip install -r requirements-dev.txt
+python -m pytest -q                              # full test suite, offline
+python -m evals.run                              # 44 scenarios, 25/25 rule codes; writes docs/evidence/eval-report.md
+python -m core.audit.verify docs/evidence/audit-chain.jsonl   # hash chain of the live run
+```
+| Evidence | Where |
+| :--- | :--- |
+| On-chain transactions (approve and supply 1 test USDC, receipts `0x1`) | [`docs/evidence/tx_hashes.md`](docs/evidence/tx_hashes.md) |
+| Evaluation report (offline replay) | [`docs/evidence/eval-report.md`](docs/evidence/eval-report.md) |
+| Technical documentation | [`docs/technical-documentation.md`](docs/technical-documentation.md) |
+| Security self-assessment and known risks | [`docs/security/self-assessment.md`](docs/security/self-assessment.md) |
+| Architecture notes | [`docs/architecture/`](docs/architecture/) |
 
 ## Quick start
 Requires Python 3.11 and, optionally, Docker.
@@ -30,17 +46,18 @@ uvicorn api.main:app                                  # then open http://127.0.0
 ```
 Type the owner token into the page; it stays in memory only. Without it, Stop, Release, Approve and Reject are disabled. The audit chain check runs in the browser; authoritative verification is `python -m core.audit.verify`. Design note: [`docs/architecture/ui.md`](docs/architecture/ui.md).
 
-## How it will work
+## How it works
 ```mermaid
 flowchart LR
   U[Owner sets IPS] --> P[Planner LLM proposes order]
   P --> G[Gateway]
-  G --> E{Policy engine}
+  G --> T{Tier gate}
+  T --> E{Policy engine}
   E -- allow --> S[Simulate then sign] --> C[(Base Sepolia)]
   E -- deny or escalate --> L[Audit log with reason]
   S --> L
 ```
-The LLM proposes and code decides; the LLM never holds a key. More detail: `docs/architecture/overview.md`.
+The LLM proposes and code decides; the LLM never holds a key. Only the gateway can reach the signer, and every outcome is written to a hash-chained log. Details: [`docs/technical-documentation.md`](docs/technical-documentation.md).
 
 ## Make targets
 | Target | What it does |
@@ -58,6 +75,7 @@ Environment variable names only (see `.env.example`). Values live in `.env`, whi
 | :--- | :--- |
 | `OPENAI_API_KEY` | Planner and Reader LLM |
 | `AGENT_WALLET_PRIVATE_KEY` | Testnet agent wallet key; read only by the signer |
+| `AGENT_WALLET_OWNER_TOKEN` | Owner token for the owner endpoints and UI; unset means they answer 503 |
 | `BASE_SEPOLIA_RPC_URL` | JSON-RPC endpoint (default `https://sepolia.base.org`) |
 | `DB_PATH` | SQLite file for tier state and the audit log |
 | `IPS_PATH` | The Investment Policy Statement file |
@@ -68,11 +86,12 @@ Environment variable names only (see `.env.example`). Values live in `.env`, whi
 | `PLAN.md` | Goal, scope, phases, milestones, risks |
 | `AGENTS.md` | Conventions for the agents that build this repo |
 | `contracts/` | Data contracts v1: JSON Schemas, OpenAPI, rule codes, examples (see `contracts/README.md`) |
-| `core/` | Gateway, signer, policy engine, audit log, protocol adapters |
+| `core/` | Gateway, signer, policy engine, tiers, audit log, risk provider, planner and reader, protocol adapters |
+| `evals/` | Offline replay evaluation harness |
 | `api/` | FastAPI app |
 | `ui/` | Static owner console served at `/ui` |
 | `tests/` | pytest suite |
-| `scripts/` | Repository checks (secret scan) |
+| `scripts/` | Repository checks (secret scan) and the first-live-transaction script (dry run by default) |
 | `docs/` | Competition rules, design notes, architecture notes (see `docs/README.md`) |
 | `Dockerfile`, `docker-compose.yml` | Container image and one-command run |
 
