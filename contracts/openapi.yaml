@@ -52,6 +52,9 @@ paths:
       tags: [owner]
       operationId: approveOrder
       summary: Approve a pending order (owner only). Appends a record.
+      description: >-
+        Multi mode: session cookie plus header `X-Step-Up` signed for action `approve` with
+        params `{"order_id": <order_id>}`. Single mode: the owner token.
       parameters: [{ $ref: "#/components/parameters/OrderId" }]
       responses:
         "200":
@@ -157,6 +160,10 @@ paths:
       tags: [owner]
       operationId: setTier
       summary: Set the tier (owner only). The agent has no path to this endpoint.
+      description: >-
+        Multi mode: session cookie; raising the tier (T0 to T1, T1 to T2, T0 to T2) also needs
+        header `X-Step-Up` signed for action `tier_raise` with params `{"tier": <new tier>}`;
+        lowering needs the session only. Single mode: the owner token.
       requestBody:
         required: true
         content:
@@ -192,6 +199,9 @@ paths:
       tags: [owner]
       operationId: releaseEmergencyStop
       summary: Release the emergency stop (owner only). Appends a no_action record with TIER.EMERGENCY_STOP_RELEASED.
+      description: >-
+        Multi mode: session cookie plus header `X-Step-Up` signed for action `release_stop`
+        with params `{}`. Single mode: the owner token.
       responses:
         "200":
           description: The appended DecisionRecord.
