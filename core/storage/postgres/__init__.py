@@ -15,6 +15,7 @@ from core.storage.postgres.adapters import (
     PgPolicySelectionStore,
     PgSettings,
     PgTiers,
+    PgTopupStore,
 )
 from core.storage.postgres.backend import PgTenantStores, PostgresBackend
 from core.storage.postgres.pool import PgPool
@@ -34,5 +35,6 @@ __all__ = [
     "PgSettings",
     "PgTenantStores",
     "PgTiers",
+    "PgTopupStore",
     "PostgresBackend",
 ]

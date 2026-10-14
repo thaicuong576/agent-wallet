@@ -39,9 +39,59 @@ flowchart LR
 - `core/storage/sqlite/tenant.py` holds the per-owner layout
   `DATA_DIR/owners/<0x lowercase address>/{state,audit,gateway.lock}.sqlite`. `tenant_dir`
   validates `^0x[0-9a-f]{40}$` and asserts the resolved path is inside `owners/`.
-- SQLite has no adapters yet for `KeystoreStore`, `OwnerRegistry`, `JobStore`,
-  `PolicySelectionStore`, `SettingsStore` (A2 and A3 own them); `api/auth.py` has its own
-  `SqliteAuthStore`. The Postgres backend implements every Protocol.
+- `core/storage/sqlite/webapp.py` (ticket W1) adds the webapp side of the SQLite layout and the
+  SQLite `StorageBackend`: `SqliteJobs`, `SqliteTopups` and `SqlitePolicySelection` share one
+  `webapp.sqlite` per owner, `SqliteSettings` reads `AGENT_WALLET_GLOBAL_STOP` and the
+  `GLOBAL_STOP` file (fail closed). `SqliteBackend` takes the intent store and the keystore
+  factories from `core.gateway.tenant.sqlite_backend`, because only `core.gateway` may import the
+  intents and custody modules. `api/auth.py` keeps `SqliteAuthStore`; the app passes it in.
+- `TopupStore` (`get`, `put`, `settle`) is a new Protocol on `TenantStores.topups`.
+  `JobStore.create` now carries the hourly limit (`limit`, `window`) so the one-active-job rule and
+  the rate limit are one atomic step on both backends; it raises `JobInProgress` or `RateLimited`.
+  `IntentStore` gained `get_intent`, which the gateway already called on the SQLite store.
+- `StorageBackend` also exposes `keystore_admin()` (an unbound keystore handle: asking whether an
+  owner has a wallet creates nothing) and `mark_jobs_interrupted()` (startup recovery).
+
+## One app, two backends (W1)
+
+```mermaid
+flowchart LR
+    API[api/main.py<br/>build_webapp] -->|create_backend| F[factory.py<br/>DATABASE_URL?]
+    F -->|unset| SB[SqliteBackend<br/>DATA_DIR]
+    F -->|set| PB[PostgresBackend<br/>pool]
+    API --> TR[TenantRegistry<br/>backend.open_tenant]
+    TR --> TS[TenantStores<br/>tiers, audit, intents, ledger,<br/>lock, keystore, jobs, topups]
+    SB --> TS
+    PB --> TS
+    TS --> GW[Gateway]
+    API --> AU[AuthService<br/>backend.auth]
+    API --> GS[global stop<br/>backend.settings OR env OR file]
+```
+
+`TenantRegistry` builds every per-owner object from `backend.open_tenant(owner)`; the gateway,
+runner and routes see Protocols only. `AuditSinkView` (in `core/gateway/tenant.py`) gives the
+gateway and the chain verifier the `records`, iteration and indexing surface over any `AuditStore`.
+The keystore blob goes through `TenantStores.keystore`: a `0600` file on SQLite, an encrypted row on
+Postgres. On Postgres the owner row is written just before the first keystore row, using the public `address`
+field of the encrypted blob, and a sign-in repairs a missing owner row. The gateway of each tenant
+gets the same operator stop as the job service: environment, the `GLOBAL_STOP` file or the backend
+`settings` row, any error reading as set.
+
+Startup (`api/main.py`, `AGENT_WALLET_MODE=multi`): with `DATABASE_URL` set the app runs
+`backend.migrate()` only when `DATABASE_MIGRATE_URL` is also set; otherwise it runs
+`verify_schema()` and refuses to start (clear error, nothing served) when the schema is behind.
+Nothing connects at import time or in single mode.
+
+### Migration 0003: row-level security on every table
+
+`0003_rls_all_tables.sql` enables RLS on `schema_migrations`, `owners`, `nonces`, `sessions`,
+`stepup_challenges` and `settings` (the six tables the Supabase advisor flagged) and, only when the
+role `aw_app` exists, adds a permissive policy `TO aw_app`, so the data API roles (`anon`,
+`authenticated`) get no rows even if a grant is ever added, and the application role keeps working.
+It also grants `aw_app` read access to `schema_migrations` (the schema check) and adds the columns
+the services use: `jobs.seqs` (audit sequence numbers, ids only) and `topups.block_number`.
+Tests: `tests/storage/test_migration_0003.py` (static SQL checks always; the migrated schema and the
+role behaviour when `TEST_DATABASE_URL` is set).
 
 ## Contract suite
 
@@ -107,5 +157,6 @@ hold and RLS is bypassed (design 15.4 fallback).
   `TEST_DATABASE_URL=postgresql://postgres:x@localhost:5432/postgres pytest tests/storage`.
   Without `TEST_DATABASE_URL` the Postgres tests are skipped with a stated reason.
 - `docker compose up --build` starts `db` (`postgres:16`, volume `pgdata`, healthcheck
-  `pg_isready`) and `api` with `DATABASE_URL` composed from `POSTGRES_PASSWORD`. Wiring the app to
-  the backend at startup belongs to the API tickets.
+  `pg_isready`) and `api` with `DATABASE_URL` composed from `POSTGRES_PASSWORD`. The multi-owner app
+  now runs on this backend (ticket W1); `tests/webapp/test_storage_backends.py` covers sign-in,
+  a mint job, isolation, restart and a pooler-style run on `sqlite` and `postgres`.

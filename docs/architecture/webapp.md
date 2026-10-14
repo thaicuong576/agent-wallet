@@ -6,10 +6,11 @@ Source of truth: `docs/design/webapp/system-design.md` sections 5, 8, 10, 11, 12
 
 | Module | Role |
 | :--- | :--- |
-| `api/wallet.py` | `WebappServices`, `current_tenant` (the session owner's tenant), `WalletService` (live balances, gas floor, top-up verification through an injected RPC callable), `TopupStore`, routes `/me`, `/agent`, `/topups`, `/presets`, `/audit/verify` |
-| `api/jobs.py` | `JobService` (`start`, `get`, `list`, `mark_interrupted_on_startup`), `SqliteJobs` (the jobs table), `JobLimits`, routes `/agent/mint`, `/agent/withdraw`, `/runs`, `/jobs` |
+| `api/wallet.py` | `WebappServices`, `current_tenant` (the session owner's tenant), `WalletService` (live balances, gas floor, top-up verification through an injected RPC callable), the top-up service over `tenant.stores.topups`, routes `/me`, `/agent`, `/topups`, `/presets`, `/audit/verify` |
+| `api/jobs.py` | `JobService` (`start`, `get`, `list`, `mark_interrupted_on_startup`), `JobLimits` (the job rows live in `tenant.stores.jobs`; `SqliteJobs` is re-exported from `core/storage/sqlite/webapp.py`), routes `/agent/mint`, `/agent/withdraw`, `/runs`, `/jobs` |
 | `core/agent/planner.py` | `FallbackPlanner`: deterministic, labelled `fallback` |
-| `api/main.py` | In `AGENT_WALLET_MODE=multi`, builds the services from the environment (RPC URL, keystore secret, data directory) |
+| `api/main.py` | In `AGENT_WALLET_MODE=multi`, builds the services from the environment (RPC URL, keystore secret, `DATABASE_URL` or data directory) and the `StorageBackend` |
+| `core/gateway/tenant.py` | `TenantRegistry(settings, rpc, backend=...)` builds every per-owner object from `backend.open_tenant(owner)` |
 
 ## Flow
 
@@ -18,7 +19,7 @@ flowchart LR
   B[Browser] -->|cookie, CSRF header| R[routes]
   R -->|owner from session only| T[TenantRegistry.open]
   R --> J[JobService.start]
-  J -->|one active job, hourly count| DB[(webapp.sqlite jobs)]
+  J -->|one active job, hourly count| DB[(JobStore: webapp.sqlite or jobs table)]
   J --> W[worker pool, 4 threads]
   W -->|gas floor, stop checks| G{gate}
   G -->|run| RN[Runner: Reader, Planner or Fallback]
@@ -32,7 +33,7 @@ flowchart LR
 
 ## Entity-relationship diagram (SQLite backend, per owner directory)
 
-Auth rows are global; the others live in `DATA_DIR/owners/<0x address>/`. The Postgres layout of design section 11 is the same entities with an `owner` column; ticket P2 adds it.
+Auth rows are global; the others live in `DATA_DIR/owners/<0x address>/`. The Postgres layout of design section 11 is the same entities with an `owner` column (ticket P2); since ticket W1 the app runs on either, chosen by `DATABASE_URL` (see [`storage.md`](storage.md)).
 
 ```mermaid
 erDiagram
@@ -95,11 +96,11 @@ Limits (one place, `JobLimits`): 6 runs per owner per hour, 4 mint calls per own
 
 ## Owner path and ticket C3
 
-Mint and withdraw call `Gateway.propose(order, origin="owner")` through `propose_with_origin`, which passes the keyword only when the gateway accepts it. Until C3 lands the call is a plain `propose` and the engine denies the owner function (`ACCESS.OWNER_ONLY_FUNCTION`): fail closed. The operator global stop is an injected callable (`AGENT_WALLET_GLOBAL_STOP=1` or `DATA_DIR/GLOBAL_STOP`; unreadable counts as set).
+Mint and withdraw call `Gateway.propose(order, origin="owner")` through `propose_with_origin`, which passes the keyword only when the gateway accepts it. Until C3 lands the call is a plain `propose` and the engine denies the owner function (`ACCESS.OWNER_ONLY_FUNCTION`): fail closed. The operator global stop is an injected callable: the backend setting (`settings` row on Postgres), `AGENT_WALLET_GLOBAL_STOP=1` or `DATA_DIR/GLOBAL_STOP`; any one of them stops, and an unreadable flag counts as set.
 
 ## Wiring in `api/main.py` (`AGENT_WALLET_MODE=multi`)
 
-`build_webapp` reads the environment only and opens no connection. Risk inputs for the policy engine are the repository's reference file stamped fresh (`reference_risk_inputs`, the same values `scripts/live_first_tx.py` uses; Base Sepolia has no indexer for them), because without them every `supply` is denied as `RISK.DATA_STALE`. The keystore secret is optional at start: reads work and wallet creation fails closed with `503 custody-unavailable`.
+`build_webapp` reads the environment only and opens no connection (on Postgres the one exception is the schema check, which is the point: see [`storage.md`](storage.md)). Risk inputs for the policy engine are the repository's reference file stamped fresh (`reference_risk_inputs`, the same values `scripts/live_first_tx.py` uses; Base Sepolia has no indexer for them), because without them every `supply` is denied as `RISK.DATA_STALE`. The keystore secret is optional at start: reads work and wallet creation fails closed with `503 custody-unavailable`.
 
 ## Proving checks
 
@@ -114,3 +115,8 @@ Mint and withdraw call `Gateway.propose(order, origin="owner")` through `propose
 | Gas floor before mint, run and withdraw | `test_jobs.py::test_gas_below_floor_fails_before_anything_is_proposed` |
 | Cross-owner isolation | `tests/webapp/test_routes.py::test_session_a_cannot_read_owner_b_state` and the other isolation tests |
 | `origin="owner"` only in `api/jobs.py` | `test_jobs.py::test_origin_owner_literal_only_in_jobs_module` |
+| Keystore, chain and jobs survive a restart on both backends | `tests/webapp/test_storage_backends.py::test_restart_keeps_keystore_and_chain`, `test_running_job_is_interrupted_after_restart` |
+| Sign-in creates the tenant and a keystore row | `test_storage_backends.py::test_sign_in_creates_tenant_and_keystore` |
+| A second owner cannot read the first owner's rows | `test_storage_backends.py::test_second_owner_cannot_read_first_owners_rows` |
+| Works through a transaction-mode pooler (no session state) | `test_storage_backends.py::test_every_statement_works_on_a_fresh_connection` |
+| `migrate()` is not called without `DATABASE_MIGRATE_URL`; a schema that is behind fails closed | `test_storage_backends.py::test_app_role_without_migrate_url_only_checks_the_schema`, `test_schema_behind_the_code_fails_closed`, `test_postgres_behind_schema_refuses_to_start` |

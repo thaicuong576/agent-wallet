@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 from core.audit.sink import SqliteAuditSink
 from core.gateway.lock import GatewayLock
@@ -46,6 +47,11 @@ class SqliteTenantStores:
     intents: IntentStore
     ledger: SqliteLedgerQueries
     lock: SqliteGatewayLockProvider
+    # Webapp stores: set by SqliteBackend, left None by the bare open_tenant helper.
+    keystore: Any = None
+    jobs: Any = None
+    policy_selection: Any = None
+    topups: Any = None
 
     def close(self) -> None:
         self.tier_read.close()
