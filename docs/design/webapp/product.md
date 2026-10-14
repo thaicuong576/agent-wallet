@@ -1,6 +1,6 @@
 # Product: agent-wallet webapp
 
-Status: framing for ticket #71 (owner addendum 1). Companion to [`design.md`](design.md). Testnet only (Base Sepolia, chain 84532). Not financial advice.
+Status: framing for ticket #71 (owner addendum 1). Companion to [`system-design.md`](system-design.md). Testnet only (Base Sepolia, chain 84532). Not financial advice.
 
 ## 1. Who it is for
 An **individual who holds stablecoins** and wants an agent to manage them: park idle USDC in a lending market, keep inside limits, and never wake up to a surprise. They are comfortable with a browser wallet (MetaMask) but do not want to run scripts, and they do not want to hand a bot their private key.
