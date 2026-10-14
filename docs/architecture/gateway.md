@@ -141,7 +141,34 @@ erDiagram
 
 1. **Default deny**: If no policy is provided, `DenyAllPolicy` is enforced, denying all proposed orders with `ACCESS.TOKEN_NOT_ALLOWED`. The simulator and signer are never called.
 2. **Pre-flight simulate-before-sign**: On allowed orders, all transaction calls are simulated with `Simulator` before any signing occurs. If simulation fails, the transaction is rejected with outcome `failed` (`SIMULATION_FAILED`) and the signer is never called.
-3. **Idempotency**: Every `order_id` is tracked. A repeat order with the exact same content returns the stored `DecisionRecord` without re-evaluating or re-signing. Reusing an existing `order_id` with a different body raises `OrderIdConflict`.
+3. **Idempotency from the audit log**: Every `order_id` is looked up in the audit log (`find_by_order_id`, latest record) under the gateway lock. A repeat with the exact same body returns the stored `DecisionRecord` without re-evaluating or re-signing, also after a process restart. A different body for a known `order_id` raises `OrderIdConflict`. A `failed` record is terminal for that `order_id`.
 4. **Append-only cryptographic hash chain**: Audit records are chained using canonical JSON serialization and SHA-256 (`hash = sha256(canonical(record - {hash}))`). The first record points to `0` * 64, and each subsequent record links to `prev_hash`.
 5. **Zero key exposure**: Error messages and execution details are sanitized to redact any private keys or raw exception data.
 6. **Signer isolation**: Enforced by `tests/test_signer_boundary.py` and CI: only `core.gateway` may import `core.signer`.
+7. **Gateway lock**: `GatewayLock` (a SQLite `BEGIN IMMEDIATE` on `gateway.lock.sqlite` next to the audit file) is acquired at the start of `propose`, before limits are read, and held through the audit append. Two processes cannot both pass a limit. On timeout `GatewayBusy` is raised and nothing is signed or recorded (fail closed).
+8. **Order intents**: Before the signer is called, `IntentStore.begin_signing` inserts a row into `order_intents` (insert-only, UPDATE and DELETE are blocked by triggers). If the process dies between signing and the audit append, the next `propose` of that `order_id` finds an intent without an `executed` or `failed` record and raises `ReconcileRequired`; the signer is not called again and no synthetic record is written. Only `core.gateway` may import `core.gateway.intents` (`tests/test_intent_boundary.py`).
+9. **`record_no_action`**: lets the runner record a `no_action` decision (no order, no `order_id`) through the gateway, so the audit sink stays written only by the gateway.
+
+```mermaid
+sequenceDiagram
+    participant R as Runner
+    participant G as Gateway
+    participant L as GatewayLock
+    participant A as Audit log
+    participant I as order_intents
+    participant S as Signer
+    R->>G: propose(order)
+    G->>L: held() (timeout -> GatewayBusy)
+    G->>A: find_by_order_id
+    alt record exists
+        G-->>R: stored record (or OrderIdConflict)
+    else intent without record
+        G-->>R: ReconcileRequired
+    else new order
+        G->>G: policy (limits from audit log), simulate
+        G->>I: begin_signing
+        G->>S: sign_and_send
+        G->>A: append
+        G-->>R: record
+    end
+```

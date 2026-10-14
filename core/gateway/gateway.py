@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import functools
+import hashlib
 import json
 import pathlib
 import re
@@ -16,8 +17,15 @@ from typing import Any
 
 import jsonschema
 
-from core.gateway.audit import AuditSink, InMemoryAuditSink
-from core.gateway.exceptions import GatewayError, InvalidOrder, OrderIdConflict
+from core.gateway.audit import AuditSink, InMemoryAuditSink, canonical
+from core.gateway.exceptions import (
+    GatewayError,
+    InvalidOrder,
+    OrderIdConflict,
+    ReconcileRequired,
+)
+from core.gateway.intents import IntentStore
+from core.gateway.lock import GatewayLock
 from core.gateway.policy import DEFAULT_IPS_HASH, DenyAllPolicy, Policy
 from core.signer import Signer
 from core.simulate import Simulator
@@ -57,6 +65,8 @@ class Gateway:
         emergency_stop: bool = False,
         tier_view: Any | None = None,
         request_approval: Callable[[str], None] | None = None,
+        lock: GatewayLock | None = None,
+        intent_store: IntentStore | None = None,
     ) -> None:
         self.ips_hash = ips_hash or getattr(policy, "ips_hash", None) or DEFAULT_IPS_HASH
         self.policy: Policy = (
@@ -71,9 +81,21 @@ class Gateway:
         self.emergency_stop = emergency_stop
         self.tier_view = tier_view
         self.request_approval = request_approval
-        self._orders: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
-        # Orders that reached the signing step but were not recorded: never retried automatically.
-        self._in_flight: set[str] = set()
+
+        if lock is not None:
+            self.lock = lock
+        elif hasattr(self.audit_sink, "db_path") and self.audit_sink.db_path != ":memory:":
+            lock_path = pathlib.Path(self.audit_sink.db_path).parent / "gateway.lock.sqlite"
+            self.lock = GatewayLock(lock_path)
+        else:
+            self.lock = GatewayLock(":memory:")
+
+        if intent_store is not None:
+            self.intent_store = intent_store
+        elif hasattr(self.audit_sink, "db_path"):
+            self.intent_store = IntentStore(self.audit_sink.db_path)
+        else:
+            self.intent_store = IntentStore(":memory:")
 
     def _now_iso(self) -> str:
         if self.clock is not None:
@@ -233,7 +255,9 @@ class Gateway:
                 sign_failed = True
                 sign_err_msg = "Signer not configured"
             else:
-                self._in_flight.add(order_id)
+                if self.intent_store is not None:
+                    body_hash = hashlib.sha256(canonical(order)).hexdigest()
+                    self.intent_store.begin_signing(order_id, body_hash, self._now_iso())
                 for call in calls:
                     try:
                         receipt = self.signer.sign_and_send(call)
@@ -294,6 +318,47 @@ class Gateway:
 
         return outcome, execution
 
+    def record_no_action(self, reason: str, now: str) -> dict[str, Any]:
+        """Record a no_action decision directly into the audit sink."""
+        current_tier, emergency_stop = self._read_tier_and_stop()
+        clean_reason = str(reason).strip()[:500] if str(reason).strip() else "no action"
+        record = {
+            "schema_version": 1,
+            "seq": 0,
+            "order_id": None,
+            "order": None,
+            "decision": None,
+            "no_action": {
+                "rules_hit": [],
+                "reason": clean_reason,
+            },
+            "outcome": "no_action",
+            "execution": None,
+            "approval": None,
+            "tier": current_tier,
+            "emergency_stop": emergency_stop,
+            "ips_hash": self.ips_hash,
+            "created_at": now,
+            "prev_hash": "0" * 64,
+            "hash": "0" * 64,
+        }
+        stored_record = self.audit_sink.append(record)
+        dr_validator = _get_validator("decision-record")
+        dr_errors = list(dr_validator.iter_errors(stored_record))
+        if dr_errors:
+            raise GatewayError(f"DecisionRecord failed schema validation: {dr_errors[0].message}")
+        return copy.deepcopy(stored_record)
+
+    def _find_audit_record(self, order_id: str) -> dict[str, Any] | None:
+        """Find latest audit record for order_id from audit sink."""
+        if hasattr(self.audit_sink, "find_by_order_id"):
+            return self.audit_sink.find_by_order_id(order_id)
+        if hasattr(self.audit_sink, "records"):
+            for rec in reversed(self.audit_sink.records):
+                if rec.get("order_id") == order_id:
+                    return rec
+        return None
+
     def propose(self, order: dict[str, Any]) -> dict[str, Any]:
         """Propose an order through policy evaluation, simulation, signing, and audit recording."""
         # 1. Validate order against order.schema.json
@@ -307,199 +372,210 @@ class Gateway:
 
         order_id = order["order_id"]
 
-        # 2. In-flight check
-        if order_id in self._in_flight:
-            raise GatewayError(
-                f"Order {order_id} reached signing but was not recorded; reconcile before retrying"
-            )
+        with self.lock.held():
+            # 2. Idempotency check via audit log and intent store
+            stored_record = self._find_audit_record(order_id)
+            if stored_record is not None:
+                stored_order = stored_record.get("order")
+                if order != stored_order:
+                    raise OrderIdConflict(
+                        f"Order ID {order_id} conflict: different order body already recorded"
+                    )
 
-        # 3. Read tier and stop status per propose (fail-closed)
-        current_tier, emergency_stop = self._read_tier_and_stop()
+                current_tier, emergency_stop = self._read_tier_and_stop()
+                tier_deny_decision = self._tier_gate(order_id, current_tier, emergency_stop)
+                approval_status, decided_at, decided_by = self._get_approval_info(order_id)
 
-        # 4. Check emergency stop and read-only tiers
-        tier_deny_decision = self._tier_gate(order_id, current_tier, emergency_stop)
-
-        # 5. Check approval status for escalated orders
-        approval_status, decided_at, decided_by = self._get_approval_info(order_id)
-
-        # 6. Idempotency: same order_id never executes twice
-        if order_id in self._orders:
-            stored_order, stored_record = self._orders[order_id]
-            if order != stored_order:
-                raise OrderIdConflict(
-                    f"Order ID {order_id} conflict: different order body already recorded"
+                is_emergency_stop_denial = stored_record.get("outcome") == "denied" and any(
+                    h.get("code") == "TIER.EMERGENCY_STOP"
+                    for h in stored_record.get("decision", {}).get("rules_hit", [])
                 )
-            # If the order was denied due to emergency stop, releasing the stop allows again
-            is_emergency_stop_denial = stored_record.get("outcome") == "denied" and any(
-                h.get("code") == "TIER.EMERGENCY_STOP"
-                for h in stored_record.get("decision", {}).get("rules_hit", [])
-            )
-            # Re-propose of a pending order only advances if stopped, approved, or rejected
-            if stored_record["outcome"] == "pending_approval":
-                if tier_deny_decision is None and approval_status not in ("approved", "rejected"):
+                if stored_record.get("outcome") in ("executed", "failed"):
                     return copy.deepcopy(stored_record)
-            elif is_emergency_stop_denial and not emergency_stop:
-                # Emergency stop was released: allow the order to be re-evaluated
-                pass
-            else:
+                elif stored_record.get("outcome") == "pending_approval":
+                    if tier_deny_decision is None and approval_status not in (
+                        "approved",
+                        "rejected",
+                    ):
+                        return copy.deepcopy(stored_record)
+                elif is_emergency_stop_denial and not emergency_stop:
+                    pass
+                else:
+                    return copy.deepcopy(stored_record)
+            elif self.intent_store is not None and self.intent_store.unfinished(order_id):
+                intent = self.intent_store.get_intent(order_id)
+                if intent:
+                    body_h = hashlib.sha256(canonical(order)).hexdigest()
+                    if intent.get("body_hash") != body_h:
+                        raise OrderIdConflict(
+                            f"Order ID {order_id} conflict: "
+                            "different order body already recorded in intent"
+                        )
+                raise ReconcileRequired(
+                    f"Order {order_id} has an unfinished signing intent; manual reconcile required"
+                )
+
+            # 3. Read tier and stop status per propose (fail-closed)
+            current_tier, emergency_stop = self._read_tier_and_stop()
+
+            # 4. Check emergency stop and read-only tiers
+            tier_deny_decision = self._tier_gate(order_id, current_tier, emergency_stop)
+
+            # 5. Check approval status for escalated orders
+            approval_status, decided_at, decided_by = self._get_approval_info(order_id)
+
+            now_str = self._now_iso()
+
+            # 6. Fail-safe: tier or emergency stop denial
+            if tier_deny_decision is not None:
+                record = {
+                    "schema_version": 1,
+                    "seq": 0,
+                    "order_id": order_id,
+                    "order": copy.deepcopy(order),
+                    "decision": copy.deepcopy(tier_deny_decision),
+                    "no_action": None,
+                    "outcome": "denied",
+                    "execution": None,
+                    "approval": None,
+                    "tier": current_tier,
+                    "emergency_stop": emergency_stop,
+                    "ips_hash": self.ips_hash,
+                    "created_at": now_str,
+                    "prev_hash": "0" * 64,
+                    "hash": "0" * 64,
+                }
+                stored_record = self.audit_sink.append(record)
+                dr_validator = _get_validator("decision-record")
+                dr_errors = list(dr_validator.iter_errors(stored_record))
+                if dr_errors:
+                    raise GatewayError(
+                        f"DecisionRecord failed schema validation: {dr_errors[0].message}"
+                    )
                 return copy.deepcopy(stored_record)
 
-        now_str = self._now_iso()
-
-        # 7. Fail-safe: tier or emergency stop denial
-        if tier_deny_decision is not None:
-            record = {
-                "schema_version": 1,
-                "seq": 0,
-                "order_id": order_id,
-                "order": copy.deepcopy(order),
-                "decision": copy.deepcopy(tier_deny_decision),
-                "no_action": None,
-                "outcome": "denied",
-                "execution": None,
-                "approval": None,
-                "tier": current_tier,
-                "emergency_stop": emergency_stop,
-                "ips_hash": self.ips_hash,
-                "created_at": now_str,
-                "prev_hash": "0" * 64,
-                "hash": "0" * 64,
-            }
-            stored_record = self.audit_sink.append(record)
-            dr_validator = _get_validator("decision-record")
-            dr_errors = list(dr_validator.iter_errors(stored_record))
-            if dr_errors:
-                raise GatewayError(
-                    f"DecisionRecord failed schema validation: {dr_errors[0].message}"
-                )
-            self._orders[order_id] = (copy.deepcopy(order), copy.deepcopy(stored_record))
-            return copy.deepcopy(stored_record)
-
-        # 8. Handling rejected orders: never executes
-        if approval_status == "rejected":
-            reject_decision = {
-                "schema_version": 1,
-                "order_id": order_id,
-                "decision": "deny",
-                "rules_hit": [
-                    {
-                        "code": "TIER.APPROVAL_REJECTED",
-                        "evidence": {"order_id": order_id},
-                    }
-                ],
-                "reason": "The owner rejected the pending order.",
-                "ips_hash": self.ips_hash,
-                "decided_at": now_str,
-            }
-            record = {
-                "schema_version": 1,
-                "seq": 0,
-                "order_id": order_id,
-                "order": copy.deepcopy(order),
-                "decision": reject_decision,
-                "no_action": None,
-                "outcome": "denied",
-                "execution": None,
-                "approval": {
-                    "status": "rejected",
-                    "by": decided_by or "owner",
-                    "at": decided_at or now_str,
-                },
-                "tier": current_tier,
-                "emergency_stop": emergency_stop,
-                "ips_hash": self.ips_hash,
-                "created_at": now_str,
-                "prev_hash": "0" * 64,
-                "hash": "0" * 64,
-            }
-            stored_record = self.audit_sink.append(record)
-            dr_validator = _get_validator("decision-record")
-            dr_errors = list(dr_validator.iter_errors(stored_record))
-            if dr_errors:
-                raise GatewayError(
-                    f"DecisionRecord failed schema validation: {dr_errors[0].message}"
-                )
-            self._orders[order_id] = (copy.deepcopy(order), copy.deepcopy(stored_record))
-            return copy.deepcopy(stored_record)
-
-        # 9. Policy evaluation
-        raw_decision = self.policy.evaluate(order)
-        if not isinstance(raw_decision, dict):
-            raise GatewayError("Policy evaluate must return a dictionary")
-
-        decision = dict(raw_decision)
-        if "schema_version" not in decision:
-            decision["schema_version"] = 1
-        if "order_id" not in decision or decision["order_id"] is None:
-            decision["order_id"] = order_id
-        if "ips_hash" not in decision or decision["ips_hash"] is None:
-            decision["ips_hash"] = self.ips_hash
-        if "decided_at" not in decision or decision["decided_at"] is None:
-            decision["decided_at"] = self._now_iso()
-
-        decision_validator = _get_validator("decision")
-        dec_errors = list(decision_validator.iter_errors(decision))
-        if dec_errors:
-            raise GatewayError(f"Decision failed schema validation: {dec_errors[0].message}")
-
-        dec_outcome = decision["decision"]
-        outcome: str
-        execution: dict[str, Any] | None = None
-        approval: dict[str, Any] | None = None
-
-        if dec_outcome == "deny":
-            outcome = "denied"
-            execution = None
-        elif dec_outcome == "escalate":
-            if approval_status == "approved":
-                approval = {
-                    "status": "approved",
-                    "by": decided_by or "owner",
-                    "at": decided_at or now_str,
+            # 7. Handling rejected orders: never executes
+            if approval_status == "rejected":
+                reject_decision = {
+                    "schema_version": 1,
+                    "order_id": order_id,
+                    "decision": "deny",
+                    "rules_hit": [
+                        {
+                            "code": "TIER.APPROVAL_REJECTED",
+                            "evidence": {"order_id": order_id},
+                        }
+                    ],
+                    "reason": "The owner rejected the pending order.",
+                    "ips_hash": self.ips_hash,
+                    "decided_at": now_str,
                 }
+                record = {
+                    "schema_version": 1,
+                    "seq": 0,
+                    "order_id": order_id,
+                    "order": copy.deepcopy(order),
+                    "decision": reject_decision,
+                    "no_action": None,
+                    "outcome": "denied",
+                    "execution": None,
+                    "approval": {
+                        "status": "rejected",
+                        "by": decided_by or "owner",
+                        "at": decided_at or now_str,
+                    },
+                    "tier": current_tier,
+                    "emergency_stop": emergency_stop,
+                    "ips_hash": self.ips_hash,
+                    "created_at": now_str,
+                    "prev_hash": "0" * 64,
+                    "hash": "0" * 64,
+                }
+                stored_record = self.audit_sink.append(record)
+                dr_validator = _get_validator("decision-record")
+                dr_errors = list(dr_validator.iter_errors(stored_record))
+                if dr_errors:
+                    raise GatewayError(
+                        f"DecisionRecord failed schema validation: {dr_errors[0].message}"
+                    )
+                return copy.deepcopy(stored_record)
+
+            # 8. Policy evaluation
+            raw_decision = self.policy.evaluate(order)
+            if not isinstance(raw_decision, dict):
+                raise GatewayError("Policy evaluate must return a dictionary")
+
+            decision = dict(raw_decision)
+            if "schema_version" not in decision:
+                decision["schema_version"] = 1
+            if "order_id" not in decision or decision["order_id"] is None:
+                decision["order_id"] = order_id
+            if "ips_hash" not in decision or decision["ips_hash"] is None:
+                decision["ips_hash"] = self.ips_hash
+            if "decided_at" not in decision or decision["decided_at"] is None:
+                decision["decided_at"] = self._now_iso()
+
+            decision_validator = _get_validator("decision")
+            dec_errors = list(decision_validator.iter_errors(decision))
+            if dec_errors:
+                raise GatewayError(f"Decision failed schema validation: {dec_errors[0].message}")
+
+            dec_outcome = decision["decision"]
+            outcome: str
+            execution: dict[str, Any] | None = None
+            approval: dict[str, Any] | None = None
+
+            if dec_outcome == "deny":
+                outcome = "denied"
+                execution = None
+            elif dec_outcome == "escalate":
+                if approval_status == "approved":
+                    approval = {
+                        "status": "approved",
+                        "by": decided_by or "owner",
+                        "at": decided_at or now_str,
+                    }
+                    outcome, execution = self._execute_order(order, order_id)
+                else:
+                    outcome = "pending_approval"
+                    execution = None
+                    if self.request_approval is not None and approval_status is None:
+                        try:
+                            self.request_approval(order_id)
+                        except Exception:
+                            pass
+            elif dec_outcome == "allow":
                 outcome, execution = self._execute_order(order, order_id)
             else:
-                outcome = "pending_approval"
-                execution = None
-                if self.request_approval is not None and approval_status is None:
-                    try:
-                        self.request_approval(order_id)
-                    except Exception:
-                        pass
-        elif dec_outcome == "allow":
-            outcome, execution = self._execute_order(order, order_id)
-        else:
-            raise GatewayError(f"Unsupported decision outcome: {dec_outcome}")
+                raise GatewayError(f"Unsupported decision outcome: {dec_outcome}")
 
-        # 10. Construct DecisionRecord and append to audit sink
-        record = {
-            "schema_version": 1,
-            "seq": 0,
-            "order_id": order_id,
-            "order": copy.deepcopy(order),
-            "decision": copy.deepcopy(decision),
-            "no_action": None,
-            "outcome": outcome,
-            "execution": copy.deepcopy(execution),
-            "approval": copy.deepcopy(approval),
-            "tier": current_tier,
-            "emergency_stop": emergency_stop,
-            "ips_hash": self.ips_hash,
-            "created_at": now_str,
-            "prev_hash": "0" * 64,
-            "hash": "0" * 64,
-        }
+            # 9. Construct DecisionRecord and append to audit sink
+            record = {
+                "schema_version": 1,
+                "seq": 0,
+                "order_id": order_id,
+                "order": copy.deepcopy(order),
+                "decision": copy.deepcopy(decision),
+                "no_action": None,
+                "outcome": outcome,
+                "execution": copy.deepcopy(execution),
+                "approval": copy.deepcopy(approval),
+                "tier": current_tier,
+                "emergency_stop": emergency_stop,
+                "ips_hash": self.ips_hash,
+                "created_at": now_str,
+                "prev_hash": "0" * 64,
+                "hash": "0" * 64,
+            }
 
-        stored_record = self.audit_sink.append(record)
+            stored_record = self.audit_sink.append(record)
 
-        # Validate returned record against decision-record.schema.json
-        dr_validator = _get_validator("decision-record")
-        dr_errors = list(dr_validator.iter_errors(stored_record))
-        if dr_errors:
-            raise GatewayError(f"DecisionRecord failed schema validation: {dr_errors[0].message}")
+            # Validate returned record against decision-record.schema.json
+            dr_validator = _get_validator("decision-record")
+            dr_errors = list(dr_validator.iter_errors(stored_record))
+            if dr_errors:
+                raise GatewayError(
+                    f"DecisionRecord failed schema validation: {dr_errors[0].message}"
+                )
 
-        # Store for idempotency; the order is now safely recorded
-        self._orders[order_id] = (copy.deepcopy(order), copy.deepcopy(stored_record))
-        self._in_flight.discard(order_id)
-
-        return copy.deepcopy(stored_record)
+            return copy.deepcopy(stored_record)
