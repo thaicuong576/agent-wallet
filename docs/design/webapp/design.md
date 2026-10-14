@@ -4,17 +4,35 @@ Status: final design (Phase B). Risk label: **`rủi-ro-cao`**. This design move
 
 Inputs: [`proposal.md`](proposal.md), [`product.md`](product.md), the orchestrator's `advice-webapp-1.md` (applied point by point in section 17) and owner addendum 1 (applied in sections 3, 14, 15 and 16). Testnet only, chain 84532. Nothing here is built yet; "enforced" means "enforced by the named test once its ticket lands".
 
+Addendum 2 (owner decisions, 14 Oct night) is applied throughout and summarised here.
+
+## Amendments (addendum 2)
+
+| Section | Change |
+| :--- | :--- |
+| 1 | Summary rows for custody, tenancy, deployment and staging updated; storage row added |
+| 2 | Component diagram: stores sit behind a storage interface with SQLite and Postgres backends |
+| 3 | Rate-limit, backup and secrets rows updated (no mint amount cap; provider backups plus export) |
+| 4 | Keystore is an encrypted row (Postgres) or file (SQLite), never plaintext; secret still from env |
+| **5** | **Rewritten**: storage interface (Protocols), Postgres design (owner column plus RLS, append-only triggers and grants, advisory locks, migrations, pooling), one parametrised contract suite for both backends |
+| 7 | **No mint amount cap in our contract**; the faucet's on-chain maximum and cooldown apply; token and faucet address pinned; owner-origin only; rate limit is a call count per owner per hour (4). Rule codes `LIMIT.MINT_PER_CALL` and `LIMIT.MINT_PER_DAY` removed. Additive enums confirmed; ETH `transfer` outside USD limits confirmed |
+| 9 | Global stop also readable from a database `settings` row; fail closed |
+| **11** | **Rewritten**: ERD with `owner` columns and composite keys |
+| **15** | **Rewritten**: Render free web service plus Supabase Postgres, deploy steps, post-deploy checks, cold start, keep-warm, backup |
+| **16** | **Rewritten**: lane P added; Stage 0 re-dated to 18 Oct (owner accepted); who starts tonight; owner approval items including the Postgres driver; cut order puts the hosted demo behind the polish items |
+| 17, 19, 20, 21 | Mint rows, new threats (database credentials, SQL injection, provider pause), new tests, decided open questions |
+
 ## 1. Summary of decisions
 
 | # | Question | Decision |
 | :--- | :--- | :--- |
-| 1 | Key custody | `eth_account` keystore per owner, written and read only in `core/gateway/custody.py`; secret from `AGENT_WALLET_KEYSTORE_SECRET`; decrypted once per process and cached in the signer; **custodial and testnet only**, stated on every page |
-| 2 | Multi-tenancy | One directory per owner, `DATA_DIR/owners/<0x lowercase address>/`; every existing store reused unchanged; owner address only from the session |
+| 1 | Key custody | `eth_account` keystore per owner (encrypted JSON), written and read only in `core/gateway/custody.py`, stored as a file (SQLite backend) or an encrypted row (Postgres); secret from `AGENT_WALLET_KEYSTORE_SECRET`; decrypted once per process and cached; **custodial and testnet only**, stated on every page |
+| 2 | Multi-tenancy | Storage behind Protocols with two backends: SQLite (directory per owner; local, replay, tests) and Postgres (one set of tables, `owner` column, composite keys, RLS; hosted). Owner address only from the session |
 | 3 | Auth | SIWE-style message verified with `eth_account`; HMAC session in an HttpOnly cookie; fresh owner signature only for actions that widen authority or move funds |
-| 4 | Order contract | New functions `mint` and `transfer`, new recipient `owner`, new token `ETH`, new protocol `wallet`; owner-only; additive under `schema_version` 1; IPS schema untouched |
+| 4 | Order contract | New functions `mint` and `transfer`, new recipient `owner`, new token `ETH`, new protocol `wallet`; owner-only; additive under `schema_version` 1 (owner confirmed); IPS schema untouched; **no mint amount cap in our contract** (the faucet enforces its own) |
 | 5 | Run flow | Jobs: `202` then poll; one active job per owner; single worker; planner labelled `openai`, `scripted` or `fallback` |
-| 6 | Deployment | `docker compose up` supported; Railway with volume optional; Render free unsafe; four container defects fixed in W0 |
-| 7 | Staging | Stage 0 demo path by 17 Oct, Stage 1 hardening by 19 Oct, Stage 2 roadmap only; Stage 0 wins every conflict |
+| 6 | Deployment | Render free web service (Docker) plus Supabase Postgres via `DATABASE_URL`; `docker compose up` brings up Postgres and the app, or SQLite in replay mode; four container defects fixed in W0 |
+| 7 | Staging | Stage 0 local demo path by 18 Oct (owner accepted), Stage 1 hardening and hosted demo by 19 Oct, Stage 2 roadmap only; Stage 0 wins every conflict; lane P (Postgres) blocks only the hosted demo |
 
 ## 2. Component diagram
 
@@ -53,11 +71,16 @@ flowchart LR
   GW --> SIM[Simulator]
   GW --> SG[core.signer, chain 84532 only]
   SG --> RPC[(Base Sepolia RPC)]
-  GW --> AUD[(owners/addr/audit.sqlite)]
+  GW --> AUD[(AuditStore)]
   ROUTES --> OC[OwnerControls]
-  OC --> TS[(owners/addr/state.sqlite)]
-  AUTH --> AUTHDB[(DATA_DIR/auth.sqlite)]
-  JOBS --> JDB[(owners/addr/webapp.sqlite)]
+  OC --> TS[(TierWrite)]
+  AUTH --> AUTHDB[(AuthStore)]
+  JOBS --> JDB[(JobStore)]
+  AUD --- BK{{StorageBackend: SQLite or Postgres}}
+  TS --- BK
+  AUTHDB --- BK
+  JDB --- BK
+  BK --> DB[(Supabase Postgres via DATABASE_URL, or local SQLite)]
 ```
 
 Boundaries that stay: only `core.gateway` imports `core.signer` and `core.gateway.custody`; the runner imports neither the signer nor `core.tiers.owner` nor `core.gateway.intents`; the LLM never holds a key.
@@ -68,9 +91,9 @@ Boundaries that stay: only `core.gateway` imports `core.signer` and `core.gatewa
 | :--- | :--- | :--- |
 | Custody model | Custodial testnet keys, encrypted at rest (section 4) | Non-custodial smart account; owner is root; the agent holds a **scoped session key** (token, function, amount, expiry, target allowlist). The same policy engine decides off-chain; the account contract enforces the same bounds on-chain. Changes: `custody.py` is replaced by a session-key registry, the owner signs a grant instead of the server generating a key, the gateway still simulates and signs but with a session-key signer, and `transfer` to owner becomes unnecessary because the owner keeps the root |
 | Per-owner isolation | Directory per owner (section 5) | Same layout on a managed database with per-tenant encryption keys; a process per tenant for high-value accounts |
-| Rate limits and abuse | Per owner: 6 runs/hour, mint 1,000 USDC per call and 3,000 per day, 10 sign-in challenges per address per hour; global: 50 new owners per day, mint total per day (section 12) | Per-IP and per-account limits at an edge proxy, CAPTCHA on registration, budget alarms on the LLM account |
+| Rate limits and abuse | Per owner: 6 runs/hour, 4 mint calls/hour (a count; the faucet enforces its own amount maximum and cooldown), 10 sign-in challenges per address per hour; global: 50 new owners per day (section 12) | Per-IP and per-account limits at an edge proxy, CAPTCHA on registration, budget alarms on the LLM account |
 | Observability | JSON logs with `request_id`, no secrets, redaction filter; `GET /audit/verify` per owner; `/health` and `/ready` | Metrics (run latency, deny rate, mint volume), alerts on chain-verify failure, tracing |
-| Backup and restore | Nightly copy of `DATA_DIR/owners/` with SQLite `.backup` per file; restore drill is a test (T-ops) | Encrypted off-site snapshots, point-in-time recovery |
+| Backup and restore | Postgres: the provider's backups where the plan has them (Supabase free: none, unverified) plus `python -m core.storage.export`; SQLite: online backup per file; restore drill is a test | Provider point-in-time recovery, encrypted off-site snapshots |
 | Key rotation | Secret rotation re-encrypts keystores (`..._PREVIOUS` accepted); agent key rotation sweeps funds via `transfer` | KMS-wrapped data keys, automatic rotation |
 | Secrets management | Env vars only, generated by `python -m core.gateway.setup`, never printed, never in the image or repo | Host secret store or KMS; separate secrets per environment |
 | CI/CD and environments | Local, CI (offline, fakes), hosted demo (optional). CI runs lint, tests, secret scan, signer and custody boundary checks, OpenAPI route equality, a headless login test and a compose smoke test | Staging with a funded test wallet, signed images, protected deploys |
@@ -83,40 +106,137 @@ Incident runbook (v1): (1) set the global stop (`touch DATA_DIR/GLOBAL_STOP`); (
 ## 4. Key custody (answer to item 1)
 
 - **Where:** `core/gateway/custody.py`, importable only by `core.gateway` modules. API code reaches it through `core/gateway/tenant.py`, which returns an address, a status, or a built `Gateway`, never a key.
-- **Format:** `Account.encrypt(key, secret, kdf=...)` (Web3 Secret Storage v3 JSON) at `owners/<addr>/keystore.json`, mode `0600`. Checked against `eth-account 0.14.0` (`Account.encrypt(private_key, password, kdf=None, iterations=None)`; default scrypt n=262144; measured 0.93 s per encrypt on the dev laptop; pbkdf2 0.52 s encrypt, 0.58 s decrypt).
+- **Format:** `Account.encrypt(key, secret, kdf=...)` (Web3 Secret Storage v3 JSON). Stored through `KeystoreStore`: a file `owners/<addr>/keystore.json` with mode `0600` (SQLite backend) or a row in `keystores` (Postgres). Either way only the encrypted JSON is stored, never a plaintext key, and `AGENT_WALLET_KEYSTORE_SECRET` exists only in the process environment. Checked against `eth-account 0.14.0` (`Account.encrypt(private_key, password, kdf=None, iterations=None)`; default scrypt n=262144; measured 0.93 s per encrypt on the dev laptop; pbkdf2 0.52 s encrypt, 0.58 s decrypt).
 - **KDF choice:** `AGENT_WALLET_KEYSTORE_KDF` = `scrypt` (default) or `pbkdf2` (for hosts under about 1 GB). Both are standard keystore KDFs; the value is stored in the JSON, so decrypt needs no setting.
 - **Secret:** `AGENT_WALLET_KEYSTORE_SECRET`, at least 32 random bytes (64 hex characters). Shorter or unset: wallet creation and signing fail closed with `503 custody-unavailable`; reads keep working.
 - **Decrypt once:** the first signing use after a start decrypts and builds `LocalSigner(private_key=...)`, which the tenant caches. `LocalSigner.__repr__` and `__str__` never print the key (control C3); custody adds the keystore JSON and the secret to the redaction list.
 - **Rotation:** `python -m core.gateway.custody rotate` re-encrypts every keystore from `AGENT_WALLET_KEYSTORE_SECRET_PREVIOUS` to the new secret and checks the address is unchanged; run offline or with the global stop set. Agent key rotation = `transfer` to the owner, create a new wallet, re-fund.
-- **Attacker with the data volume but not the secret:** addresses, audit history, presets chosen, job rows (no secrets) and encrypted keystores to brute-force offline. Infeasible for a 256-bit random secret; feasible for a human passphrase, so the setup helper generates the secret and the config check rejects short values.
+- **Attacker with the database dump or the data volume but not the secret:** addresses, audit history, presets chosen, job rows (no secrets) and encrypted keystores to brute-force offline. Infeasible for a 256-bit random secret; feasible for a human passphrase, so the setup helper generates the secret and the config check rejects short values.
 - **Attacker with process memory or the running host:** has the decrypted keys of loaded tenants. This is the nature of custody and is why v1 is testnet-only with a per-tenant spend cap on `mint` and policy limits.
 - **Statement for the page and README:** *This is a custodial, testnet-only service. The server holds the agent key. Never send real funds.*
 
 `rủi-ro-cao`: signer key source.
 
-## 5. Multi-tenancy (answer to item 2)
+## 5. Multi-tenancy and storage (answer to item 2; amended by addendum 2)
 
-Layout:
+Layout by backend. The **storage interface** (5.1) hides the difference; the gateway, runner and API see only Protocols.
 
+| | SQLite backend (local, replay, tests) | Postgres backend (hosted, `docker compose` default) |
+| :--- | :--- | :--- |
+| Selected by | `DATABASE_URL` unset | `DATABASE_URL` set |
+| Tenant isolation | one directory per owner: `DATA_DIR/owners/<0x lowercase address>/{state,audit,gateway.lock,webapp}.sqlite` plus `keystore.json` | one set of tables with an `owner` column and composite keys, plus row-level security (5.2) |
+| Auth, owners, settings | `DATA_DIR/auth.sqlite` | tables in the same database |
+| Global stop | `DATA_DIR/GLOBAL_STOP` file or env | `settings` row or env |
+| Keystore | file `keystore.json`, mode `0600`, encrypted JSON | row in `keystores`, encrypted JSON (never plaintext) |
+
+- **Routing (both backends):** the owner address comes **only** from the verified session. `TenantRegistry.open(address)` lowercases it and checks `^0x[0-9a-f]{40}$` before any path or query is built. No route takes an owner address as a parameter; `order_id`, `job_id` and cursors are looked up inside the tenant's own rows or files, so a foreign id is a `404`. On SQLite the resolved path is asserted to be inside `DATA_DIR/owners`.
+- **Per-owner objects**, built by `TenantRegistry.open`: tier store, audit sink, intents, ledger queries, gateway lock, portfolio reader, tx builder, policy, cached signer, `Gateway`. `OwnerControls` is created in the API owner routes only, as today.
+- **Cache:** an LRU of 32 tenants; eviction drops the signer reference.
+- **Stage 0:** one tenant is acceptable but the per-owner layout and the owner column exist from the start, so nothing migrates in Stage 1.
+- **Shared between tenants:** the auth tables, the `settings` row, the RPC client, and (Postgres) the connection pool.
+
+### 5.1 Storage interface (Python Protocols)
+
+One module, `core/storage/interfaces.py`, with no import of `sqlite3` or `psycopg`. Adapters live in `core/storage/sqlite/` (wrapping today's `TierStore`, `SqliteAuditSink`, `IntentStore`, `GatewayLock`, `AuditLedger` without changing their behaviour) and `core/storage/postgres/`. The existing split is kept: a read protocol for the gateway and agent side, a write protocol that only `OwnerControls` receives.
+
+| Protocol | Methods (summary) | Replaces |
+| :--- | :--- | :--- |
+| `TierRead` / `TierWrite` | `current`, `is_stopped`, `pending_orders`, `approval_status`, `get_approval` / `set_tier`, `engage_stop`, `release_stop`, `request_approval`, `approve`, `reject` | `core.tiers.store.TierStore` behind `TierView` and `OwnerControls` |
+| `AuditStore` | `append(record) -> record` (assigns `seq`, `prev_hash`, `hash`), `find_by_order_id`, `list(after_seq, limit, order_id, outcome)`, `iter_all` | `SqliteAuditSink` |
+| `IntentStore` | `begin_signing(order_id, body_hash, now)`, `unfinished(order_id)` | `core.gateway.intents.IntentStore` |
+| `LedgerQueries` | `spent_usd_since`, `executed_count_since` | `core.runner.ledger.AuditLedger` |
+| `GatewayLockProvider` | `held(timeout_s) -> ContextManager`, raises `GatewayBusy` | `core.gateway.lock.GatewayLock` |
+| `KeystoreStore` | `put(owner, blob, *, overwrite=False)`, `get(owner)`, `exists(owner)` | new (file or row) |
+| `OwnerRegistry` | `create(owner, agent_address)`, `get`, `count_created_since` | new |
+| `AuthStore` | `put_nonce`, `consume_nonce`, `put_session`, `get_session`, `revoke`, `put_stepup`, `consume_stepup`, `purge_expired` | new |
+| `JobStore` | `create` (one active per owner), `update`, `get`, `list`, `mark_interrupted` | new |
+| `PolicySelectionStore` | `append(preset_id, ips_hash, signature_hash)`, `latest` | new |
+| `SettingsStore` | `global_stop() -> bool` (fail closed on error) | new |
+| `StorageBackend` | `open_tenant(owner) -> TenantStores`, `auth() -> AuthStore`, `settings() -> SettingsStore`, `migrate()`, `close()` | factory |
+
+`StorageUnavailable` is the one new exception: raised when a backend cannot be reached. The gateway treats it as fail closed: nothing is signed (the intent is written before signing, so an unrecorded send surfaces as `ReconcileRequired`, as in K3); the API answers `503 storage-unavailable`.
+
+`tiers` is a permission-tier module and the audit sink is the audit boundary, so the refactor that puts adapters behind these Protocols is `rủi-ro-cao` (ticket P1). Behaviour must not change: P1's acceptance is that the existing `tests/tiers`, `tests/audit`, `tests/gateway` and `tests/runner` suites pass unchanged on the SQLite adapters.
+
+### 5.2 Postgres backend
+
+**Choice: one set of tables with an `owner` column and composite keys, plus row-level security; not one schema per owner.** A schema per owner needs DDL on every sign-up (so migrations run N times and drift), depends on `search_path`, which is session state and unsafe behind a transaction-mode pooler, and multiplies objects on a free tier. One set of tables is migrated once, works through a pooler, and the composite primary key `(owner, seq)` is exactly the per-owner chain. Isolation is enforced twice: every adapter query is parameterised with the owner taken from the tenant object, and RLS makes a missing predicate return no rows.
+
+```sql
+-- core/storage/migrations/0001_init.sql (abridged)
+CREATE TABLE owners (
+  address       text PRIMARY KEY CHECK (address ~ '^0x[0-9a-f]{40}$'),
+  agent_address text NOT NULL,
+  created_at    timestamptz NOT NULL
+);
+CREATE TABLE keystores (
+  owner      text PRIMARY KEY REFERENCES owners(address),
+  keystore   jsonb NOT NULL,            -- Web3 Secret Storage JSON, already encrypted
+  kdf        text NOT NULL,
+  created_at timestamptz NOT NULL
+);
+CREATE TABLE audit_records (
+  owner      text   NOT NULL REFERENCES owners(address),
+  seq        bigint NOT NULL,
+  order_id   text,
+  outcome    text   NOT NULL,
+  function   text, token text, amount_value numeric, decimals int,   -- derived at insert, for ledger SQL
+  created_at timestamptz NOT NULL,
+  prev_hash  char(64) NOT NULL,
+  hash       char(64) NOT NULL,
+  payload    text   NOT NULL,           -- canonical JSON text, the hashed bytes' source
+  PRIMARY KEY (owner, seq),
+  UNIQUE (owner, hash)
+);
+CREATE INDEX audit_order ON audit_records (owner, order_id, seq DESC);
+CREATE INDEX audit_exec  ON audit_records (owner, created_at) WHERE outcome = 'executed';
+CREATE TABLE order_intents (
+  owner text NOT NULL, order_id text NOT NULL, body_hash text NOT NULL,
+  state text NOT NULL CHECK (state = 'signing'), created_at timestamptz NOT NULL,
+  PRIMARY KEY (owner, order_id)
+);
+-- tier_state (owner PK), approval_queue (owner, order_id), jobs, topups, policy_selection,
+-- nonces, sessions, stepup_challenges, settings, schema_migrations follow the same pattern.
 ```
-DATA_DIR/
-  auth.sqlite                      nonces, sessions, step-up challenges, owners
-  GLOBAL_STOP                      optional operator flag file
-  owners/<0x40 lowercase hex>/
-    keystore.json                  encrypted agent key
-    state.sqlite                   TierStore (tier_state, approval_queue)
-    audit.sqlite                   audit_records, order_intents (hash chain per owner)
-    gateway.lock.sqlite            GatewayLock
-    webapp.sqlite                  jobs, topups, policy_selection
-```
 
-- **Routing:** `TenantRegistry.open(address)` takes the address from the verified session only. It lowercases and validates `^0x[0-9a-f]{40}$` before touching the filesystem, resolves the path and asserts it is inside `DATA_DIR/owners` (no traversal, no alias). No route accepts an address parameter; `order_id`, `run_id` and cursors are looked up inside the tenant's own files, so a foreign id is a `404`.
-- **Per-owner objects:** `TierStore`, `TierView`, `SqliteAuditSink`, `AuditLedger`, `GatewayLock`, `IntentStore`, `PortfolioReader`, `AaveTxBuilder`, `EnginePolicy` (the owner's preset), the cached signer and the `Gateway`. `OwnerControls` is constructed in the API owner routes only, as today.
-- **Cache:** an LRU of 32 tenants; eviction drops the signer reference. Opening is idempotent.
-- **Stage 0:** one tenant is acceptable but the layout is used from the start, so nothing migrates in Stage 1.
-- **No shared mutable state between tenants** except `auth.sqlite`, the global stop flag and the RPC client.
+| Topic | Design |
+| :--- | :--- |
+| **Append-only** | `BEFORE UPDATE OR DELETE` and `BEFORE TRUNCATE` triggers on `audit_records`, `order_intents` and `policy_selection` raise an exception; the application role `aw_app` has `INSERT, SELECT` only on them (`REVOKE UPDATE, DELETE, TRUNCATE`). The migration role owns the tables and is not used at runtime |
+| **Chain per owner under concurrency** | `append` runs in one transaction: take `pg_advisory_xact_lock(hashtextextended('aw:audit:' + owner, 0))`, read the owner's last `(seq, hash)`, insert `seq + 1` with `prev_hash`; the transaction-scoped lock is released at commit. `PRIMARY KEY (owner, seq)` is the backstop: a forked chain is a unique violation, never silent |
+| **Hash input** | the adapter hashes the same canonical JSON bytes as SQLite (`contracts/README.md`), stored as `payload text`, so a chain exported from either backend verifies with `python -m core.audit.verify` |
+| **Gateway lock** | `GatewayLockProvider.held()` opens a dedicated connection, `BEGIN`, then polls `pg_try_advisory_xact_lock(key)` every 100 ms up to 15 s; on timeout `GatewayBusy` is raised before any read, nothing signed or recorded. The lock lives as long as that transaction: commit, rollback or a dropped connection releases it, matching the SQLite semantic. A different key namespace from the audit append avoids self-deadlock |
+| **Why transaction-scoped locks** | session-level advisory locks need session pooling; transaction-scoped ones work in Supabase's transaction mode as well as session mode (see pooling) |
+| **Idempotency and intents** | `find_by_order_id` reads the latest record for `(owner, order_id)` inside the lock; `begin_signing` inserts into `order_intents` in its own autocommit transaction **before** the signer is called, so a crash after sending leaves an intent without a record (`ReconcileRequired`) exactly as on SQLite |
+| **`GatewayBusy`** | only lock acquisition timeout. A database outage is `StorageUnavailable`, a different exception and status (`503`) |
+| **Ledger** | `spent_usd_since` and `executed_count_since` are SQL over `audit_records` using the derived columns; the adapter test asserts the derived columns equal the payload |
+| **Row-level isolation** | RLS enabled on every owner-keyed table, policy `owner = current_setting('app.owner', true)`; each tenant transaction starts with `set_config('app.owner', $1, true)`; `aw_app` is `NOBYPASSRLS`. Defence in depth, not the only control |
+| **Pooling** | one in-process bounded pool (default 5 connections, no extra package). Use the provider's pooler URL. Nothing relies on session state: no prepared statements (`prepare_threshold=None`), no `SET` outside a transaction, no session advisory locks, no `LISTEN` |
+| **Migrations** | plain SQL files `core/storage/migrations/NNNN_name.sql`, table `schema_migrations(version, name, checksum, applied_at)`. `python -m core.storage.migrate` and the app at startup (when `DATABASE_MIGRATE_URL` or a DDL-capable role is available) apply pending files, each in one transaction that first takes `pg_advisory_xact_lock(7240001)`. A checksum mismatch or a database newer than the code refuses to start. An app role without DDL rights verifies the version and fails closed if behind |
+| **SQL injection** | parameterised queries only; identifiers come from fixed allowlists via `psycopg.sql`; a test scans for string-built SQL |
 
-### Isolation tests (names)
+### 5.3 One contract suite for both backends
+
+`tests/storage/contract/` is parametrised over the backend fixture (`sqlite`, `postgres`). The Postgres parameter runs when `TEST_DATABASE_URL` is set (local compose, CI service container) and is skipped with a stated reason otherwise, so a laptop without Postgres still passes. Every behaviour below must hold identically on both.
+
+| Behaviour | Test (runs on both backends) |
+| :--- | :--- |
+| Append assigns `seq` from 0 and links `prev_hash`; chain verifies | `tests/storage/contract/test_audit.py::test_append_assigns_seq_and_chain_verifies` |
+| Concurrent appends from threads and processes never fork or gap | `test_audit.py::test_concurrent_appends_serialised_per_owner` |
+| UPDATE and DELETE are rejected | `test_audit.py::test_update_and_delete_rejected` |
+| Latest record by `order_id` | `test_audit.py::test_find_by_order_id_returns_latest` |
+| Intents are insert-only; `unfinished` is true until a record exists | `test_intents.py::test_insert_only_and_unfinished` |
+| Only `executed` counts; `approve` excluded from spend | `test_ledger.py::test_only_executed_counts_approve_excluded` |
+| Lock excludes a second holder; timeout raises `GatewayBusy`; released on exception | `test_lock.py::test_exclusion`, `test_timeout_raises_gateway_busy`, `test_released_on_exception` |
+| Tier default T0; stop persists; approval lifecycle; second decision raises | `test_tiers.py::test_default_t0`, `test_stop_persists`, `test_approval_lifecycle`, `test_second_decision_raises` |
+| Keystore blob round trip; no overwrite; no plaintext key in the stored value | `test_keystore.py::test_roundtrip_no_overwrite_no_plaintext` |
+| Nonce and step-up single use; expiry; revoked session | `test_auth_store.py::test_nonce_single_use`, `test_stepup_single_use`, `test_revoked_session` |
+| One active job per owner | `test_jobs.py::test_one_active_job_per_owner` |
+| Owner A cannot read or append in owner B's data | `test_isolation.py::test_owner_a_cannot_see_owner_b` |
+| Exported chain from either backend verifies with `core.audit.verify` | `test_audit.py::test_export_verifies_with_cli` |
+
+Postgres-only tests: `tests/storage/test_pg_append_only.py::test_app_role_cannot_update_delete_truncate`, `tests/storage/test_pg_rls.py::test_rls_blocks_select_without_owner_setting`, `test_rls_blocks_cross_owner_select`, `tests/storage/test_pg_migrate.py::test_migrations_apply_once_under_lock`, `test_checksum_mismatch_refuses_start`, `tests/storage/test_no_string_sql.py::test_no_string_built_sql` (AST scan of `core/storage/` and `api/`: every `execute` argument must be a string literal or `sql.SQL(<literal>)`).
+
+### 5.4 Isolation tests (names)
 
 | Claim | Test |
 | :--- | :--- |
@@ -124,9 +244,10 @@ DATA_DIR/
 | A cannot approve or reject B's pending order (404) | `tests/webapp/test_isolation.py::test_session_a_cannot_approve_owner_b_order` |
 | A's `order_id` is unknown in B's chain | `tests/webapp/test_isolation.py::test_foreign_order_id_is_404` |
 | A cannot stop or release B's agent | `tests/webapp/test_isolation.py::test_session_a_cannot_stop_owner_b` |
-| Path traversal and mixed-case addresses cannot select another directory | `tests/webapp/test_tenant_paths.py::test_address_is_validated_and_normalised`, `test_path_stays_inside_owners_dir` |
+| Path traversal and mixed-case addresses cannot select another directory or row set | `tests/webapp/test_tenant_paths.py::test_address_is_validated_and_normalised`, `test_path_stays_inside_owners_dir` |
 | Two tenants' chains verify independently | `tests/webapp/test_isolation.py::test_each_owner_chain_verifies_alone` |
 | A signer built for A signs from A's address only | `tests/webapp/test_custody.py::test_tenant_signer_address_matches_keystore` |
+| Same tests pass on both backends | `tests/webapp/` fixture `backend` parametrised like the contract suite |
 
 ## 6. Authentication and sessions (answer to item 3)
 
@@ -138,7 +259,7 @@ sequenceDiagram
   participant B as Browser page
   participant W as Wallet (injected)
   participant A as API auth
-  participant D as auth.sqlite
+  participant D as AuthStore
   B->>W: eth_requestAccounts
   W-->>B: address
   B->>A: POST /auth/nonce {address}
@@ -168,7 +289,7 @@ sequenceDiagram
 | **Emergency stop** (engage) | yes | | fail-safe direction; one click, no friction |
 | Lower the tier (T2 to T1 or T0) | yes | | restricts the agent |
 | Reject a pending order | yes | | restricts the agent |
-| Run the agent, mint (capped) | yes | | bounded by policy, caps, rate limits |
+| Run the agent, mint | yes | | bounded by policy, the faucet's own limits and rate limits |
 | **Release stop** | | yes | widens authority |
 | **Raise the tier** (T0 or T1 to T2) | | yes | widens authority |
 | **Change preset** | | yes | rewrites the policy |
@@ -221,7 +342,7 @@ CI cannot drive MetaMask. `tests/webapp/conftest.py` provides `TestWallet`, an `
 | `order.schema.json` `allOf` | `ETH` requires `amount.decimals` 18; `mint` requires `token` `USDC`, `recipient` `self`, `protocol` `aave-v3`; `transfer` requires `recipient` `owner`, `protocol` `wallet`, and token `USDC` or `ETH`; no function other than `transfer` may use recipient `owner` |
 | `decision-record.schema.json` | the same four enum additions in the embedded `Order` copy (byte-identical, per contracts README) |
 | `ips.schema.json` | **unchanged.** `mint` and `transfer` are owner functions, not agent authority, so they are not in `universe.functions` and the engine handles them before the universe check |
-| `rule-codes.json` (append-only) | `ACCESS.OWNER_ONLY_FUNCTION`, `LIMIT.MINT_PER_CALL`, `LIMIT.MINT_PER_DAY`, `TIER.GLOBAL_STOP`, `TIER.POLICY_CHANGED` (status, not a violation) |
+| `rule-codes.json` (append-only) | `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, `TIER.POLICY_CHANGED` (status, not a violation); there is no mint cap code because the contract sets no mint amount cap |
 | `openapi.yaml` | new routes (section 8); wording changes listed in 7.5 |
 
 ### 7.2 `schema_version`
@@ -230,20 +351,18 @@ Recommendation: **additive under `schema_version` 1, no bump.** Per `contracts/R
 
 ### 7.3 Rules that bound `mint` and `transfer`
 
-Both are **owner functions**. The gateway gets one new keyword argument, `propose(order, *, origin)`, where `origin` is `"planner"` (runner, `POST /orders` in multi mode) or `"owner"` (set by the API's mint and withdraw handlers). `origin` is a Python argument set by code, not a field the LLM can write; `order.proposed_by` is informational. The engine evaluates owner functions in their own branch, before the IPS universe, limit, allocation and risk rules (which would otherwise deny a 1,000 USDC mint under `per_tx_usd` and escalate it above the approval threshold).
+Both are **owner functions**. The gateway gets one new keyword argument, `propose(order, *, origin)`, where `origin` is `"planner"` (runner, `POST /orders` in multi mode) or `"owner"` (set by the API's mint and withdraw handlers). `origin` is a Python argument set by code, not a field the LLM can write; `order.proposed_by` is informational. The engine evaluates owner functions in their own branch, before the IPS universe, limit, allocation and risk rules (which would otherwise deny a large mint under `per_tx_usd` and escalate it above the approval threshold).
 
 | Check | Rule code | Detail |
 | :--- | :--- | :--- |
 | `mint` or `transfer` with `origin != "owner"` | `ACCESS.OWNER_ONLY_FUNCTION` | the Planner is also narrowed (below), so this is defence in depth |
 | `mint` token not the Aave test USDC | `ACCESS.TOKEN_NOT_ALLOWED` | enum is USDC; the adapter maps it to `AAVE_V3_USDC` only |
-| `mint` amount above 1,000 USDC (`1000000000`) | `LIMIT.MINT_PER_CALL` | constant in `core/protocols/addresses.py`, not an IPS field |
-| `mint` pushes executed mints in the last 24 h above 3,000 USDC | `LIMIT.MINT_PER_DAY` | counted from the audit log by `AuditLedger.minted_since`, like spend |
 | `transfer` recipient not `owner` | `ACCESS.RECIPIENT_NOT_ALLOWED` | schema `allOf` already forbids it; the engine re-checks |
 | Any owner function with tier T0 or T1, emergency stop, or global stop | `TIER.READ_ONLY`, `TIER.PROPOSE_ONLY`, `TIER.EMERGENCY_STOP`, `TIER.GLOBAL_STOP` | **Exception: `transfer` to the owner is allowed under stop and under T0/T1**, because getting funds out must work when the agent is stopped. It is still denied under the global stop (operator incident) |
-| `mint` and `transfer` and the IPS `escalate_above_usd` | none | not evaluated: these are owner-signed or capped, not agent spend |
+| `mint` and `transfer` and the IPS `escalate_above_usd` | none | not evaluated: these are owner-origin functions, not agent spend |
 | Spend ledger | | `mint` and `transfer` are excluded from `spent_24h_usd` and included in `tx_count_1h` |
 
-Fixed constraints for `mint` (advice 4): token is Aave test USDC only; the target is the constant `AAVE_V3_FAUCET` (`0xD9145b5F45Ad4519c7ACcD6E0A4A82e83bB8A6Dc`), never caller-supplied; the faucet's `to` argument is the agent wallet (`recipient: self`), never anything else; per call 1,000 USDC; per owner per day 3,000 USDC. The faucet's own limit (1,000,000 USDC per call, 1 h cooldown per caller, verified in `testnet-facts-aave.md`) sits above these. A second mint inside the cooldown reverts in simulation and is recorded `failed` with `SIMULATION_FAILED`; the UI explains the cooldown in words and shows the time left.
+Constraints for `mint` (addendum 2 replaces the earlier per-call and per-day caps): **there is no amount cap in our contract.** The Aave faucet enforces its own on-chain limits: a maximum of 1,000,000 USDC per call and a 1 hour cooldown per caller (both verified on chain in `docs/design/testnet-facts-aave.md`). What stays pinned: the token is the Aave test USDC only; the target is the constant `AAVE_V3_FAUCET` (`0xD9145b5F45Ad4519c7ACcD6E0A4A82e83bB8A6Dc`), never caller-supplied; the faucet's `to` argument is the agent wallet (`recipient: self`), never anything else; `mint` is owner-origin only. Abuse control is a **server-side rate limit of 4 mint calls per owner per hour** (`AGENT_WALLET_MINT_CALLS_PER_HOUR`; counts every attempt, all outcomes, so failed calls cannot be spammed; 4 because the faucet cooldown makes more than one success per hour impossible and a few retries cover a first-try revert). A second mint inside the cooldown reverts in simulation and is recorded `failed` with `SIMULATION_FAILED`; the UI explains the cooldown in words and shows the time left. A very large mint changes the portfolio weights the policy sees; the IPS allocation rules then block further agent buys, which is the intended behaviour.
 
 **Planner narrowing:** `Planner` rejects any order whose function is not in `PLANNER_FUNCTIONS = {approve, supply, withdraw, exactInputSingle}` and any recipient `owner`; the Planner system prompt is unchanged (it never offered the new values); `core/agent/planner.py` gets a validation step and a test.
 
@@ -340,15 +459,16 @@ The order is built by the server (`order_id` uuid4, `proposed_by: owner`, `recip
 ## 9. Global and per-owner kill switches (advice 5)
 
 - **Per owner:** `TierStore` emergency stop, engaged by `POST /emergency-stop` with the session only.
-- **Global:** the operator creates `DATA_DIR/GLOBAL_STOP` (or sets `AGENT_WALLET_GLOBAL_STOP=1`). `Gateway` receives `global_stop: Callable[[], bool]` and evaluates it **inside the gateway lock, immediately before `IntentStore.begin_signing` and the signer call**, after simulation. If set: no intent row, no signing, record `denied` with `TIER.GLOBAL_STOP`. It is also checked at the start of `propose` (fast denial) and by the runner before planning (`run` ends `denied`).
-- **Fail closed:** if the flag file cannot be statted (permission error), the gateway treats it as set.
-- Releasing the global stop is an operator action (delete the file); there is no HTTP route for it.
+- **Global:** the operator sets the stop in any one of: the `settings` row `global_stop` (Postgres backend; `UPDATE settings SET value = '1' WHERE key = 'global_stop'` from the SQL editor, or `python -m core.storage.admin global-stop on`), `DATA_DIR/GLOBAL_STOP` (SQLite backend; the Render filesystem is ephemeral, so the file is not used there), or `AGENT_WALLET_GLOBAL_STOP=1`. `Gateway` receives `global_stop: Callable[[], bool]` (backed by `SettingsStore.global_stop()`) and evaluates it **inside the gateway lock, immediately before `IntentStore.begin_signing` and the signer call**, after simulation. If set: no intent row, no signing, record `denied` with `TIER.GLOBAL_STOP`. It is also checked at the start of `propose` (fast denial) and by the runner before planning (`run` ends `denied`).
+- **Fail closed:** if the flag cannot be read (file permission error, database unreachable), the gateway treats the stop as set.
+- Releasing the global stop is an operator action (reset the row, delete the file or unset the variable); there is no HTTP route for it.
 
 | Claim | Test |
 | :--- | :--- |
 | A flag set between simulation and signing blocks the signer | `tests/gateway/test_global_stop.py::test_flag_set_between_simulation_and_signing_blocks_signer` |
 | No intent is written when blocked | `test_global_stop.py::test_blocked_order_writes_no_intent` |
-| Unreadable flag fails closed | `test_global_stop.py::test_unreadable_flag_denies` |
+| Unreadable flag or unreachable database fails closed | `test_global_stop.py::test_unreadable_flag_denies`, `test_unreachable_settings_denies` |
+| The `settings` row blocks the signer | `tests/storage/contract/test_settings.py::test_global_stop_row_read_on_both_backends`, `test_global_stop.py::test_settings_row_blocks_signer` |
 | Global stop denies `transfer` too; owner stop does not | `test_global_stop.py::test_global_stop_blocks_transfer`, `tests/policy/test_owner_functions.py::test_transfer_allowed_under_owner_stop` |
 | A run started under either stop ends `denied` | `tests/webapp/test_jobs.py::test_run_under_stop_ends_denied_not_failed` |
 
@@ -403,94 +523,107 @@ sequenceDiagram
 
 The `jobs` table stores **ids only** (`order_id`, `seq`), never order bodies; the audit log is the truth (advice 10). Single uvicorn worker; a `ThreadPoolExecutor(max_workers=4)` across owners; the same owner is serialised by the one-active-job rule and `GatewayLock`.
 
-## 11. Entity-relationship diagram
+## 11. Entity-relationship diagram (amended by addendum 2)
+
+The ERD is the Postgres layout: every owner-keyed table carries `owner` as the first column of its key. The SQLite backend has the same logical entities, one file set per owner directory (section 5).
 
 ```mermaid
 erDiagram
   OWNERS ||--o{ SESSIONS : has
   OWNERS ||--o{ STEPUP_CHALLENGES : requests
-  OWNERS ||--|| TENANT : "directory per owner"
-  TENANT ||--o{ AUDIT_RECORDS : "one hash chain"
-  TENANT ||--o{ ORDER_INTENTS : "closed by a record"
-  TENANT ||--|| TIER_STATE : singleton
-  TENANT ||--o{ APPROVAL_QUEUE : holds
-  TENANT ||--o{ JOBS : runs
-  TENANT ||--o{ TOPUPS : receives
-  TENANT ||--o{ POLICY_SELECTION : "append only"
+  OWNERS ||--|| KEYSTORES : "encrypted key blob"
+  OWNERS ||--o{ AUDIT_RECORDS : "one hash chain per owner"
+  OWNERS ||--o{ ORDER_INTENTS : "closed by a record"
+  OWNERS ||--|| TIER_STATE : "one row per owner"
+  OWNERS ||--o{ APPROVAL_QUEUE : holds
+  OWNERS ||--o{ JOBS : runs
+  OWNERS ||--o{ TOPUPS : receives
+  OWNERS ||--o{ POLICY_SELECTION : "append only"
   JOBS }o--o{ AUDIT_RECORDS : "points to order_id, seq"
   OWNERS {
     string address PK "0x lowercase"
-    string agent_address "from keystore, public"
-    string created_at
+    string agent_address "public"
+    timestamptz created_at
+  }
+  KEYSTORES {
+    string owner PK
+    jsonb keystore "Web3 Secret Storage, encrypted"
+    string kdf "scrypt or pbkdf2"
   }
   NONCES {
     string nonce PK
     string address
-    string expires_at
-    int used
+    timestamptz expires_at
+    bool used
   }
   SESSIONS {
     string jti PK
-    string address FK
-    string expires_at
-    int revoked
+    string owner FK
+    timestamptz expires_at
+    bool revoked
   }
   STEPUP_CHALLENGES {
     string challenge_id PK
-    string address FK
+    string owner FK
     string action
     string params_hash
-    string expires_at
-    int used
+    timestamptz expires_at
+    bool used
   }
   AUDIT_RECORDS {
-    int seq PK
+    string owner PK
+    bigint seq PK
     string order_id
     string outcome
     string prev_hash
     string hash
-    string payload
+    string payload "canonical JSON text"
   }
   ORDER_INTENTS {
+    string owner PK
     string order_id PK
     string body_hash
-    string state
+    string state "const signing"
   }
   TIER_STATE {
-    int id PK
+    string owner PK
     string tier
-    int emergency_stop
+    bool emergency_stop
   }
   APPROVAL_QUEUE {
+    string owner PK
     string order_id PK
     string status
   }
   JOBS {
+    string owner PK
     string job_id PK
     string kind "run, mint, withdraw"
     string status "queued, running, succeeded, denied, failed, interrupted"
     string planner_client "openai, scripted, fallback, none"
     string order_ids "json array of ids only"
     string error_code
-    string created_at
-    string finished_at
   }
   TOPUPS {
+    string owner PK
     string tx_hash PK
     string amount_wei
     string status
-    string observed_at
   }
   POLICY_SELECTION {
-    int seq PK
+    string owner PK
+    bigint seq PK
     string preset_id
     string ips_hash
     string signature_hash "sha256 of the owner signature"
-    string created_at
+  }
+  SETTINGS {
+    string key PK "global_stop"
+    string value
   }
 ```
 
-`NONCES`, `SESSIONS`, `STEPUP_CHALLENGES` and `OWNERS` live in `DATA_DIR/auth.sqlite`; the rest are per owner. `POLICY_SELECTION` is insert-only (UPDATE and DELETE blocked by triggers, like `order_intents`). `AUDIT_RECORDS`, `ORDER_INTENTS`, `TIER_STATE` and `APPROVAL_QUEUE` are the existing tables, unchanged.
+`NONCES`, `SESSIONS`, `STEPUP_CHALLENGES`, `OWNERS` and `SETTINGS` are global; the others are per owner. `AUDIT_RECORDS`, `ORDER_INTENTS` and `POLICY_SELECTION` are insert-only (triggers and role grants, 5.2). `KEYSTORES.keystore` is never plaintext; the secret that decrypts it exists only in the process environment.
 
 ## 12. API additions (answer to item 7)
 
@@ -666,7 +799,7 @@ paths:
     post:
       tags: [agent]
       operationId: mintTestUsdc
-      summary: Mint test USDC to the agent wallet through the gateway (testnet only, capped).
+      summary: Mint test USDC to the agent wallet through the gateway (testnet only; the faucet enforces its own limits).
       security: [{ SessionCookie: [] }]
       requestBody:
         required: true
@@ -677,7 +810,7 @@ paths:
               required: [amount_usdc]
               additionalProperties: false
               properties:
-                amount_usdc: { type: string, pattern: "^[1-9][0-9]{0,3}$", description: "Whole USDC, 1 to 9999; the policy caps it at 1000 per call." }
+                amount_usdc: { type: string, pattern: "^[1-9][0-9]{0,6}$", description: "Whole USDC, 1 to 9999999. No cap in our contract: the Aave faucet enforces its own on-chain maximum and cooldown." }
       responses:
         "202": { $ref: "#/components/responses/JobAccepted" }
         "409": { $ref: "#/components/responses/Problem" }
@@ -879,10 +1012,10 @@ class CustodyUnavailable(Exception): ...
 class AgentWallet:
     address: str                                   # public
 
-def create_agent_wallet(dir: Path, secret: str, kdf: str = "scrypt") -> AgentWallet: ...  # refuses to overwrite
-def load_address(dir: Path) -> str: ...            # reads the "address" field, no decrypt
-def open_signer(dir: Path, secret: str, *, sender: Callable[[bytes], Any]) -> Signer: ...  # LocalSigner(private_key=...)
-def rotate(owners_dir: Path, new_secret: str, previous_secret: str) -> int: ...
+def create_agent_wallet(store: KeystoreStore, owner: str, secret: str, kdf: str = "scrypt") -> AgentWallet: ...  # refuses to overwrite
+def load_address(store: KeystoreStore, owner: str) -> str: ...   # reads the "address" field, no decrypt
+def open_signer(store: KeystoreStore, owner: str, secret: str, *, sender: Callable[[bytes], Any]) -> Signer: ...  # LocalSigner(private_key=...)
+def rotate(store: KeystoreStore, new_secret: str, previous_secret: str) -> int: ...
 
 # core/gateway/tenant.py             (the only gateway module api may import)
 @dataclass
@@ -895,7 +1028,7 @@ class Tenant:
     def reload_policy(self, preset_id: str) -> str: ...      # returns ips_hash; under GatewayLock
 
 class TenantRegistry:
-    def __init__(self, data_dir: Path, settings: TenantSettings, rpc: RpcCall, max_open: int = 32) -> None: ...
+    def __init__(self, backend: StorageBackend, settings: TenantSettings, rpc: RpcCall, max_open: int = 32) -> None: ...
     def open(self, owner: str, *, create: bool = False) -> Tenant: ...   # validates ^0x[0-9a-f]{40}$
     def exists(self, owner: str) -> bool: ...
 
@@ -913,14 +1046,11 @@ def build_transfer_calldata(to: str, amount: int) -> str: ...
 def build_calls(order: dict, wallet_address: str, *, owner_address: str | None = None) -> list[Call]: ...
 
 # core/protocols/addresses.py
-MINT_MAX_PER_CALL_UNITS: Final[int] = 1_000 * 10**6
-MINT_MAX_PER_DAY_UNITS: Final[int] = 3_000 * 10**6
+# no mint amount cap: the faucet enforces its own on-chain maximum and cooldown
+MINT_TOKEN: Final[str] = AAVE_V3_USDC          # the only mintable token
+MINT_TARGET: Final[str] = AAVE_V3_FAUCET       # pinned; never caller-supplied
 OWNER_FUNCTIONS: Final[frozenset[str]] = frozenset({"mint", "transfer"})
 PLANNER_FUNCTIONS: Final[frozenset[str]] = frozenset({"approve", "supply", "withdraw", "exactInputSingle"})
-
-# core/runner/ledger.py
-class AuditLedger:
-    def minted_units_since(self, since: datetime) -> int: ...   # executed mint orders
 
 # core/agent/planner.py
 class FallbackPlanner:
@@ -1053,100 +1183,161 @@ Rules: body text at least 4.5:1 contrast in both themes; outcome never conveyed 
 | No external URL in `ui/` default path | `tests/ui/test_offline.mjs::no_external_assets_in_default_path` |
 | Session token is not readable from JS (HttpOnly) and not stored | `tests/ui/test_storage.mjs::no_token_in_storage_or_globals` |
 
-## 15. Deployment (answer to item 9)
+## 15. Deployment (answer to item 9; amended by addendum 2)
+
+Owner decisions: hosted app on **Render free web service** (Docker deploy from the repo), persistent state in **Supabase Postgres**, connection through `DATABASE_URL`. Self-host stays one command.
 
 ### 15.1 Container and compose changes (W0 first, then the rest)
 
 | Defect or change | Fix |
 | :--- | :--- |
 | `ui/` not copied | `COPY ui ./ui` |
-| `DB_PATH` unused | remove `DB_PATH` from `Dockerfile`, `docker-compose.yml`, `.env.example` and `README.md`; set `AGENT_WALLET_DATA_DIR=/app/data` |
-| State outside the volume | volume `./data:/app/data`; file ownership for uid 10001 documented; `chown` in an entrypoint if the host dir is root-owned |
-| `create_app()` deny-all | `api/main.py` calls `create_app_from_env()` which builds the tenant registry (multi), the single-owner legacy app (single) or the replay app (no secrets) |
-| `scripts/` absent | `COPY scripts ./scripts` for the setup helper and replay |
-| No readiness | `/ready` checks data dir writable and RPC chain id (without leaking the URL); `HEALTHCHECK` stays on `/health` |
-| Workers | `CMD uvicorn ... --workers 1` pinned and commented |
-
-Compose adds `restart: unless-stopped`, `env_file: .env` (optional), the volume, and `read_only: true` with `tmpfs: /tmp`.
+| `DB_PATH` unused | remove `DB_PATH` from `Dockerfile`, `docker-compose.yml`, `.env.example` and `README.md`; `AGENT_WALLET_DATA_DIR=/app/data` only matters for the SQLite backend |
+| State outside the volume (SQLite backend) | volume `./data:/app/data`; uid 10001 ownership documented |
+| `create_app()` deny-all | `api/main.py` calls `create_app_from_env()`: Postgres backend when `DATABASE_URL` is set, SQLite otherwise (replay) |
+| `scripts/` absent | `COPY scripts ./scripts`; migrations live inside `core/storage/migrations` and ship with `core` |
+| No readiness | `/ready` checks storage reachable and schema version, and RPC chain id (no URL in the answer); `HEALTHCHECK` stays on `/health` |
+| Workers | `--workers 1` pinned and commented (jobs run in-process) |
+| Postgres for self-host | compose adds service `db` (`postgres:16`, pinned tag, named volume `pgdata`, `POSTGRES_PASSWORD` from `.env`, healthcheck `pg_isready`); `api` `depends_on: db: condition: service_healthy`; `DATABASE_URL` is composed from the same variables. Without `DATABASE_URL` (profile `replay`) the app starts on SQLite with fixtures |
 
 ### 15.2 Environment variables (names only)
 
 | Name | Purpose |
 | :--- | :--- |
+| `DATABASE_URL` | Postgres connection (application role). Unset: SQLite backend |
+| `DATABASE_MIGRATE_URL` | optional DDL-capable role used by `core.storage.migrate` and at startup |
 | `AGENT_WALLET_MODE` | `single`, `multi` or `replay` (default `replay` when secrets are absent) |
-| `AGENT_WALLET_DATA_DIR` | state root (default `.data`; `/app/data` in the image) |
-| `AGENT_WALLET_KEYSTORE_SECRET`, `AGENT_WALLET_KEYSTORE_SECRET_PREVIOUS`, `AGENT_WALLET_KEYSTORE_KDF` | custody |
+| `AGENT_WALLET_DATA_DIR` | SQLite state root (default `.data`; `/app/data` in the image) |
+| `AGENT_WALLET_KEYSTORE_SECRET`, `AGENT_WALLET_KEYSTORE_SECRET_PREVIOUS`, `AGENT_WALLET_KEYSTORE_KDF` | custody (`pbkdf2` recommended on Render free) |
 | `AGENT_WALLET_SESSION_SECRET` | session HMAC |
 | `AGENT_WALLET_PUBLIC_ORIGIN` | domain bound into the sign-in message; Origin check |
 | `AGENT_WALLET_ALLOW_BEARER` | allow bearer sessions (CLI, tests) |
-| `AGENT_WALLET_GLOBAL_STOP` | operator stop (also the `GLOBAL_STOP` file) |
+| `AGENT_WALLET_GLOBAL_STOP` | operator stop (also the `settings` row or the `GLOBAL_STOP` file) |
 | `AGENT_WALLET_OWNER_TOKEN` | single-mode owner token (unchanged) |
-| `AGENT_WALLET_RUNS_PER_HOUR`, `AGENT_WALLET_MINT_PER_CALL_USDC`, `AGENT_WALLET_MINT_PER_DAY_USDC`, `AGENT_WALLET_MAX_NEW_OWNERS_PER_DAY` | limits (defaults 6, 1000, 3000, 50; the contract caps for mint are code constants, env can only lower them) |
+| `AGENT_WALLET_RUNS_PER_HOUR`, `AGENT_WALLET_MINT_CALLS_PER_HOUR`, `AGENT_WALLET_MAX_NEW_OWNERS_PER_DAY` | limits (defaults 6, 4, 50); counts, not amounts |
 | `OPENAI_API_KEY`, `AGENT_WALLET_LLM_MODEL` | planner |
 | `BASE_SEPOLIA_RPC_URL` | RPC (validated, section 19) |
+| `POSTGRES_PASSWORD`, `TEST_DATABASE_URL` | compose only; tests only |
 
 ### 15.3 First-run secrets helper (advice 8)
-`python -m core.gateway.setup` (also `docker compose run --rm api python -m core.gateway.setup`): if `.env` lacks `AGENT_WALLET_KEYSTORE_SECRET` or `AGENT_WALLET_SESSION_SECRET`, appends freshly generated 32-byte hex values; never prints them; refuses to overwrite an existing value; exits non-zero and prints which name was kept; creates `.env` with mode `0600` where the OS supports it. `tests/gateway/test_setup.py::{test_generates_missing_secrets_without_printing, test_refuses_to_overwrite, test_env_example_has_names_only}`.
+`python -m core.gateway.setup` (also `docker compose run --rm api python -m core.gateway.setup`): if `.env` lacks `AGENT_WALLET_KEYSTORE_SECRET`, `AGENT_WALLET_SESSION_SECRET` or `POSTGRES_PASSWORD`, appends freshly generated values; never prints them; refuses to overwrite an existing value; exits non-zero and prints which name was kept; creates `.env` with mode `0600` where the OS supports it. `tests/gateway/test_setup.py::{test_generates_missing_secrets_without_printing, test_refuses_to_overwrite, test_env_example_has_names_only}`.
 
-### 15.4 Hosted demo: options for the owner (advice 11; not decided here)
+### 15.4 Hosted deployment: Render free web service plus Supabase Postgres
 
-| Option | What the owner does | Cost | Risk and what judges get |
-| :--- | :--- | :--- | :--- |
-| **1. Local only plus recorded evidence** (recommended) | Nothing extra: judges run `docker compose up`; evidence in `docs/evidence/` and a screen recording | none | no live URL; no keystore ever held on a third-party disk; reviewers see real transactions in the evidence |
-| **2. Railway with a volume** (optional if the owner has an account) | Create a project from the repo, attach a volume at `/app/data`, set secrets in the host's secret store, set `AGENT_WALLET_MODE=multi`, `AGENT_WALLET_PUBLIC_ORIGIN` to the assigned domain, single replica, run the setup helper once through the host shell | trial credit or Hobby plan (per Railway docs as found 14 Oct; re-check) | a live URL; keystores on a third-party volume (testnet keys only); idle behaviour unverified; back up `owners/` |
-| **3. None** | Submit the repo and evidence only | none | judges cannot try it; weakest "interaction" score |
+**Why not Render's own Postgres:** Render documents that a free Render Postgres database expires 30 days after creation ([Render, Deploy for Free](https://render.com/docs/free)). A database created for the build would expire inside or just after the judging window. Supabase's free plan keeps the database but pauses a project after one week of inactivity (official pricing page, via search on 14 Oct) and the project must be restored by hand.
 
-Not Render free: ephemeral filesystem, keystores lost on spin-down.
+| Fact | Value | Status |
+| :--- | :--- | :--- |
+| Render free web service spins down after 15 minutes without inbound traffic; wakes in about a minute on the next request | as documented ([Render, Deploy for Free](https://render.com/docs/free)) | verified from Render docs on 14 Oct |
+| Render free filesystem is ephemeral (lost on redeploy, restart and spin-down) | as documented ([Render, Persistent Disks](https://render.com/docs/disks)) | verified |
+| Render free: 750 instance hours per workspace per month; services are suspended when the hours run out | as documented | verified |
+| Render free instance memory and CPU | I recall 512 MB and a shared CPU; not confirmed this session | **unverified**: so recommend `pbkdf2` and one worker |
+| Supabase free: 500 MB database, projects paused after 1 week of inactivity, no daily backups or point-in-time recovery | Supabase pricing page and third-party 2026 guides | pause and 500 MB: verified from the official page via search; backups: third-party, treat as unverified |
+| Supabase pooler: transaction mode on port 6543 (no prepared statements, no session features), session mode on port 5432 | Supabase docs | verified from docs via search |
+| Supabase direct connection is IPv6; Render free outbound IPv6 support | | **unverified**: use the pooler string, which is IPv4 |
+| Number of connections the free pooler allows | | **unverified**: the pool is capped at 5 |
+| Supabase allows creating the `aw_app` and migration roles from the SQL editor | standard Postgres `CREATE ROLE` | **unverified on the free tier**; fallback: use the default role and rely on adapter predicates plus triggers (append-only still holds through triggers, RLS bypassed) |
+
+**Recommended Supabase wiring.** `DATABASE_URL` = the pooler connection string with `?sslmode=require`. The design needs no session state, so transaction mode (6543) is fine; session mode (5432) also works.
+
+**Deploy steps** (done by the owner, or by the orchestrator through the Render MCP in its session):
+1. Supabase: create a free project in a region near the Render region; note the pooler URL and the database password.
+2. From a trusted machine: `DATABASE_MIGRATE_URL=<migrate role url> python -m core.storage.migrate` (applies `0001_init.sql` and creates role `aw_app` with the grants in 5.2). Verify with `python -m core.storage.migrate --check`.
+3. Render: New Web Service from the GitHub repo, **Runtime: Docker**, Dockerfile path `./Dockerfile`, instance type **Free**, health check path `/health`, auto-deploy off (deploy by hand after review).
+4. Render dashboard environment: `DATABASE_URL`, `AGENT_WALLET_MODE=multi`, `AGENT_WALLET_KEYSTORE_SECRET`, `AGENT_WALLET_SESSION_SECRET` (both from `python -m core.gateway.setup`, copied once, never stored in the repo), `AGENT_WALLET_KEYSTORE_KDF=pbkdf2`, `AGENT_WALLET_PUBLIC_ORIGIN=https://<service>.onrender.com`, `BASE_SEPOLIA_RPC_URL`, `OPENAI_API_KEY`. Mark them as secrets in the dashboard.
+5. After the first deploy, set `AGENT_WALLET_PUBLIC_ORIGIN` to the assigned domain if it was a placeholder and redeploy.
+
+**Checks after deploy** (`scripts/webapp_smoke.py <url>`, with a throwaway test wallet key held only in the shell):
+1. `GET /health` is 200; `GET /ready` shows storage ok, schema version equal to the code's, chain id 84532.
+2. `GET /ui/` is 200 and the banner text is present.
+3. Sign-in with the throwaway wallet succeeds; `GET /me` returns that address; logout revokes.
+4. `GET /agent` returns an address and live balances (no key material in any response).
+5. A second throwaway wallet cannot read the first's `/decisions`, proving isolation on the live backend.
+6. `GET /audit/verify` is `ok`.
+7. Redeploy the service and repeat steps 3 and 4: the same agent address returns (state survived the ephemeral filesystem).
+8. No secret appears in the Render log stream for the above requests.
+
+**Cold start and the judges' README note.** Proposed text: *"The hosted demo runs on Render's free tier. After 15 minutes without traffic the service spins down and the first request can take about a minute; wait and reload. The database is Supabase free, which pauses after a week of inactivity; if the page says the database is unavailable, tell us and we will restore it. Everything also runs locally with `docker compose up`, and `docs/evidence/` holds the recorded real session."* The page shows a "waking up" state with a retry when the first request times out, not a blank error.
+
+**Keep-warm (optional, documented, unverified).** An external uptime pinger calling `GET /health` at most every 14 minutes keeps the service from spinning down. I found no Render terms language that forbids or permits this, so **whether it is allowed is unverified**; the owner should read Render's terms. It also consumes instance hours: always-on is about 720 to 744 hours a month against the 750-hour cap shared by every free service in the workspace, so only one free service fits. Recommendation: do not ping continuously; run it only during the judging window if the owner accepts the terms risk. `/ready` touches the database, so the same ping resets Supabase's inactivity timer too.
 
 ### 15.5 Backup and restore
-`scripts/backup.py` copies each owner's SQLite files with the SQLite online backup API plus `keystore.json` into a dated directory (not into the repo). Restore drill: `tests/ops/test_backup_restore.py::test_restore_verifies_chain_and_signer_address` (restore to a temp dir, verify each chain, check each keystore's address field). Stage 1.
-
-## 16. Staged delivery, tickets and cut order (answer to item 11)
+- **Hosted:** Supabase free has no daily backups (third-party sources, unverified), so the operator runs `python -m core.storage.export --out <dir>` (per owner: JSONL audit chain, keystore blobs as stored, jobs, policy selections; it never decrypts anything) on a schedule the owner chooses, and before any migration. Restore: `python -m core.storage.import <dir>` into an empty database; the importer verifies each chain before committing and refuses a non-empty target.
+- **Local SQLite:** copy per owner with the SQLite online backup API (`scripts/backup.py`).
+- **Tests:** `tests/ops/test_backup_restore.py::test_export_import_verifies_chain_and_signer_address` (parametrised over both backends).
+## 16. Staged delivery, tickets and cut order (answer to item 11; re-planned by addendum 2)
 
 ### 16.1 Stages and the cut line
 
 | Stage | Target | Contents | Rule |
 | :--- | :--- | :--- | :--- |
-| **0: 5-minute demo path** | **17 Oct** | W0 container fixes; sign-in; tenant created (single owner acceptable, per-owner layout); agent address; top-up detection; mint through the gateway; Run with LLM planner and labelled fallback; live portfolio; hostile input blocked with the plain reason; emergency stop; server-side audit verify; onboarding stepper and feed | wins every conflict |
-| **1: product hardening** | **19 Oct** | multi-owner isolation tests; presets and step-up; withdraw (`transfer`); approvals with step-up; global stop; rate limits; observability; Docker and optional hosted; replay mode; secrets helper; backup and restore; UI polish | cut from the bottom |
+| **0: 5-minute demo path, local on the SQLite backend** | **18 Oct** (owner accepted; 17 Oct was the target before the Postgres decision, and is not realistic for lanes A, B and C plus P with three builders) | W0; sign-in; tenant created (single owner acceptable, per-owner layout); agent address; top-up detection; mint through the gateway; Run with LLM planner and labelled fallback; live portfolio; hostile input blocked with the plain reason; emergency stop; server-side audit verify; onboarding stepper and feed | wins every conflict |
+| **1: product hardening and hosted demo** | **19 Oct** | Postgres adapters and contract suite (lane P); Render plus Supabase deploy and smoke; multi-owner isolation tests; presets and step-up; withdraw (`transfer`); rate limits; observability; replay mode; secrets helper; export and import | cut from the bottom (16.3) |
 | 2: roadmap, not built | after the competition | non-custodial session keys, multi-protocol, notifications, billing, scheduler, EIP-1271 | described in section 3 and `product.md` |
 
-Fallback demo if lane A slips: the same routes served by a **single hard-coded tenant** (`AGENT_WALLET_MODE=single`, owner address taken from `AGENT_WALLET_SINGLE_OWNER`, agent key from the existing `AGENT_WALLET_PRIVATE_KEY`), so the frontend and lane B are unaffected and the demo still shows connect, top-up, mint, run, stop and verify. The page labels this mode.
+The hosted demo depends on lane P and blocks nothing else: the SQLite backend keeps lanes A, B and C moving, and `docker compose up` for judges brings up Postgres (the same adapters) or runs on SQLite in replay mode. If lane P slips past 19 Oct, the hosted demo is dropped and `docker compose up` plus recorded evidence stands.
 
-### 16.2 Lanes (at most three builders at once; a file is edited by one ticket at a time)
+Fallback demo if lane A slips: the same routes served by a **single hard-coded tenant** (`AGENT_WALLET_MODE=single`, owner address from `AGENT_WALLET_SINGLE_OWNER`, agent key from the existing `AGENT_WALLET_PRIVATE_KEY`), so the frontend and lane B are unaffected. The page labels this mode.
 
-Harness: **S** = Claude Sonnet (frontend, architect-heavy, security boundaries); **F** = agy Flash if the account has quota, otherwise Sonnet (pure backend, well specified).
+### 16.2 Lanes and tickets (at most three builders at once; a file is edited by one ticket at a time)
+
+Harness: **S** = Claude Sonnet (frontend, security boundaries, refactors of audited code); **F** = agy Flash if the account has quota, otherwise Sonnet (pure backend, well specified).
 
 | Ticket | Lane | Stage | Files touched | Depends on | Acceptance tests | Risk | Harness |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **W0** Container fixes | D | 0 | `Dockerfile`, `docker-compose.yml`, `.env.example`, `README.md` (env table), `api/main.py` (mount only), `.dockerignore` | none | `docker compose up --build` starts; `GET /health` 200; `GET /ui/` 200; state file survives `down` then `up`; no `DB_PATH` left in docs or compose (`tests/test_container_config.py`) | `rủi-ro-cao` (deploy config, escalated) | F |
-| **C1** Contract: enums, examples, schema copies, rule codes | B | 0 | `contracts/schemas/order.schema.json`, `contracts/schemas/decision-record.schema.json`, `contracts/rule-codes.json`, `contracts/examples/*`, `contracts/README.md`, `tests/test_contracts.py` | owner approval of section 7 | embedded copies byte-identical; new examples valid or invalid as named; codes append-only | `rủi-ro-cao` | S |
-| **C2** Adapter, builder, policy, ledger for mint and transfer | B | 0 | `core/protocols/{aave,addresses}.py`, `core/policy/engine.py`, `core/runner/ledger.py`, `core/agent/planner.py`, `tests/protocols`, `tests/policy/test_owner_functions.py`, `tests/agent`, `evals/scenarios.py` | C1 | `tests/policy/test_owner_functions.py::*` (section 7.3 rows), selector tests, planner rejects `mint`, eval 25 codes plus new | `rủi-ro-cao` | S |
+| **W0** Container fixes (**already running**) | D | 0 | `Dockerfile`, `docker-compose.yml`, `.env.example`, `README.md` (env table), `api/main.py` (mount only), `.dockerignore` | none | `docker compose up --build` starts; `/health` 200; `/ui/` 200; state survives `down` and `up`; no `DB_PATH` left (`tests/test_container_config.py`) | `rủi-ro-cao` (deploy config) | F |
+| **C1** Contract: enums, examples, schema copies, rule codes | B | 0 | `contracts/schemas/order.schema.json`, `contracts/schemas/decision-record.schema.json`, `contracts/rule-codes.json`, `contracts/examples/*`, `contracts/README.md`, `tests/test_contracts.py` | none (owner confirmed additive enums, addendum 2 item 4) | embedded copies byte-identical; new examples valid or invalid as named; codes append-only; no mint cap field anywhere | `rủi-ro-cao` | S |
+| **C2** Adapter, builder, policy for mint and transfer | B | 0 | `core/protocols/{aave,addresses}.py`, `core/policy/engine.py`, `core/agent/planner.py`, `tests/protocols`, `tests/policy/test_owner_functions.py`, `tests/agent`, `evals/scenarios.py` | C1 | `test_owner_functions.py::*` (section 7.3), selector tests, planner rejects `mint`, eval 25 codes plus new | `rủi-ro-cao` | S |
 | **C3** Gateway: `origin`, global stop, owner-function path | B | 0 | `core/gateway/gateway.py`, `core/gateway/globalstop.py`, `core/gateway/txbuilder.py`, `tests/gateway/` | C2 | `test_global_stop.py::*`; `test_origin.py::test_planner_origin_cannot_mint`; mint executes through fake signer | `rủi-ro-cao` | S |
-| **A1** Custody and tenancy | A | 0 | `core/gateway/custody.py`, `core/gateway/tenant.py`, `core/gateway/setup.py`, `tests/webapp/test_custody.py`, `tests/webapp/test_tenant_paths.py`, `tests/test_signer_boundary.py` | none | custody tests (section 17 table), boundary tests | `rủi-ro-cao` | S |
+| **A1** Custody, tenancy and **storage interfaces** | A | 0 | `core/storage/interfaces.py` (Protocols only), `core/gateway/custody.py`, `core/gateway/tenant.py`, `core/gateway/setup.py`, `tests/webapp/test_custody.py`, `tests/webapp/test_tenant_paths.py`, `tests/test_signer_boundary.py` | none | custody tests; boundary tests; `KeystoreStore` file adapter passes `test_keystore.py` | `rủi-ro-cao` | S |
+| **P1** Storage Protocols on the SQLite adapters, contract suite | P | 0 | `core/storage/sqlite/*`, `core/tiers/store.py`, `core/audit/sink.py`, `core/gateway/lock.py`, `core/gateway/intents.py`, `core/runner/ledger.py`, `tests/storage/contract/*` | A1 (interfaces merged) | existing `tests/tiers`, `tests/audit`, `tests/gateway`, `tests/runner` pass unchanged; the contract suite passes on `sqlite` | `rủi-ro-cao` (audit and tier modules) | S |
+| **P2** Postgres adapters, migrations, CI service, compose `db` | P | 1 | `core/storage/postgres/*`, `core/storage/migrations/*.sql`, `core/storage/migrate.py`, `requirements.txt`, `.github/workflows/*`, `docker-compose.yml`, `tests/storage/test_pg_*.py` | P1 | the contract suite passes on `postgres`; append-only, RLS, migration and no-string-SQL tests | `rủi-ro-cao` (new dependency, CI config, audit boundary) | S |
+| **P3** Hosted deployment and smoke | P | 1 | `scripts/webapp_smoke.py`, `docs/deploy-render.md`, `README.md` (judges note) | P2, A3 | section 15.4 checks pass on the live URL | `rủi-ro-cao` (secrets, hosting) | S |
 | **A2** Auth and step-up | A | 0 (sign-in), 1 (step-up) | `api/auth.py`, `api/session.py`, `tests/webapp/{conftest,test_auth,test_stepup}.py` | A1 | all rows of 6.4 | `rủi-ro-cao` | S |
-| **A3** Jobs, routes, wallet and agent endpoints | A | 0 | `api/app.py` (new routes only), `api/jobs.py`, `api/wallet.py`, `api/main.py`, `contracts/openapi.yaml`, `tests/webapp/test_jobs.py`, `tests/api/test_routes.py` | A1, A2, C3 | jobs table rows of section 10; top-up tests; route equality | `rủi-ro-cao` (`openapi.yaml` wording) | S |
-| **A4** Presets and policy endpoint | A | 1 | `api/policy_presets.py`, `contracts/presets/*.json`, `api/app.py` (policy route), `tests/webapp/test_presets.py` | A2, A3 | every preset validates against `ips.schema.json`; `PUT /policy` needs step-up and records `TIER.POLICY_CHANGED` with `ips_hash`; no endpoint accepts an IPS body | `rủi-ro-cao` | S |
-| **A5** Rate limits, observability, global stop wiring | A | 1 | `api/limits.py`, `api/logging.py`, `tests/webapp/test_limits.py`, `tests/webapp/test_logging.py` | A3 | per-owner and global limits; log redaction test; request id present | `rủi-ro-thấp` | F |
+| **A3** Jobs, routes, wallet and agent endpoints | A | 0 | `api/app.py` (new routes only), `api/jobs.py`, `api/wallet.py`, `api/main.py`, `contracts/openapi.yaml`, `tests/webapp/test_jobs.py`, `tests/api/test_routes.py` | A1, A2, C3 | jobs rows of section 10; top-up tests; route equality | `rủi-ro-cao` (`openapi.yaml` wording) | S |
+| **A4** Presets and policy endpoint | A | 1 | `api/policy_presets.py`, `contracts/presets/*.json`, `api/app.py` (policy route), `tests/webapp/test_presets.py` | A2, A3 | every preset validates against `ips.schema.json`; `PUT /policy` needs step-up and records `TIER.POLICY_CHANGED` | `rủi-ro-cao` | S |
+| **A5** Rate limits, observability, settings stop | A | 1 | `api/limits.py`, `api/logging.py`, `tests/webapp/test_limits.py`, `tests/webapp/test_logging.py` | A3 | per-owner and global limits; log redaction; request id | `rủi-ro-thấp` | F |
 | **F1** Frontend Stage 0 views against fixtures | C | 0 | `ui/index.html`, `ui/style.css`, `ui/main.js`, `ui/api.js`, `ui/wallet/*`, `ui/views/{onboard,dashboard,feed}.js`, `ui/explain.js`, `ui/fixtures/*`, `tests/ui/*` | API fragment frozen (section 12) | section 14.4 tests; works from fixtures with no backend | `rủi-ro-thấp` | S |
-| **F2** Frontend Stage 1 views | C | 1 | `ui/views/{approvals,policy,audit,withdraw}.js` | F1, A4 | step-up flow test with `TestWallet` stub | `rủi-ro-thấp` | S |
+| **F2** Frontend Stage 1 views | C | 1 | `ui/views/{approvals,policy,audit,withdraw}.js` | F1, A4 | step-up flow test with a wallet stub | `rủi-ro-thấp` | S |
 | **E1** Evidence run and docs | any | 0, 1 | `scripts/webapp_evidence.py`, `docs/evidence/webapp-*`, `docs/architecture/webapp.md`, `docs/security/self-assessment.md`, `README.md` | A3, F1 | evidence checklist (section 18) | `rủi-ro-cao` (live funds, owner go) | S |
-| **O1** Backup, restore, ops | D | 1 | `scripts/backup.py`, `tests/ops/` | A1 | restore test | `rủi-ro-thấp` | F |
+| **O1** Export, import, backup | D | 1 | `core/storage/export.py`, `core/storage/import_.py`, `scripts/backup.py`, `tests/ops/` | P1 | export then import verifies chains on both backends | `rủi-ro-thấp` | F |
 
-Parallelism (three slots, one ticket per file at a time): Day 1 (14 to 15 Oct): slot 1 A1; slot 2 C1 then C2; slot 3 W0 (half a day, escalated to the owner first) then F1 against fixtures. Day 2 (16 Oct): A2 and C3 (C3 needs C2) and F1 continues. Day 3 (17 Oct): A3 and E1 close Stage 0. Stage 1 (18 to 19 Oct): A4, A5, F2, O1. Files with two tickets are sequential: `api/app.py` (A3 then A4), `contracts/openapi.yaml` (A3 then A4); `core/gateway/gateway.py` only C3; `docs/security/self-assessment.md` only E1.
+### 16.3 Who can start tonight with no further decision
+- **A1** (custody and tenancy interfaces, plus `core/storage/interfaces.py`): the interfaces are fixed by 5.1 and custody by 4; no owner decision outstanding.
+- **C1** (contract): the owner confirmed additive enum values under `schema_version` 1 and no mint cap (addendum 2).
+- **W0** is already running.
+- Not tonight: C2 waits for C1, P1 waits for A1's interfaces, P2 waits for P1 and the owner's approval of the dependency (16.5), A2 waits for A1.
 
-### 16.3 Cut order (first cut first; deadline 20 Oct 23:59 Beijing)
-If a Stage 1 item threatens Stage 0, Stage 0 wins.
-1. Hosted deployment option and O1 backup tooling (document the manual copy).
-2. WalletConnect adapter (already optional).
-3. F2 polish: withdraw view (keep the API; document "testnet funds can be abandoned" in the page for v1 if `transfer` slips).
-4. A5 observability beyond request ids and redaction.
-5. A4 presets: fall back to a single default preset applied at tenant creation (the contract change in section 7.5 still applies).
-6. Step-up signatures on approve (keep for release and tier raise).
-7. Multi-owner isolation (A1 isolation tests stay; second-owner demo cut): single hard-coded tenant behind the same routes.
-Never cut: the policy engine and gateway tests for `mint` and `transfer`, the global stop test, the login tests (6.4), the evidence run, the self-assessment update, the banner.
+### 16.4 Slots and dates (three builders)
 
-**Minimum demonstrable product** (what must exist on 17 Oct): W0, C1 to C3, A1 to A3 (sign-in without step-up), F1, E1: connect, sign in, agent address, top-up detected, mint, one Run with a transaction link, portfolio, a hostile note blocked in words, emergency stop, server verify.
+| Slot | 14 Oct night to 15 Oct | 16 Oct | 17 Oct | 18 Oct | 19 Oct |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 (lane A) | A1 | A2 | A3 | E1, Stage 0 demo fixes | A4, A5 |
+| 2 (lane B and P) | C1, C2 | C3, then P1 | P1 | P2 | P2, P3 |
+| 3 (lane D, C) | W0 (running), then F1 | F1 | F1 | F1 done, F2 | F2, O1 |
+
+Honest reading: three builders for 16 tickets in five days is tight. Stage 0 (local, SQLite) lands on **18 Oct**. P2 and P3 (Postgres adapters and the Render deploy) land on 19 Oct at the earliest and carry the most schedule risk, because P2 needs the owner's dependency approval and a CI service container, and P3 needs the Supabase project and the owner's Render account. The orchestrator may shift a builder between slots; the file-ownership rule still holds. Files with two tickets are sequential: `api/app.py` (A3 then A4), `contracts/openapi.yaml` (A3 then A4), `docker-compose.yml` (W0 then P2), `core/audit/sink.py`, `core/tiers/store.py`, `core/gateway/lock.py`, `core/gateway/intents.py`, `core/runner/ledger.py` only P1, `core/gateway/gateway.py` only C3.
+
+### 16.5 Owner approval items (`rủi-ro-cao`)
+1. **New dependency:** `psycopg[binary]==3.3.3` (and its pinned `psycopg-binary==3.3.3`). Checked on PyPI on 14 Oct: `psycopg` 3.3.3 was uploaded 2026-02-18, so it is well over two weeks old; 3.3.6 (2026-09-18) also qualifies but 3.3.3 is chosen for a longer track record. No `psycopg_pool` (a second package): the pool is in-house and capped. The owner requested a Postgres driver in principle.
+2. **CI configuration:** a `postgres:16` service container in the workflow, plus `TEST_DATABASE_URL`.
+3. **Compose and deploy configuration:** the `db` service, Render service settings, Supabase project and roles.
+4. **Contract changes:** enum additions in `order.schema.json` and the embedded copy; wording changes in `openapi.yaml` (7.5).
+5. **Custody:** keystore as a database row; the secrets in the Render dashboard.
+6. **Gateway and tier modules:** `origin`, global stop, storage Protocols (P1).
+
+### 16.6 Cut order (first cut first; deadline 20 Oct 23:59 Beijing)
+If a Stage 1 item threatens Stage 0, Stage 0 wins. The hosted demo is an owner decision, so items that protect it are cut after the polish items.
+1. WalletConnect adapter (already optional).
+2. A5 observability beyond request ids and redaction; O1 export and import (document manual SQL export).
+3. F2 polish: withdraw view (keep the API; if `transfer` slips, the page says "testnet funds can be abandoned").
+4. A4 presets: fall back to one default preset applied at tenant creation (the contract change in 7.5 still applies).
+5. Step-up signatures on approve (keep for release and tier raise).
+6. Multi-owner demonstration (isolation tests stay): single hard-coded tenant behind the same routes.
+7. **P3 and P2 (hosted demo)**: drop the hosted URL; `docker compose up` (with Postgres from compose, or SQLite replay) plus recorded evidence stands. Do this before cutting anything in Stage 0.
+Never cut: the policy engine and gateway tests for `mint` and `transfer`, the global stop test, the login tests (6.4), the contract suite on SQLite, the evidence run, the self-assessment update, the banner.
+
+**Minimum demonstrable product** (18 Oct, local): W0, C1 to C3, A1 to A3 (sign-in without step-up), P1, F1, E1: connect, sign in, agent address, top-up detected, mint, one Run with a transaction link, portfolio, a hostile note blocked in words, emergency stop, server verify.
 
 ## 17. Advice applied (point by point)
 
@@ -1155,7 +1346,7 @@ Never cut: the policy engine and gateway tests for `mint` and `transfer`, the gl
 | 1 | Funds exit required; `transfer` with recipient `owner`, owner-signed, outside the Planner, Stage 1 | 7.1 to 7.4 (contract change, rule codes `ACCESS.OWNER_ONLY_FUNCTION`, planner narrowing), 6.2 (step-up), 16.2 A-lane and F2. Allowed under owner stop and T0/T1 so exit always works; denied under the global stop. Stage 0 states "testnet funds can be abandoned" |
 | 2 | Presets only, validated, `ips_hash` in the audit log, fresh signature | 6.2, 12 (`PUT /policy`), 11 (`POLICY_SELECTION`), 7.5 wording change item 2, A4. The record uses new status code `TIER.POLICY_CHANGED` through `record_no_action` |
 | 3 | Fresh signature only where it adds safety; stop one click | 6.2 table. **Deviation:** I added "approve pending order" to the step-up list because approval authorises spend above the owner's own threshold; reject stays session only. The owner can drop it (cut order item 6) |
-| 4 | `mint` constraints; additive enum | 7.1 to 7.4: Aave test USDC only, faucet constant, 1,000 USDC per call, 3,000 per day from the audit log; additive, no bump (7.2), no breaking effect found because `ips.schema.json` is untouched |
+| 4 | `mint` constraints; additive enum | 7.1 to 7.4: Aave test USDC only, faucet constant, owner-origin only, additive and no bump (7.2). **Amended by addendum 2:** no amount cap in our contract (the faucet enforces its own), replaced by a call-count rate limit per owner per hour |
 | 5 | Global kill switch inside the lock before the signer, with a test | 9 and `test_flag_set_between_simulation_and_signing_blocks_signer` |
 | 6 | W0 container fixes as its own ticket | 15.1 and ticket W0 |
 | 7 | Headless login proof, names | 6.4 |
@@ -1186,17 +1377,20 @@ After a real end-to-end session on Base Sepolia, `scripts/webapp_evidence.py` (o
 
 | Threat | What an attacker can do | What stops the worst case | Test |
 | :--- | :--- | :--- | :--- |
-| Stolen session cookie | read the owner's data and stop the agent; run (rate limited) and mint (capped) | cannot release stop, raise tier, change preset, approve or withdraw (step-up needs the wallet); 8 h expiry; logout revokes | `test_stepup.py::test_stop_session_only_release_needs_stepup`, `test_auth.py::test_logout_revokes_jti` |
+| Stolen session cookie | read the owner's data and stop the agent; run (rate limited) and mint (rate limited) | cannot release stop, raise tier, change preset, approve or withdraw (step-up needs the wallet); 8 h expiry; logout revokes | `test_stepup.py::test_stop_session_only_release_needs_stepup`, `test_auth.py::test_logout_revokes_jti` |
 | XSS reading the token | none: the cookie is HttpOnly; XSS can still make same-origin calls and ask the wallet to sign | strict CSP (`default-src 'self'`; no inline script), `textContent` rendering, step-up message shows the action in the wallet | `test_render_safety.mjs`, `tests/api/test_headers.py::test_csp_header_present` |
 | Malicious page tricks the wallet into signing a transaction | cross-site page asks for `eth_sendTransaction` | the app never asks for a transaction other than a plain ETH transfer to the agent address that the page shows; messages are human-readable and name the domain and action; SameSite and Origin checks block cross-site calls | `tests/ui/test_wallet_adapter.mjs::send_only_to_agent_address` |
 | Agent key exfiltration through logs and errors | read keys from logs, tracebacks, problem details | redaction filter on keystore JSON, 64-hex strings and the secret; problem `detail` sanitised; the signer never prints; keys not in job rows | `tests/webapp/test_custody.py::test_key_never_in_logs_or_errors`, `test_logging.py::test_redaction` |
-| Mint abuse to drain the faucet | many owners mint repeatedly | per call and per day caps from the audit log, cooldown reverts in simulation, 50 new owners per day, global mint ceiling; the faucet itself is permissionless test money, so the worst case is test-token noise, not loss | `test_owner_functions.py::test_mint_per_day_from_audit_log`, `test_limits.py::test_new_owner_daily_cap` |
+| Mint abuse to drain the faucet | many owners mint repeatedly, or one owner mints very large amounts | the faucet enforces its own on-chain maximum and a 1 h cooldown per caller; 4 mint calls per owner per hour and 50 new owners per day server-side; the faucet is permissionless test money, so the worst case is test-token noise, not loss | `test_limits.py::test_mint_calls_per_hour`, `test_limits.py::test_new_owner_daily_cap` |
 | Cross-owner access | read or act on another agent | address only from the session, per-directory stores, 404 on foreign ids | section 5 tests |
 | SSRF through RPC URL config | make the server call internal hosts | RPC URL only from env at start, never from a request; `https` only (http allowed for localhost in dev); `eth_chainId` must be 84532 at startup and in the builder | `tests/webapp/test_config.py::test_rpc_url_validated_and_chain_checked` |
 | LLM cost abuse | spam runs and long notes | 6 runs per hour per owner, 2,000 character note, fixed `max_tokens`, one active job | `test_limits.py::test_runs_per_hour`, `test_jobs.py::test_note_length_capped` |
 | Prompt injection to mint or transfer | planner outputs `mint` or `transfer` | Planner narrowing, `origin` is set by code, `ACCESS.OWNER_ONLY_FUNCTION` | `tests/agent/test_planner.py::test_mint_rejected`, `tests/gateway/test_origin.py::test_planner_origin_cannot_mint` |
 | Replay of a sign-in or step-up signature | reuse a captured signature | single-use nonce and challenge, short expiry, domain and chain bound | `test_auth.py::test_nonce_reuse_rejected`, `test_stepup.py::test_challenge_single_use_and_expiry` |
 | Operator error: secret unset or short | unsigned or weakly encrypted keys | fail closed 503; config check rejects short secrets | `test_custody.py::test_short_secret_rejected`, `test_auth.py::test_unset_session_secret_returns_503` |
+| Database credentials leaked (`DATABASE_URL`) | read audit history and encrypted keystores; with the app role, insert rows | keystores are encrypted with a secret that is not in the database; the app role cannot UPDATE or DELETE audit rows (triggers and grants); rotate the database password and `AGENT_WALLET_KEYSTORE_SECRET`; set the global stop first | `tests/storage/test_pg_append_only.py::test_app_role_cannot_update_delete_truncate`, `tests/webapp/test_custody.py::test_dump_without_secret_has_no_plaintext_key` |
+| SQL injection | craft input that alters a query | parameterised queries only; identifiers from fixed allowlists; owner address validated by regex before use; RLS as a second layer | `tests/storage/test_no_string_sql.py::test_no_string_built_sql`, `tests/webapp/test_tenant_paths.py::test_address_is_validated_and_normalised` |
+| Provider pauses or loses the database (Supabase free pause after a week, no backups) | hosted demo unavailable, or data lost | gateway fails closed (`503 storage-unavailable`), nothing signed; export script and the recorded evidence; `/ready` ping resets the inactivity timer | `tests/webapp/test_storage_down.py::test_storage_unavailable_fails_closed_nothing_signed` |
 | Host compromise | all loaded keys | out of scope for v1 custody; testnet only; documented | self-assessment K7 updated |
 
 ## 20. "X is enforced" and the proving test
@@ -1208,13 +1402,18 @@ After a real end-to-end session on Base Sepolia, `scripts/webapp_evidence.py` (o
 | `origin="owner"` appears only in the API job module | `tests/runner/test_boundaries.py::test_origin_owner_only_in_api_jobs` |
 | Runner still imports no signer, owner or intents module | `tests/runner/test_boundaries.py::test_runner_imports` |
 | Keystore decrypts only with the secret; wrong secret fails closed | `tests/webapp/test_custody.py::test_wrong_secret_fails_closed` |
-| Keystore file is created `0600` and never overwritten | `tests/webapp/test_custody.py::test_keystore_mode_and_no_overwrite` |
+| Keystore is stored encrypted (file `0600` or row), never overwritten, and a dump has no plaintext key | `tests/webapp/test_custody.py::test_keystore_mode_and_no_overwrite`, `test_dump_without_secret_has_no_plaintext_key` |
 | Secret rotation keeps the address | `tests/webapp/test_custody.py::test_rotate_keeps_address` |
 | Mint targets only the faucet constant with `to` = agent | `tests/protocols/test_aave.py::test_mint_calldata_targets_faucet_and_agent` |
-| Mint above 1,000 USDC denied `LIMIT.MINT_PER_CALL`; above 3,000 per day denied `LIMIT.MINT_PER_DAY` | `tests/policy/test_owner_functions.py::test_mint_per_call_cap`, `test_mint_per_day_from_audit_log` |
+| Mint has no amount cap in our contract; token and target pinned; non-owner origin denied | `tests/policy/test_owner_functions.py::test_mint_has_no_amount_cap`, `test_mint_token_and_target_pinned`, `test_mint_non_owner_origin_denied` |
+| Mint calls limited per owner per hour | `tests/webapp/test_limits.py::test_mint_calls_per_hour` |
+| Both storage backends behave identically | `tests/storage/contract/*` (parametrised `sqlite`, `postgres`) |
+| Audit rows cannot be updated or deleted by the app role | `tests/storage/test_pg_append_only.py::test_app_role_cannot_update_delete_truncate` |
+| Row-level security blocks cross-owner reads | `tests/storage/test_pg_rls.py::test_rls_blocks_cross_owner_select` |
+| No string-built SQL | `tests/storage/test_no_string_sql.py::test_no_string_built_sql` |
 | `transfer` recipient only `owner`, resolved from the session | `tests/protocols/test_aave.py::test_transfer_recipient_owner_resolved_server_side`, `tests/policy/test_owner_functions.py::test_transfer_to_self_denied` |
 | `transfer` works under owner stop and T0, not under global stop | `test_owner_functions.py::test_transfer_allowed_under_owner_stop`, `test_global_stop.py::test_global_stop_blocks_transfer` |
-| `mint` and `transfer` excluded from spend, included in tx count | `tests/runner/test_ledger.py::test_mint_transfer_not_in_spend_but_in_count` |
+| `mint` and `transfer` excluded from spend, included in tx count | `tests/storage/contract/test_ledger.py::test_mint_transfer_not_in_spend_but_in_count` |
 | Contract examples validate; embedded copies identical | `tests/test_contracts.py` (new cases) |
 | Only presets can set the IPS; no body accepted | `tests/webapp/test_presets.py::test_policy_accepts_preset_id_only`, `test_every_preset_validates_against_ips_schema` |
 | Preset change is recorded with its `ips_hash` | `tests/webapp/test_presets.py::test_policy_change_recorded_in_chain` |
@@ -1228,13 +1427,15 @@ After a real end-to-end session on Base Sepolia, `scripts/webapp_evidence.py` (o
 
 | # | Question | Recommendation |
 | :--- | :--- | :--- |
-| 1 | Is adding enum values to `Function`, `Recipient`, `Token`, `Protocol` additive under `schema_version` 1? | Yes, document in the contracts README; no bump (7.2). The owner confirms because `decision-record` is an audit-boundary contract |
+| 1 | Is adding enum values to `Function`, `Recipient`, `Token`, `Protocol` additive under `schema_version` 1? | **Decided by the owner (addendum 2): yes.** Document it in the contracts README; no bump |
 | 2 | Should `transfer` be allowed under owner stop and T0/T1? | Yes (exit must work), still step-up signed; denied only under the global stop |
-| 3 | `mint` caps: 1,000 USDC per call and 3,000 per day | Recommended; a business assumption, so the owner may change the constants |
+| 3 | `mint` caps | **Decided by the owner (addendum 2): no amount cap in our contract**; the faucet's on-chain limits apply; server-side rate limit of 4 mint calls per owner per hour (recommended number) |
 | 4 | Is the approve-order step-up wanted? | Yes; cut-order item 6 drops it if time is short |
-| 5 | Hosted demo | Local plus recorded evidence; hosted optional (15.4) |
+| 5 | Hosted demo | **Decided by the owner (addendum 2): Render free web service plus Supabase Postgres** (15.4). Open: whether an external keep-warm ping is acceptable under Render's terms (unverified) |
 | 6 | Session lifetime 8 h and cookie vs bearer for the browser | Cookie, 8 h |
 | 7 | pbkdf2 vs scrypt default | scrypt by default, pbkdf2 on small hosts via `AGENT_WALLET_KEYSTORE_KDF` |
-| 8 | Reference prices: ETH has no reference price, so `transfer` ETH is valued by amount only and bypasses USD limits | Acceptable because it is owner-signed and returns the owner's own funds; the owner confirms |
+| 8 | Reference prices: ETH has no reference price, so `transfer` ETH is valued by amount only | **Decided by the owner (addendum 2): `transfer` of ETH to the owner is outside USD limits** |
 | 9 | Third rule family for owner functions instead of reusing `ACCESS` and `LIMIT` | Reuse existing families (fewer contract changes) |
+| 11 | Postgres driver `psycopg[binary]==3.3.3`, CI service container, compose `db` service | Owner approval items (16.5); requested in principle by the owner |
+| 12 | Supabase free: role creation, IPv4 reachability from Render, pooler connection limit, backups | Unverified (15.4); verify with the first deploy and keep the fallbacks listed there |
 | 10 | Does Stage 0 need a second owner to demonstrate isolation? | No; Stage 1, with tests |

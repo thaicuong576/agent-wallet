@@ -178,6 +178,22 @@ Honesty rules from the addendum are adopted: reference prices and replayed or fa
 
 ---
 
+## Owner addendum 2 (2026-10-14 night): decisions that supersede parts of this proposal
+
+The owner decided the hosting and storage questions that were open here. `design.md` (see its "Amendments" table) is the source of truth; this section keeps the proposal consistent.
+
+| Proposal section | Was | Now (owner decision) |
+| :--- | :--- | :--- |
+| 1. Key custody | keystore file per owner | same encrypted JSON, but stored through a `KeystoreStore`: a file on the SQLite backend or an **encrypted row in Postgres**; never plaintext; the secret still comes from `AGENT_WALLET_KEYSTORE_SECRET` |
+| 2. Multi-tenancy | directory per owner (option A) | **two backends behind Protocols**: SQLite (directory per owner, local, replay, tests) and **Postgres** (one set of tables with an `owner` column, composite keys and row-level security). Both pass one parametrised contract suite |
+| 9. Deployment | self-host recommended; Railway with volume as hosted option; Render free unsafe | **Render free web service (Docker) plus Supabase Postgres via `DATABASE_URL`**. With Postgres holding all state, Render's ephemeral filesystem no longer loses keystores. Render's own free Postgres expires after 30 days ([Render](https://render.com/docs/free)), so Supabase is used; its free plan pauses an idle project after a week (pricing page) |
+| Mint (heads-up in Phase A) | caps of 1,000 per call and 3,000 per day | **no amount cap in our contract**; the faucet's on-chain maximum and cooldown apply; rate limit is a call count per owner per hour |
+| New dependency | none | `psycopg[binary]` 3.x, an owner approval item |
+| Open question 1 (funds exit) | open | answered by advice 1: owner-signed `transfer` to the owner (Stage 1) |
+| Open question 3 (hosted demo) | owner choice | Render plus Supabase, with the unverified items listed in `design.md` 15.4 |
+
+---
+
 ## Summary of recommendations
 
 | # | Question | Recommendation | Risk |
@@ -186,7 +202,7 @@ Honesty rules from the addendum are adopted: reference prices and replayed or fa
 | 2 | Multi-tenancy | A: one directory per owner, address only from the session, `^0x[0-9a-f]{40}$` | `rủi-ro-cao` |
 | 3 | Auth | B: SIWE-style message with `eth_account`, HMAC session in an HttpOnly cookie, per-action owner signatures for IPS and tier; no new dependency; EOAs only | `rủi-ro-cao` |
 | 6 | Run flow | B: job with polling, one active run per owner, single worker, planner client labelled | `rủi-ro-thấp` |
-| 9 | Deployment | A supported, C with a volume as hosted option, Render free is unsafe for keystores; fix four container defects | `rủi-ro-cao` (config and secrets) |
+| 9 | Deployment | Superseded by addendum 2: Render free web service plus Supabase Postgres (`DATABASE_URL`), `docker compose up` for self-host; fix four container defects | `rủi-ro-cao` (config and secrets) |
 
 ## Questions for the owner (answers recommended in Phase B)
 1. How does an owner get funds out of an agent wallet, or is abandonment acceptable on testnet?

@@ -19,7 +19,7 @@ They are not traders chasing yield, not institutions, and not developers (develo
 | Can you get your money out? | Move it yourself | Owner-signed withdrawal to your own address (Stage 1) |
 | Where is the agent key? | Wherever you pasted it | v1: a separate, server-held testnet key that never holds your own wallet's key. Production path: a non-custodial smart account with a scoped session key |
 
-One honest sentence for the page: *the agent can only do what you allowed, and everything it does can be checked afterwards.* v1 is custodial testnet software; the page says so on every screen.
+One honest sentence for the page: *the agent can only do what you allowed, and everything it does can be checked afterwards.* v1 is custodial testnet software; the page says so on every screen. State lives in Postgres when hosted (Render free web service plus Supabase) and in SQLite when run locally or in replay mode.
 
 ## 3. The three core journeys
 
@@ -43,10 +43,11 @@ In (Stage 0 and Stage 1 of the design): wallet sign-in, one agent wallet per own
 - Non-custodial smart accounts and session keys (described as Stage 2 roadmap only).
 - More than Aave V3 supply and withdraw; swaps (the testnet pool has no liquidity).
 - Free-form policy editing: an owner can select a preset, not write an IPS body.
+- Our own cap on test-USDC minting: the Aave faucet's on-chain maximum and cooldown apply; we only rate-limit calls per owner per hour.
 - Scheduled or autonomous background running: a person presses Run (a scheduler is Stage 2).
 - Notifications (email, push), billing, teams, mobile apps, WalletConnect as a requirement (it is optional).
 - Smart-contract wallets as owners (EOAs only; EIP-1271 is Stage 2).
 - Cross-chain, fiat on-ramps, any third-party custody.
 
 ## 6. What "done" looks like for a judge
-A five-minute path, either live or from recorded evidence: connect, fund, mint, run with a real transaction link, see the portfolio, paste a hostile note and see it blocked with the rule in words, stop the agent, verify the chain. Anything that is a reference value (prices) or scripted (offline planner) is labelled as such.
+A five-minute path, either live (hosted demo: the first request after idle can take about a minute on Render's free tier) or from recorded evidence: connect, fund, mint, run with a real transaction link, see the portfolio, paste a hostile note and see it blocked with the rule in words, stop the agent, verify the chain. Anything that is a reference value (prices) or scripted (offline planner) is labelled as such.
