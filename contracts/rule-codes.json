@@ -148,5 +148,24 @@
     "family": "TIER",
     "description": "The owner rejected a pending order.",
     "source": "owner decision on ticket 3; CMP-02"
+  },
+  {
+    "code": "ACCESS.OWNER_ONLY_FUNCTION",
+    "family": "ACCESS",
+    "description": "The order calls an owner-only function (mint or transfer) with a non-owner origin.",
+    "source": "design section 7.1, 7.3"
+  },
+  {
+    "code": "TIER.GLOBAL_STOP",
+    "family": "TIER",
+    "description": "The global stop is engaged. Orders are denied while it is engaged and the engaging record uses this code. It is a status, not a violation.",
+    "source": "design section 7.1, 7.3, 11"
+  },
+  {
+    "code": "TIER.POLICY_CHANGED",
+    "family": "TIER",
+    "description": "The IPS was updated to a new preset. It is a status, not a violation.",
+    "source": "design section 7.1, 9"
   }
 ]
+

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "order_id": "1d8f3c21-0b4e-5d6f-9c2a-3f8e4d1b5c62",
+  "created_at": "2026-10-16T09:00:00Z",
+  "proposed_by": "owner",
+  "protocol": "wallet",
+  "function": "transfer",
+  "token": "USDC",
+  "amount": {
+    "value": "50000000",
+    "decimals": 6
+  },
+  "recipient": "owner"
+}
