@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DB_PATH=/app/data/agent_wallet.db
+    AGENT_WALLET_DATA_DIR=/app/data
 
 WORKDIR /app
 
@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY core ./core
 COPY api ./api
 COPY contracts ./contracts
+COPY ui ./ui
 
 RUN useradd --create-home --uid 10001 app && mkdir -p /app/data && chown -R app /app
 USER app

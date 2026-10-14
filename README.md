@@ -37,6 +37,7 @@ With Docker:
 cp .env.example .env            # optional; the API starts without keys
 docker compose up --build       # API on http://localhost:8000
 ```
+The container runs the API and static console at `/ui` as non-root (UID 10001). Runtime state persists in `./data:/app/data` under `AGENT_WALLET_DATA_DIR`. Repository scripts (`scripts/`, `evals/`) are not bundled into the image and run from a local checkout. Architecture note: [`docs/architecture/deployment.md`](docs/architecture/deployment.md).
 
 ## Run the UI
 A minimal owner console (plain HTML, CSS and JS, no build step, no external assets) is served by the API at `/ui`.
@@ -81,7 +82,7 @@ Environment variable names only (see `.env.example`). Values live in `.env`, whi
 | `AGENT_WALLET_PRIVATE_KEY` | Testnet agent wallet key; read only by the signer |
 | `AGENT_WALLET_OWNER_TOKEN` | Owner token for the owner endpoints and UI; unset means they answer 503 |
 | `BASE_SEPOLIA_RPC_URL` | JSON-RPC endpoint (default `https://sepolia.base.org`) |
-| `DB_PATH` | SQLite file for tier state and the audit log |
+| `AGENT_WALLET_DATA_DIR` | Directory for SQLite state files (default `.data`, `/app/data` in container) |
 | `IPS_PATH` | The Investment Policy Statement file |
 
 ## Repository map
