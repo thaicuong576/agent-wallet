@@ -95,10 +95,8 @@ export function render(ctx) {
       return;
     }
     try {
-      const [page, jobs] = await Promise.all([
-        api.decisions(50),
-        api.jobs().catch(() => ({ items: [] })),
-      ]);
+      const page = await api.decisions(50);
+      const jobs = await api.jobs().catch(() => ({ items: [] }));
       const latest = (jobs.items || []).find((j) => j.kind === "run");
       const label = plannerLabel(latest);
       planner.hidden = !label;

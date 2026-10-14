@@ -202,7 +202,18 @@ export function createApi({ fixtures = false, demo = false, scenario = "", fetch
         const d = await file("decisions");
         if (scenario === "hostile" && !fx.seeded) {
           fx.seeded = true;
-          fx.extra.push(...(await file("run-hostile")));
+          const recs = await file("run-hostile");
+          fx.extra.push(...recs);
+          fx.jobs.push({
+            job_id: "d".repeat(32),
+            kind: "run",
+            status: "denied",
+            planner_client: "scripted",
+            order_ids: recs.map((r) => r.order_id),
+            error_code: null,
+            created_at: "2026-10-14T12:05:00Z",
+            finished_at: "2026-10-14T12:05:02Z",
+          });
         }
         d.items = d.items.concat(fx.extra).map((r, i) => ({ ...r, seq: i }));
         return d;
