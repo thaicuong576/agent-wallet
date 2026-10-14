@@ -48,8 +48,21 @@ class LocalSigner:
     """Local signer using an Ethereum private key from AGENT_WALLET_PRIVATE_KEY."""
 
     ENV_VAR = "AGENT_WALLET_PRIVATE_KEY"
+    # Base Sepolia only. Any other chain, or no chain id (replayable), is refused.
+    ALLOWED_CHAIN_IDS = frozenset({84532})
 
-    def __init__(self, sender: Any = None, *, private_key: str | None = None):
+    def __init__(
+        self,
+        sender: Any = None,
+        *,
+        private_key: str | None = None,
+        allowed_chain_ids: frozenset[int] | None = None,
+    ):
+        self._allowed_chain_ids = (
+            frozenset(allowed_chain_ids)
+            if allowed_chain_ids is not None
+            else self.ALLOWED_CHAIN_IDS
+        )
         key = private_key if private_key is not None else os.environ.get(self.ENV_VAR)
         if key is None or not str(key).strip():
             raise SignerKeyError(f"Missing {self.ENV_VAR} environment variable")
@@ -76,6 +89,12 @@ class LocalSigner:
         if "from_" in clean_tx and "from" not in clean_tx:
             clean_tx["from"] = clean_tx.pop("from_")
 
+        chain_id = clean_tx.get("chainId")
+        if isinstance(chain_id, bool) or not isinstance(chain_id, int):
+            raise SignerError("Refusing to sign: transaction has no integer chainId")
+        if chain_id not in self._allowed_chain_ids:
+            raise SignerError(f"Refusing to sign: chainId {chain_id} is not in the allowed set")
+
         try:
             signed = self._account.sign_transaction(clean_tx)
         except Exception as e:
@@ -85,19 +104,15 @@ class LocalSigner:
         tx_hash: str | None = None
 
         if self._sender is not None:
-            res = None
-            if callable(self._sender):
-                try:
-                    res = self._sender(raw_tx)
-                except TypeError:
-                    res = self._sender(f"0x{raw_tx.hex()}")
-            elif hasattr(self._sender, "send_raw_transaction"):
-                try:
-                    res = self._sender.send_raw_transaction(raw_tx)
-                except TypeError:
-                    res = self._sender.send_raw_transaction(f"0x{raw_tx.hex()}")
+            # One call, no retry: a retry after an error inside the sender could broadcast twice.
+            if hasattr(self._sender, "send_raw_transaction"):
+                res = self._sender.send_raw_transaction(raw_tx)
             elif hasattr(self._sender, "eth") and hasattr(self._sender.eth, "send_raw_transaction"):
                 res = self._sender.eth.send_raw_transaction(raw_tx)
+            elif callable(self._sender):
+                res = self._sender(raw_tx)
+            else:
+                raise SignerError("Sender must be callable or expose send_raw_transaction")
 
             if isinstance(res, str):
                 tx_hash = res if res.startswith("0x") else f"0x{res}"

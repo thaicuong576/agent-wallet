@@ -11,6 +11,7 @@ from core.signer import (
     GuardedSigner,
     LocalSigner,
     Signer,
+    SignerError,
     SignerKeyError,
     SimulationFailed,
     TxReceiptStub,
@@ -340,3 +341,44 @@ def test_protocols_and_stubs():
     assert isinstance(guarded, Signer)
     assert guarded.inner_signer is fake
     assert guarded.simulator is rpc_sim
+
+
+def _tx(chain_id):
+    tx = {
+        "to": "0x2222222222222222222222222222222222222222",
+        "value": 1,
+        "gas": 21000,
+        "maxFeePerGas": 1_000_000_000,
+        "maxPriorityFeePerGas": 1_000_000,
+        "nonce": 0,
+        "type": 2,
+    }
+    if chain_id is not None:
+        tx["chainId"] = chain_id
+    return tx
+
+
+def test_local_signer_refuses_mainnet_and_missing_chain_id():
+    from eth_account import Account
+
+    sent = []
+    signer = LocalSigner(
+        sender=lambda raw: sent.append(raw), private_key=Account.create().key.hex()
+    )
+    for bad in (8453, 1, None):
+        with pytest.raises(SignerError):
+            signer.sign_and_send(_tx(bad))
+    assert sent == []
+
+
+def test_local_signer_signs_for_base_sepolia():
+    from eth_account import Account
+
+    sent = []
+    signer = LocalSigner(
+        sender=lambda raw: sent.append(raw) or "0x" + "ab" * 32,
+        private_key=Account.create().key.hex(),
+    )
+    receipt = signer.sign_and_send(_tx(84532))
+    assert receipt.tx_hash == "0x" + "ab" * 32
+    assert len(sent) == 1
