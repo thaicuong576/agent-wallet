@@ -161,6 +161,23 @@ Boundary moved: deployment configuration and new secrets. Dependency and CI/depl
 
 ---
 
+## Owner addendum 1 (2026-10-14): effect on the options
+
+The owner asked for a production-grade, commercialisable design with staged delivery (Stage 0 demo path by 17 Oct, Stage 1 hardening by 19 Oct, Stage 2 roadmap only). Phase B applies it fully (`product.md`, production concerns, UI tokens, staged tickets). What it changes in the options above:
+
+| Question | Change | Why |
+| :--- | :--- | :--- |
+| 1. Custody | Recommendation A stays for v1 but is framed as the **v1 custodial testnet model**. Phase B adds the production path: a non-custodial smart account (owner is the root, the agent holds a scoped session key limited by token, function, amount and expiry) with the **same** policy engine deciding off-chain and the account enforcing the same bounds on-chain. What changes: signer input becomes a session-key signer, `custody.py` is replaced by a session-key registry, the owner signs a grant instead of the server generating the key, and the fund-exit gap (open question 1) disappears because the owner keeps the root. Keystore rotation and `..._PREVIOUS` stay as designed. | Commercial path without rewriting the gateway. |
+| 2. Tenancy | Option A (directory per owner) is mandatory from Stage 0, even with a single owner, so the layout never changes. Stage 0 may run one tenant; the cross-owner tests and a second-owner session land in Stage 1. | Avoids a data migration under a deadline. |
+| 3. Auth | No change. Per-owner and global **kill switches** are added to the design: owner stop (existing tier flag, per owner) and an operator stop (`AGENT_WALLET_GLOBAL_STOP` or a file flag read by the gateway before any signing) that denies all owners. The global stop is a new boundary and is `rủi-ro-cao`. | Incident response. |
+| 6. Run flow | Rate limits become two named controls: runs per owner per hour (LLM cost) and mints per owner per day (faucet). Both are enforced server-side and recorded; values are set in Phase B. | Abuse controls. |
+| 9. Deployment | Adds environments (local, CI, hosted demo), CI/CD with the existing checks plus a webapp smoke test, secrets only from the host's secret store, backup and restore of `DATA_DIR/owners/` (nightly copy plus a restore test), retention (audit logs kept, nonces and expired sessions purged after 24 h), structured JSON logs with a request id and secret redaction, and an audit-chain verification endpoint per owner. Hosted option stays C with a volume; Render free remains unsafe for keystores. | Production concerns. |
+| Cut order | If a Stage 1 item threatens Stage 0, Stage 0 wins. | Deadline is fixed. |
+
+Honesty rules from the addendum are adopted: reference prices and replayed or fallback planner output are labelled in the UI and in records; no fake data on the live path.
+
+---
+
 ## Summary of recommendations
 
 | # | Question | Recommendation | Risk |
