@@ -8,14 +8,7 @@ if TYPE_CHECKING:
     from core.tiers.store import TierStore
 
 
-class _TierViewMeta(type):
-    """Metaclass preserving class-level introspection for TierView."""
-
-    def __dir__(cls) -> list[str]:
-        return [attr for attr in super().__dir__() if attr != "get_approval"]
-
-
-class TierView(metaclass=_TierViewMeta):
+class TierView:
     """Read-only interface for checking current permission tier, stop status, and approvals.
 
     This object exposes no mutators and is safe to provide to agent-facing modules and gateway.
