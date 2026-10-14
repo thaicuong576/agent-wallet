@@ -8,6 +8,6 @@ services:
       - path: .env
         required: false
     environment:
-      DB_PATH: /app/data/agent_wallet.db
+      AGENT_WALLET_DATA_DIR: /app/data
     volumes:
       - ./data:/app/data
