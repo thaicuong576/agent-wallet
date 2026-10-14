@@ -1,0 +1,17 @@
+[project]
+name = "agent-wallet"
+version = "0.1.0"
+description = "AI wallet agent that acts only inside an owner-set Investment Policy Statement (FinTechathon 2026, Topic F)."
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", ".worktrees", "node_modules", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
