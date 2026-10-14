@@ -73,6 +73,7 @@ python -m core.audit.verify docs/evidence/audit-chain.jsonl   # hash chain of th
 python scripts/check_no_secrets.py                   # no secret is tracked
 ```
 On-chain evidence: `docs/evidence/tx_hashes.md` (approve and supply of 1 test USDC on Base Sepolia, receipts `0x1`).
+Planner-proposed evidence: `docs/evidence/runner-evidence.md` (approve and supply executed, a hostile-note supply of 50 USDC denied with `LIMIT.PER_TX`) and its verified chain `docs/evidence/runner-audit-chain.jsonl`. The planner in that run is scripted (deterministic replay); the rest of the path is real.
 
 ## 6. Out of scope
 Mainnet operation, custody of third-party funds, smart-contract account abstraction, MEV protection, and any production key management.

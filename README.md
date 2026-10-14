@@ -15,6 +15,7 @@ python -m core.audit.verify docs/evidence/audit-chain.jsonl   # hash chain of th
 | Evidence | Where |
 | :--- | :--- |
 | On-chain transactions (approve and supply 1 test USDC, receipts `0x1`) | [`docs/evidence/tx_hashes.md`](docs/evidence/tx_hashes.md) |
+| Planner-proposed run: two executed orders, one hostile order denied, verified chain | [`docs/evidence/runner-evidence.md`](docs/evidence/runner-evidence.md) |
 | Evaluation report (offline replay) | [`docs/evidence/eval-report.md`](docs/evidence/eval-report.md) |
 | Technical documentation | [`docs/technical-documentation.md`](docs/technical-documentation.md) |
 | Security self-assessment and known risks | [`docs/security/self-assessment.md`](docs/security/self-assessment.md) |
