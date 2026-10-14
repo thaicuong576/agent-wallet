@@ -8,12 +8,14 @@ from __future__ import annotations
 import copy
 import functools
 import hashlib
+import inspect
 import json
+import os
 import pathlib
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 import jsonschema
 
@@ -24,11 +26,28 @@ from core.gateway.exceptions import (
     OrderIdConflict,
     ReconcileRequired,
 )
+from core.gateway.globalstop import file_flag
 from core.gateway.intents import IntentStore
 from core.gateway.lock import GatewayLock
 from core.gateway.policy import DEFAULT_IPS_HASH, DenyAllPolicy, Policy
 from core.signer import Signer
 from core.simulate import Simulator
+
+OWNER_FUNCTIONS = frozenset({"mint", "transfer"})
+ORIGINS = ("planner", "owner")
+
+
+class _GlobalStopAtSigning(Exception):
+    """Internal: the global stop was set after simulation, before signing."""
+
+
+def _accepts_kwarg(fn: Any, name: str) -> bool:
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return name in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
 
 SCHEMAS_DIR = pathlib.Path(__file__).resolve().parents[2] / "contracts" / "schemas"
 
@@ -67,6 +86,8 @@ class Gateway:
         request_approval: Callable[[str], None] | None = None,
         lock: GatewayLock | None = None,
         intent_store: IntentStore | None = None,
+        global_stop: Callable[[], bool] | None = None,
+        owner_address: str | None = None,
     ) -> None:
         self.ips_hash = ips_hash or getattr(policy, "ips_hash", None) or DEFAULT_IPS_HASH
         self.policy: Policy = (
@@ -81,6 +102,12 @@ class Gateway:
         self.emergency_stop = emergency_stop
         self.tier_view = tier_view
         self.request_approval = request_approval
+        # Default reads AGENT_WALLET_GLOBAL_STOP at call time; a hosted deployment injects a
+        # reader backed by its settings store. Never "not stopped" by default.
+        self.global_stop: Callable[[], bool] = (
+            global_stop if global_stop is not None else file_flag(None, os.environ)
+        )
+        self.owner_address = owner_address
 
         if lock is not None:
             self.lock = lock
@@ -121,10 +148,22 @@ class Gateway:
             # Fail closed: any error reading the view means deny with TIER.EMERGENCY_STOP
             return "T0", True
 
-    def _tier_gate(self, order_id: str, tier: str, is_stop: bool) -> dict[str, Any] | None:
-        """Fail-safe: emergency stop and read-only tiers deny before policy or signer."""
+    def _read_global_stop(self) -> bool:
+        """Read the operator global stop, fail-closed: any error means stopped."""
+        try:
+            return bool(self.global_stop())
+        except Exception:
+            return True
+
+    def _tier_gate(
+        self, order_id: str, tier: str, is_stop: bool, global_stop: bool = False
+    ) -> dict[str, Any] | None:
+        """Fail-safe: stops and read-only tiers deny before policy or signer."""
         code = reason = None
-        if is_stop:
+        if global_stop:
+            code = "TIER.GLOBAL_STOP"
+            reason = "Global stop is engaged; no order is executed."
+        elif is_stop:
             code = "TIER.EMERGENCY_STOP"
             reason = "Emergency stop is engaged; no order is executed."
         elif tier == "T0":
@@ -139,8 +178,32 @@ class Gateway:
             "schema_version": 1,
             "order_id": order_id,
             "decision": "deny",
-            "rules_hit": [{"code": code, "evidence": {"tier": str(tier)}}],
+            "rules_hit": [
+                {
+                    "code": code,
+                    "evidence": (
+                        {"global_stop": True} if code == "TIER.GLOBAL_STOP" else {"tier": str(tier)}
+                    ),
+                }
+            ],
             "reason": reason,
+            "ips_hash": self.ips_hash,
+            "decided_at": self._now_iso(),
+        }
+
+    def _owner_only_denial(self, order: dict[str, Any], origin: str) -> dict[str, Any]:
+        """Defence in depth: owner functions from any other origin never reach the policy."""
+        return {
+            "schema_version": 1,
+            "order_id": order["order_id"],
+            "decision": "deny",
+            "rules_hit": [
+                {
+                    "code": "ACCESS.OWNER_ONLY_FUNCTION",
+                    "evidence": {"function": str(order["function"]), "origin": origin},
+                }
+            ],
+            "reason": f"Owner function '{order['function']}' requires owner origin.",
             "ips_hash": self.ips_hash,
             "decided_at": self._now_iso(),
         }
@@ -167,7 +230,12 @@ class Gateway:
         if self.tx_builder is None:
             raise GatewayError("tx_builder is not configured; no default transaction is built")
         try:
-            calls_raw = self.tx_builder(order)
+            if order.get("function") == "transfer" and _accepts_kwarg(
+                self.tx_builder, "owner_address"
+            ):
+                calls_raw = self.tx_builder(order, owner_address=self.owner_address)
+            else:
+                calls_raw = self.tx_builder(order)
             calls = [calls_raw] if isinstance(calls_raw, dict) else list(calls_raw)
             if not calls:
                 raise GatewayError("tx_builder returned no calls")
@@ -255,6 +323,10 @@ class Gateway:
                 sign_failed = True
                 sign_err_msg = "Signer not configured"
             else:
+                # Global stop, read again after simulation and immediately before the intent
+                # row and the signer; fail-closed. Nothing is written or signed if it is set.
+                if self._read_global_stop():
+                    raise _GlobalStopAtSigning
                 if self.intent_store is not None:
                     body_hash = hashlib.sha256(canonical(order)).hexdigest()
                     self.intent_store.begin_signing(order_id, body_hash, self._now_iso())
@@ -318,6 +390,25 @@ class Gateway:
 
         return outcome, execution
 
+    def _execute_or_stop(
+        self, order: dict[str, Any], order_id: str, decision: dict[str, Any]
+    ) -> tuple[str, dict[str, Any] | None, dict[str, Any]]:
+        """Execute; if the global stop is hit at signing time, swap in a denial."""
+        try:
+            outcome, execution = self._execute_order(order, order_id)
+        except _GlobalStopAtSigning:
+            denial = {
+                "schema_version": 1,
+                "order_id": order_id,
+                "decision": "deny",
+                "rules_hit": [{"code": "TIER.GLOBAL_STOP", "evidence": {"global_stop": True}}],
+                "reason": "Global stop is engaged; the order was not signed.",
+                "ips_hash": self.ips_hash,
+                "decided_at": self._now_iso(),
+            }
+            return "denied", None, denial
+        return outcome, execution, decision
+
     def record_no_action(self, reason: str, now: str) -> dict[str, Any]:
         """Record a no_action decision directly into the audit sink."""
         current_tier, emergency_stop = self._read_tier_and_stop()
@@ -349,6 +440,22 @@ class Gateway:
             raise GatewayError(f"DecisionRecord failed schema validation: {dr_errors[0].message}")
         return copy.deepcopy(stored_record)
 
+    def _evaluate_policy(
+        self, order: dict[str, Any], origin: str, tier: str, emergency_stop: bool
+    ) -> dict[str, Any]:
+        """Call the policy; pass origin, tier and stops to policies that accept them."""
+        evaluate = self.policy.evaluate
+        extra: dict[str, Any] = {}
+        for name, value in (
+            ("origin", origin),
+            ("tier", tier),
+            ("emergency_stop", emergency_stop),
+            ("global_stop", self._read_global_stop()),
+        ):
+            if _accepts_kwarg(evaluate, name):
+                extra[name] = value
+        return evaluate(order, **extra)
+
     def _find_audit_record(self, order_id: str) -> dict[str, Any] | None:
         """Find latest audit record for order_id from audit sink."""
         if hasattr(self.audit_sink, "find_by_order_id"):
@@ -359,8 +466,16 @@ class Gateway:
                     return rec
         return None
 
-    def propose(self, order: dict[str, Any]) -> dict[str, Any]:
-        """Propose an order through policy evaluation, simulation, signing, and audit recording."""
+    def propose(
+        self, order: dict[str, Any], *, origin: Literal["planner", "owner"] = "planner"
+    ) -> dict[str, Any]:
+        """Propose an order through policy evaluation, simulation, signing, and audit recording.
+
+        `origin` is set by code only (never read from the order body): "planner" for runner and
+        multi-mode `POST /orders`, "owner" for the API's mint and withdraw handlers.
+        """
+        if origin not in ORIGINS:
+            raise InvalidOrder(f"Unknown origin: {origin!r}")
         # 1. Validate order against order.schema.json
         if not isinstance(order, dict):
             raise InvalidOrder("Order must be a dictionary")
@@ -400,6 +515,12 @@ class Gateway:
                         return copy.deepcopy(stored_record)
                 elif is_emergency_stop_denial and not emergency_stop:
                     pass
+                elif stored_record.get("outcome") == "denied" and any(
+                    h.get("code") == "TIER.GLOBAL_STOP"
+                    for h in stored_record.get("decision", {}).get("rules_hit", [])
+                ):
+                    if self._read_global_stop():
+                        return copy.deepcopy(stored_record)
                 else:
                     return copy.deepcopy(stored_record)
             elif self.intent_store is not None and self.intent_store.unfinished(order_id):
@@ -418,8 +539,18 @@ class Gateway:
             # 3. Read tier and stop status per propose (fail-closed)
             current_tier, emergency_stop = self._read_tier_and_stop()
 
-            # 4. Check emergency stop and read-only tiers
-            tier_deny_decision = self._tier_gate(order_id, current_tier, emergency_stop)
+            # 4. Check global stop (fast denial), emergency stop and read-only tiers. A transfer
+            # to the owner is exempt from the owner stop and from T0/T1 (design 7.3): getting
+            # funds out must work when the agent is stopped; the global stop still denies it.
+            owner_transfer = origin == "owner" and order["function"] == "transfer"
+            if owner_transfer:
+                tier_deny_decision = self._tier_gate(
+                    order_id, "T2", False, self._read_global_stop()
+                )
+            else:
+                tier_deny_decision = self._tier_gate(
+                    order_id, current_tier, emergency_stop, self._read_global_stop()
+                )
 
             # 5. Check approval status for escalated orders
             approval_status, decided_at, decided_by = self._get_approval_info(order_id)
@@ -501,7 +632,10 @@ class Gateway:
                 return copy.deepcopy(stored_record)
 
             # 8. Policy evaluation
-            raw_decision = self.policy.evaluate(order)
+            if order["function"] in OWNER_FUNCTIONS and origin != "owner":
+                raw_decision = self._owner_only_denial(order, origin)
+            else:
+                raw_decision = self._evaluate_policy(order, origin, current_tier, emergency_stop)
             if not isinstance(raw_decision, dict):
                 raise GatewayError("Policy evaluate must return a dictionary")
 
@@ -535,7 +669,7 @@ class Gateway:
                         "by": decided_by or "owner",
                         "at": decided_at or now_str,
                     }
-                    outcome, execution = self._execute_order(order, order_id)
+                    outcome, execution, decision = self._execute_or_stop(order, order_id, decision)
                 else:
                     outcome = "pending_approval"
                     execution = None
@@ -545,7 +679,7 @@ class Gateway:
                         except Exception:
                             pass
             elif dec_outcome == "allow":
-                outcome, execution = self._execute_order(order, order_id)
+                outcome, execution, decision = self._execute_or_stop(order, order_id, decision)
             else:
                 raise GatewayError(f"Unsupported decision outcome: {dec_outcome}")
 

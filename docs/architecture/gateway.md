@@ -172,3 +172,30 @@ sequenceDiagram
         G-->>R: record
     end
 ```
+
+## Origin, global stop and owner functions (webapp C3)
+
+10. **`propose(order, *, origin="planner")`**: `origin` is a Python argument set by code (`"planner"` for the runner and multi-mode `POST /orders`, `"owner"` for the API's mint and withdraw handlers). It is never read from the order body; `order.proposed_by` is informational. An unknown value raises `InvalidOrder`. The gateway passes `origin`, `tier`, `emergency_stop` and `global_stop` to a policy whose `evaluate` accepts them (the engine does); other policies are called as before.
+11. **Owner functions**: `mint` and `transfer` with any origin other than `owner` are denied by the gateway itself with `ACCESS.OWNER_ONLY_FUNCTION` before the policy runs (defence in depth). `transfer` to the owner is exempt from the per-owner emergency stop and from T0/T1; the global stop still denies it. `mint` builds the faucet call through the adapter (target pinned). `transfer` resolves the address from the `owner_address` constructor argument and hands it to `build_calls(order, wallet, owner_address=...)`; an order never carries an address.
+12. **Global stop**: `Gateway(global_stop=...)`, default `file_flag(None, os.environ)`. It is read inside the lock at the start of `propose` (fast denial) and again after simulation, immediately before `begin_signing` and the signer. See [global-stop.md](global-stop.md).
+13. **Builder gas floor**: `AaveTxBuilder` keeps its gas floor; for a plain ETH `transfer` the transfer value counts toward the required balance, so the wallet can still pay the fee.
+
+```mermaid
+sequenceDiagram
+    participant C as Caller (code sets origin)
+    participant G as Gateway
+    participant P as Policy engine
+    participant S as Simulator
+    participant K as Signer
+    C->>G: propose(order, origin)
+    G->>G: global stop? (fast denial)
+    G->>P: evaluate(order, origin, tier, stops)
+    G->>S: simulate
+    G->>G: global stop? (again, fail closed)
+    alt set
+        G-->>C: denied TIER.GLOBAL_STOP (no intent, no signing)
+    else clear
+        G->>K: begin_signing, sign_and_send
+        G-->>C: executed record
+    end
+```
