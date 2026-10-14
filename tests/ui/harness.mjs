@@ -1,6 +1,7 @@
 // Runs the real ui modules against a tiny fake DOM and fixture files. Prints one JSON object of
 // named results; tests/ui/test_ui.py asserts them. No network, no browser.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -103,7 +104,12 @@ function fileFetch(override = {}) {
   };
 }
 
-const imp = (rel) => import(pathToFileURL(path.join(UI, rel)).href);
+// ui/ has no package.json, so older node treats its .js files as CommonJS. Import from a copy
+// that declares "type": "module" (the originals are untouched).
+const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-"));
+fs.cpSync(UI, COPY, { recursive: true });
+fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
+const imp = (rel) => import(pathToFileURL(path.join(COPY, rel)).href);
 const { createApi, ROUTES } = await imp("api.js");
 const { makeCtx, describeError } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
@@ -192,7 +198,13 @@ function mk({ demo = true, override = {}, wallet } = {}) {
   await tick();
   out.job = job.status;
   out.feedAfterHostile = f2.textContent;
+  out.feedBeforeAnyRun = f.textContent;
 }
+
+// planner labels: scripted and fallback are named in words, live or absent planners get none
+out.plannerLabels = Object.fromEntries(
+  ["scripted", "fallback", "openai", "none"].map((k) => [k, feed.plannerLabel({ planner_client: k })]),
+);
 
 // 3. wallet rejection is not a failure
 {

@@ -44,6 +44,22 @@ flowchart LR
 ## Tests
 `tests/ui/test_ui.py` (static scans, route list, rule-code coverage, design tokens) and `tests/ui/harness.mjs` (runs the real modules against a fake DOM and the fixtures under node: hostile strings, fixture flow, wallet rejection, API error mapping). The audit-chain tests from the owner console are kept.
 
+### Design 14.4 and ticket names to the tests that prove them
+| Design name | Test in `tests/ui/test_ui.py` |
+| :--- | :--- |
+| `test_render_safety.mjs::api_strings_never_reach_innerhtml` | `test_hostile_api_string_does_not_become_html` (rendered) and `test_no_local_storage_and_no_external_url` (no `innerHTML` in source) |
+| `test_banner.mjs::banner_present_on_every_view` | `test_banner_present_and_not_removable_by_api_data` |
+| `test_stop.mjs::stop_visible_and_session_only` | `test_stop_visible_and_session_only` |
+| `test_labels.mjs::reference_and_fallback_labels_rendered` | `test_reference_and_fallback_labels_rendered` |
+| `test_offline.mjs::no_external_assets_in_default_path` | `test_no_local_storage_and_no_external_url`, `test_fixtures_hold_no_secrets_or_external_assets` |
+| `test_storage.mjs::no_token_in_storage_or_globals` | `test_no_local_storage_and_no_external_url` |
+| `test_explain.mjs::every_rule_code_has_a_sentence` | `test_every_existing_rule_code_has_a_plain_language_sentence`, `test_explain_table_is_complete_and_non_empty` |
+| every `api.js` path is a 12.2 route | `test_api_paths_are_in_design_route_list` |
+| the page works from fixtures | `test_page_works_from_fixtures` |
+| old `test_js_endpoints_exist_in_openapi`, `test_js_read_endpoints_respond` | `test_existing_routes_used_by_ui_exist_in_openapi`, `test_js_read_endpoints_respond` |
+
+The node-based tests are skipped when `node` is not on the PATH; the static scans always run.
+
 ## Scope notes
 - Approvals, policy, audit and withdraw views (design 14, `views/approvals.js` and others) belong to later tickets; the feed shows "waiting for you" cards without buttons for now.
 - The previous owner console (Bearer owner token, `app.js`) is replaced one for one by the tests above. The new page uses the session routes of the design, which arrive with the backend tickets (A1, C1); until then use `?fixtures=1`.

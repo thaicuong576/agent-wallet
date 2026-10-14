@@ -20,6 +20,18 @@ function orderLine(order) {
   );
 }
 
+// Scripted and fallback planner output is labelled in words; a live planner needs no label.
+export function plannerLabel(job) {
+  if (!job) return null;
+  if (job.planner_client === "scripted") {
+    return "Latest run: scripted planner (fixed demo input, not a live model).";
+  }
+  if (job.planner_client === "fallback") {
+    return "Latest run: fallback planner (the live model was unavailable, so a built-in offline plan was used).";
+  }
+  return null;
+}
+
 export function recordCard(ctx, record) {
   const { el } = ctx;
   const x = explainRecord(record);
@@ -68,9 +80,11 @@ export function render(ctx) {
   const browserCheck = el("button", "secondary", "Check in browser");
   browserCheck.type = "button";
   tools.append(refresh, verify, browserCheck);
+  const planner = el("p", "chip neutral", "");
+  planner.hidden = true;
   const list = el("ul", "cards");
   list.setAttribute("aria-live", "polite");
-  root.append(tools, verdict, list);
+  root.append(tools, verdict, planner, list);
 
   async function load() {
     list.replaceChildren();
@@ -81,7 +95,14 @@ export function render(ctx) {
       return;
     }
     try {
-      const page = await api.decisions(50);
+      const [page, jobs] = await Promise.all([
+        api.decisions(50),
+        api.jobs().catch(() => ({ items: [] })),
+      ]);
+      const latest = (jobs.items || []).find((j) => j.kind === "run");
+      const label = plannerLabel(latest);
+      planner.hidden = !label;
+      planner.textContent = label || "";
       list.replaceChildren();
       if (!page.items.length) {
         list.append(el("li", "empty", "No decisions yet. Press Run."));

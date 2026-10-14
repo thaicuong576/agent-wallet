@@ -170,6 +170,33 @@ def test_api_paths_are_in_design_route_list() -> None:
     assert not re.findall(r'"/[a-z][^"]*"', rest)
 
 
+def test_js_read_endpoints_respond(client: TestClient) -> None:
+    # Existing routes the UI still reads answer in single mode (the old console check).
+    for path in ("/tier", "/decisions?limit=50", "/portfolio"):
+        assert client.get(path).status_code == 200, path
+
+
+def test_stop_visible_and_session_only() -> None:
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    header = html[html.index("<header") : html.index("</header>")]
+    assert 'id="btn-stop"' in header  # in the header, outside #view: on every route
+    assert html.index('id="btn-stop"') < html.index('id="view"')
+    main = (UI / "main.js").read_text(encoding="utf-8")
+    assert "await api.stop();" in main  # engaging needs no signature
+    assert "api.release(await ctx.stepUp(" in main  # only the release path asks for one
+
+
+@needs_node
+def test_reference_and_fallback_labels_rendered() -> None:
+    h = harness()
+    assert "Reference price" in h["dashboard"]
+    assert "Latest run: scripted planner" in h["feedAfterHostile"]
+    assert "Latest run:" not in h["feedBeforeAnyRun"]
+    labels = h["plannerLabels"]
+    assert "scripted" in labels["scripted"] and "fallback" in labels["fallback"]
+    assert labels["openai"] is None and labels["none"] is None
+
+
 def test_existing_routes_used_by_ui_exist_in_openapi() -> None:
     spec = yaml.safe_load((ROOT / "contracts" / "openapi.yaml").read_text(encoding="utf-8"))
     for path in ("/decisions", "/portfolio", "/tier", "/ips", "/emergency-stop"):
