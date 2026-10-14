@@ -216,3 +216,18 @@ progress { width: 100%; height: 14px; accent-color: var(--primary-pressed); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+h3 { font: 700 1rem/1.2 var(--font); margin: var(--s-xl) 0 var(--s-xs); }
+select {
+  min-height: 44px;
+  padding: var(--s-xs) var(--s-sm);
+  border: 1px solid var(--field-border);
+  border-radius: var(--r-sm);
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+}
+.job-panel { margin-top: var(--s-md); background: var(--canvas); }
+@media (max-width: 480px) {
+  .card, .step { padding: var(--s-md); }
+  .row button { flex: 1 1 100%; }
+}

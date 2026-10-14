@@ -1,5 +1,6 @@
 // Feed: every decision in plain language. All API strings go through textContent.
 import { explainRecord, formatAmount, shortHash } from "../explain.js";
+import { chainChip, loadRecords } from "./jobs.js";
 
 // Navigation target for a transaction link, not an asset: the page never fetches it.
 const EXPLORER_TX = "https://sepolia.basescan.org/tx/";
@@ -12,17 +13,23 @@ function orderLine(order) {
     "Order: " +
     order.function +
     (amt ? " " + amt + " " + order.token : "") +
-    " on " +
-    order.protocol +
-    " (proposed by " +
-    order.proposed_by +
-    ")"
+    (order.protocol ? " on " + order.protocol : "") +
+    (order.proposed_by ? " (proposed by " + order.proposed_by + ")" : "")
   );
 }
 
-// Scripted and fallback planner output is labelled in words; a live planner needs no label.
+const PLANNER_WORDS = {
+  openai: "Planner: OpenAI model",
+  scripted: "Planner: scripted demo, not the LLM",
+  fallback: "Planner: rule-based fallback, not the LLM",
+};
+
+// Every planner is named in words, so a reader always knows what produced the plan.
 export function plannerLabel(job) {
   if (!job) return null;
+  if (job.planner_client === "openai") {
+    return "Latest run: OpenAI model planner (the policy engine still decides).";
+  }
   if (job.planner_client === "scripted") {
     return "Latest run: scripted planner (fixed demo input, not a live model).";
   }
@@ -30,6 +37,16 @@ export function plannerLabel(job) {
     return "Latest run: fallback planner (the live model was unavailable, so a built-in offline plan was used).";
   }
   return null;
+}
+
+// A BaseScan link for one transaction hash; null for anything that is not a hash.
+export function txLink(el, hash, text) {
+  if (typeof hash !== "string" || !TX_HASH.test(hash)) return null;
+  const a = el("a", "", text || "View on BaseScan: " + shortHash(hash));
+  a.setAttribute("href", EXPLORER_TX + hash);
+  a.setAttribute("target", "_blank");
+  a.setAttribute("rel", "noopener noreferrer");
+  return a;
 }
 
 export function recordCard(ctx, record) {
@@ -53,14 +70,14 @@ export function recordCard(ctx, record) {
   }
   const chips = el("p", "chips");
   for (const r of x.rules) chips.append(el("span", "chip neutral", r.code));
-  if (x.rules.length) li.append(chips);
-  if (x.txHash && TX_HASH.test(x.txHash)) {
-    const a = el("a", "", "View on BaseScan: " + shortHash(x.txHash));
-    a.setAttribute("href", EXPLORER_TX + x.txHash);
-    a.setAttribute("target", "_blank");
-    a.setAttribute("rel", "noopener noreferrer");
+  if (record.planner_client && PLANNER_WORDS[record.planner_client]) {
+    chips.append(el("span", "chip neutral", PLANNER_WORDS[record.planner_client]));
+  }
+  if (x.rules.length || chips.children.length) li.append(chips);
+  const link = txLink(el, x.txHash);
+  if (link) {
     const p = el("p");
-    p.append(a);
+    p.append(link);
     li.append(p);
   }
   return li;
@@ -84,7 +101,11 @@ export function render(ctx) {
   planner.hidden = true;
   const list = el("ul", "cards");
   list.setAttribute("aria-live", "polite");
-  root.append(tools, verdict, planner, list);
+  const chain = chainChip(ctx);
+  const price = el("p", "chip neutral", "");
+  price.hidden = true;
+  browserCheck.hidden = !api.fixtures; // /decisions is not per owner yet, so the check waits
+  root.append(tools, chain.node, verdict, planner, price, list);
 
   async function load() {
     list.replaceChildren();
@@ -94,19 +115,25 @@ export function render(ctx) {
       list.replaceChildren(el("li", "empty", "Connect a wallet to see decisions."));
       return;
     }
+    chain.check();
     try {
-      const page = await api.decisions(50);
+      const items = await loadRecords(ctx, 50);
       const jobs = await api.jobs().catch(() => ({ items: [] }));
       const latest = (jobs.items || []).find((j) => j.kind === "run");
       const label = plannerLabel(latest);
       planner.hidden = !label;
       planner.textContent = label || "";
+      const agent = await api.agent().catch(() => null);
+      price.hidden = !agent;
+      price.textContent = agent
+        ? "Reference price: " + String(agent.price_source).replace(/_/g, " ") + ". Not testnet market prices."
+        : "";
       list.replaceChildren();
-      if (!page.items.length) {
+      if (!items.length) {
         list.append(el("li", "empty", "No decisions yet. Press Run."));
         return;
       }
-      for (const r of page.items.slice().reverse()) {
+      for (const r of items.slice().reverse()) {
         try {
           list.append(recordCard(ctx, r));
         } catch (_) {

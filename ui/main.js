@@ -9,6 +9,7 @@ import { TestWallet } from "./wallet/test.js";
 import * as onboard from "./views/onboard.js";
 import * as dashboard from "./views/dashboard.js";
 import * as feed from "./views/feed.js";
+import * as approvals from "./views/approvals.js";
 
 export function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -23,16 +24,23 @@ export function describeError(err) {
   if (err instanceof ApiError) {
     if (err.slug) return explainError(err.slug);
     if (err.status === 401) return explainError("unauthenticated");
+    if (err.status === 409) return explainError("job-in-progress");
     if (err.status === 429) return explainError("rate-limited");
+    if (err.status === 503) return explainError("custody-unavailable");
     return err.message + (err.detail ? ": " + err.detail : "");
   }
   return "Something went wrong: " + (err && err.message ? err.message : "unknown error");
 }
 
 const TERMINAL = new Set(["succeeded", "denied", "failed", "interrupted"]);
+// Design section 10: poll every 2 s, backing off to 5 s.
+export const POLL_START_MS = 2000;
+export const POLL_MAX_MS = 5000;
+export const pollDelay = (attempt) => Math.min(POLL_START_MS + attempt * 1000, POLL_MAX_MS);
 
-export function makeCtx({ api, wallet, delayMs = 1500 }) {
+export function makeCtx({ api, wallet, sleep }) {
   const state = { me: null, tier: null };
+  const wait = sleep || ((ms) => new Promise((r) => setTimeout(r, api.fixtures ? 0 : ms)));
   const listeners = new Set();
   const ctx = {
     el,
@@ -45,14 +53,24 @@ export function makeCtx({ api, wallet, delayMs = 1500 }) {
     },
     onChange: (fn) => listeners.add(fn),
     changed: () => listeners.forEach((fn) => fn()),
-    async pollJob(jobId) {
+    wait,
+    // `onUpdate` sees every poll result so a view can show "queued" and "running".
+    async pollJob(jobId, onUpdate) {
       let job = null;
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 80; i++) {
         job = await api.job(jobId);
+        if (onUpdate) onUpdate(job);
         if (TERMINAL.has(job.status)) return job;
-        await new Promise((r) => setTimeout(r, api.fixtures ? 0 : delayMs));
+        await wait(pollDelay(i));
       }
       return job;
+    },
+    // A 401 from any route means the cookie is gone: drop the signed-in state once.
+    signedOut() {
+      if (!state.me) return;
+      state.me = null;
+      state.tier = null;
+      ctx.changed();
     },
     // Fresh signature for one named action (design 6.2). Returns the X-Step-Up header value.
     async stepUp(action, params) {
@@ -73,12 +91,14 @@ export function makeCtx({ api, wallet, delayMs = 1500 }) {
   return ctx;
 }
 
-const VIEWS = { onboard, dashboard, feed };
+const VIEWS = { onboard, dashboard, feed, approvals };
 
 function boot() {
   const params = new URLSearchParams(globalThis.location.search);
   const fixtures = params.get("fixtures") === "1";
+  let ctx = null;
   const api = createApi({
+    onUnauthorized: () => ctx && ctx.signedOut(),
     fixtures,
     demo: fixtures && params.get("demo") === "1",
     scenario: fixtures ? params.get("scenario") || "" : "",
@@ -92,8 +112,6 @@ function boot() {
     modeChip.textContent = "Demo data (fixtures), not live";
     modeChip.hidden = false;
   }
-
-  let ctx = null;
 
   async function topbar() {
     const me = await ctx.refreshSession();

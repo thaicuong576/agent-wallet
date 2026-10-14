@@ -37,6 +37,9 @@ UI_FILES = [
     "views/onboard.js",
     "views/dashboard.js",
     "views/feed.js",
+    "views/jobs.js",
+    "views/actions.js",
+    "views/approvals.js",
 ]
 JS_FILES = [f for f in UI_FILES if f.endswith(".js")]
 FIXTURES = sorted(p.name for p in (UI / "fixtures").glob("*.json"))
@@ -81,6 +84,18 @@ needs_node = pytest.mark.skipif(NODE is None, reason="node not available")
 @pytest.fixture(scope="module")
 def client() -> TestClient:
     return TestClient(app)
+
+
+@functools.lru_cache(maxsize=1)
+def flows() -> dict:
+    out = subprocess.run(
+        [NODE, str(ROOT / "tests" / "ui" / "flows.mjs")],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return json.loads(out.stdout)
 
 
 @functools.lru_cache(maxsize=1)
@@ -194,7 +209,7 @@ def test_reference_and_fallback_labels_rendered() -> None:
     assert "Latest run:" not in h["feedBeforeAnyRun"]
     labels = h["plannerLabels"]
     assert "scripted" in labels["scripted"] and "fallback" in labels["fallback"]
-    assert labels["openai"] is None and labels["none"] is None
+    assert "OpenAI" in labels["openai"] and labels["none"] is None
 
 
 def test_existing_routes_used_by_ui_exist_in_openapi() -> None:
@@ -273,6 +288,140 @@ def test_api_layer_sends_cookie_and_csrf_and_maps_problems() -> None:
     assert a["status"] == 429 and a["slug"] == "rate-limited"
     assert a["seen"] == [["POST", "/agent/mint", "same-origin", "1"]]
     assert set(harness()["routes"]) <= DESIGN_ROUTES
+
+
+# ---- F1b: real-mode flows against a fake fetch and a TestWallet -----------------------------
+
+TX = "0x" + "cd" * 32
+
+
+@needs_node
+def test_sign_in_signs_the_exact_message_and_shows_the_agent_address() -> None:
+    f = flows()["signIn"]
+    assert f["wallet"] == ["connect", "ensureBaseSepolia", "signMessage"]
+    assert f["signedMessage"] == "agent-wallet wants you to sign in.\nNonce: " + "n" * 32
+    assert f["verifyBody"] == {
+        "address": "0x" + "11" * 20,
+        "nonce": "n" * 32,
+        "hasSig": True,
+    }
+    assert "Agent address: 0x" + "22" * 20 in f["text"]
+
+
+@needs_node
+def test_every_real_call_sends_cookie_credentials_and_csrf_header() -> None:
+    assert flows()["requests"] is True
+
+
+@needs_node
+def test_top_up_sends_eth_to_agent_registers_hash_and_polls() -> None:
+    f = flows()
+    assert "Gas floor: about 0.001 ETH" in f["fundShows"]
+    assert f["topup"]["sent"] == [
+        {"from": "0x" + "11" * 20, "to": "0x" + "22" * 20, "valueWei": "10000000000000000"}
+    ]
+    assert f["topup"]["calls"] == [
+        f"POST /topups {json.dumps({'tx_hash': TX}, separators=(',', ':'))}",
+        f"GET /topups/{TX}",
+    ]
+
+
+@needs_node
+def test_mint_job_is_polled_and_its_record_links_to_basescan() -> None:
+    m = flows()["mint"]
+    assert m["polls"] == 3
+    assert m["sleeps"] == [2000, 3000]  # poll every 2 s, backing off toward 5 s
+    assert "Executed" in m["text"] and "mint 1000 USDC" in m["text"]
+    assert m["links"] == [f"https://sepolia.basescan.org/tx/{TX}"]
+
+
+@needs_node
+def test_poll_interval_starts_at_2s_and_caps_at_5s() -> None:
+    assert flows()["polling"] == [2000, 3000, 4000, 5000, 5000, 5000]
+
+
+@needs_node
+def test_run_shows_planner_label_and_hostile_run_shows_the_blocked_decision() -> None:
+    f = flows()
+    assert f["run"]["body"] == {"planner": "auto"}
+    assert "fallback" in f["run"]["text"]
+    assert f["hostile"]["body"]["planner"] == "scripted_hostile"
+    text = f["hostile"]["text"]
+    assert "Blocked" in text and "minting and withdrawing are owner actions" in text
+    assert "Scripted demo" in text or "scripted planner" in text
+    assert "<img src=x onerror=alert(1)>" in text  # API string shown as inert text
+    assert f["hostile"]["injected"] == 0
+
+
+@needs_node
+def test_withdraw_signs_the_exact_body_it_sends() -> None:
+    w = flows()["withdraw"]
+    body = {"token": "USDC", "amount": {"value": "1000000", "decimals": 6}}
+    assert w["body"] == body
+    assert w["stepUpBody"] == {"action": "withdraw", "params": body}
+    assert w["header"].startswith("f" * 32 + ".0x")
+
+
+@needs_node
+def test_stop_is_session_only_and_release_needs_the_step_up_signature() -> None:
+    f = flows()
+    assert f["stop"]["stepUpHeaders"] == []
+    assert f["stop"]["tier"]["emergency_stop"] is True
+    assert f["release"]["header"].startswith("f" * 32 + ".0x")
+    assert f["release"]["tier"]["emergency_stop"] is False
+
+
+@needs_node
+def test_verify_result_and_pending_approvals_with_step_up() -> None:
+    f = flows()
+    assert "Audit chain verified by the server: 3 records" in f["verify"]
+    assert "Planner: OpenAI model" in f["feedText"]
+    assert "Approve (needs signature)" in f["approvalsText"] and "Reject" in f["approvalsText"]
+    assert f["approve"]["header"].startswith("f" * 32 + ".0x")
+    assert "Nothing waiting for you" in f["approve"]["listAfter"]
+
+
+@needs_node
+def test_problem_bodies_map_to_plain_language() -> None:
+    e = flows()["errors"]
+    assert "sign in" not in e["401"]["text"] and "Connect your wallet again" in e["401"]["text"]
+    assert e["401"]["meCleared"] is True and e["429"]["meCleared"] is False
+    assert "still in progress" in e["409"]["text"] and e["409"]["jobId"] == "a" * 32
+    assert "Too many requests" in e["429"]["text"] and e["429"]["retryAfter"] == "30"
+    assert "temporarily unavailable" in e["503"]["text"]
+
+
+@needs_node
+def test_real_mode_wallet_rejection_sends_nothing() -> None:
+    r = flows()["rejected"]
+    assert "You declined in your wallet" in r["text"] and r["posts"] == 0
+
+
+def test_every_route_the_js_calls_exists_in_openapi() -> None:
+    spec = yaml.safe_load((ROOT / "contracts" / "openapi.yaml").read_text(encoding="utf-8"))
+    js = (UI / "api.js").read_text(encoding="utf-8")
+    block = re.search(r"const ROUTES = \{(.*?)\};", js, re.S)
+    assert block
+    paths = set(re.findall(r'"(/[^"]*)"', block.group(1)))
+    assert paths <= set(spec["paths"]), paths - set(spec["paths"])
+    methods = {
+        ("post", "/auth/nonce"), ("post", "/auth/verify"), ("post", "/auth/step-up"),
+        ("get", "/me"), ("get", "/agent"), ("post", "/topups"), ("get", "/topups/{tx_hash}"),
+        ("post", "/agent/mint"), ("post", "/agent/withdraw"), ("post", "/runs"),
+        ("get", "/jobs"), ("get", "/jobs/{job_id}"), ("get", "/audit/verify"),
+        ("post", "/emergency-stop"), ("post", "/emergency-stop/release"),
+        ("post", "/orders/{order_id}/approve"), ("post", "/orders/{order_id}/reject"),
+        ("get", "/presets"),
+    }  # fmt: skip
+    for method, path in methods:
+        assert method in spec["paths"][path], (method, path)
+
+
+def test_no_token_is_stored_or_exposed_by_the_page() -> None:
+    for name in UI_FILES:
+        text = (UI / name).read_text(encoding="utf-8")
+        assert "Authorization" not in text and "Bearer" not in text, name
+        assert "window.token" not in text and "globalThis.token" not in text, name
 
 
 def test_wallet_adapter_interface_and_test_stub_exist() -> None:

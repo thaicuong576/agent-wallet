@@ -1,6 +1,6 @@
 # Webapp UI (Stage 0 views)
 
-> Visual language: [`DESIGN.md`](../../DESIGN.md). Behaviour and architecture: [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md) (sections 12, 14). Ticket F1.
+> Visual language: [`DESIGN.md`](../../DESIGN.md). Behaviour and architecture: [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md) (sections 12, 14). Tickets F1 and F1b (live API).
 
 A static single page under `ui/`, mounted by `api/main.py` at `/ui`. Plain ES modules, no build step, no dependency, no CDN, no web font: it works offline except for the wallet and the RPC behind it.
 
@@ -18,6 +18,38 @@ flowchart LR
   W -.->|?fixtures=1| T[TestWallet stub]
 ```
 
+## Live mode (F1b)
+Real mode is the default when the page is served by the API; `?fixtures=1` keeps the demo. Every call goes through `api.js` with `credentials: "same-origin"` and `X-AW-CSRF: 1`; the browser adds the `Origin` header the API checks. Problem bodies (RFC 7807) become `ApiError` (slug, detail, `retryAfter`, the whole problem for the `job_id` of a 409) and `describeError` maps them to plain sentences. A 401 from any route clears the signed-in state once.
+
+```mermaid
+sequenceDiagram
+  participant P as Page
+  participant W as Wallet
+  participant A as API
+  P->>W: eth_requestAccounts, switch to 84532
+  P->>A: POST /auth/nonce
+  P->>W: personal_sign(message)
+  P->>A: POST /auth/verify (sets cookie)
+  P->>W: eth_sendTransaction (gas ETH to agent)
+  P->>A: POST /topups, poll GET /topups/{hash}
+  P->>A: POST /agent/mint or /runs
+  loop 2 s, backing off to 5 s
+    P->>A: GET /jobs/{id}
+  end
+  P->>W: personal_sign(step-up) for withdraw, release, approve
+  P->>A: action with X-Step-Up header
+```
+
+- **Jobs.** `views/jobs.js` follows a job to its records (`GET /jobs/{id}` carries record summaries) and draws them with the feed's card: outcome, plain sentence, BaseScan link, planner label (`openai`, `scripted`, `fallback`), reference-price label. `views/actions.js` holds Mint, Run, "Try a hostile note" (`planner: scripted_hostile`) and Withdraw; one job at a time, a 409 follows the job already running.
+- **Feed and approvals** read the owner's recent jobs, because `/decisions` is not per owner yet. `views/approvals.js` lists pending orders with Approve (step-up) and Reject.
+- **Chain status** comes from `GET /audit/verify`.
+- **Tier chip** reads `GET /me` in live mode (it carries the owner's tier and stop flag); `GET /tier` is the single-owner global state.
+
+### Known gaps in the API (UI is ready, backend is not)
+- `POST /emergency-stop`, `/emergency-stop/release` and `/orders/{id}/approve|reject` still use the single-owner token in `api/app.py`, so in multi mode they answer 503 until the backend wires the session. The page shows the plain message.
+- `GET /portfolio`, `/ips` and `/decisions` are not per owner, so the live dashboard builds its allocation from `GET /agent` and hides spend; the in-browser chain check is hidden outside fixtures mode.
+- There is no policy route yet (ticket A4): the Policy step shows the default preset.
+
 ## Files
 | File | Role |
 | :--- | :--- |
@@ -27,7 +59,8 @@ flowchart LR
 | `api.js` | The only module that calls the network; `ROUTES` lists every path; `?fixtures=1` switch |
 | `explain.js` | Rule code (all 25 plus `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, `TIER.POLICY_CHANGED`) and error code to plain language; unit helpers |
 | `wallet/adapter.js`, `injected.js`, `test.js` | Adapter interface, EIP-1193 implementation (EIP-6963 first), `TestWallet` stub |
-| `views/onboard.js`, `dashboard.js`, `feed.js` | The three views, each with empty, loading and error states |
+| `views/onboard.js`, `dashboard.js`, `feed.js`, `approvals.js` | The views, each with empty, loading and error states |
+| `views/jobs.js`, `views/actions.js` | Job panel and polling, record loading; Mint, Run, hostile note, Withdraw |
 | `chain.js` | In-browser audit hash check (unchanged), used by the feed's "Check in browser" |
 | `fixtures/*.json` | Data for the no-backend mode |
 
@@ -58,8 +91,10 @@ flowchart LR
 | the page works from fixtures | `test_page_works_from_fixtures` |
 | old `test_js_endpoints_exist_in_openapi`, `test_js_read_endpoints_respond` | `test_existing_routes_used_by_ui_exist_in_openapi`, `test_js_read_endpoints_respond` |
 
+F1b adds `tests/ui/flows.mjs`: a fake `fetch` (bodies copied from `api/wallet.py`, `api/jobs.py`, `api/auth.py`) and `TestWallet` drive sign-in, top-up, mint, run, blocked hostile run, withdraw, stop, release, verify and approvals; `test_every_route_the_js_calls_exists_in_openapi` checks `ROUTES` against `contracts/openapi.yaml`. Previews of the live page: `docs/previews/f1b-dashboard.png`, `f1b-running-job.png`, `f1b-blocked-hostile.png` (API in `AGENT_WALLET_MODE=multi` with throwaway secrets, a stubbed RPC and a stub wallet).
+
 The node-based tests are skipped when `node` is not on the PATH; the static scans always run.
 
 ## Scope notes
-- Approvals, policy, audit and withdraw views (design 14, `views/approvals.js` and others) belong to later tickets; the feed shows "waiting for you" cards without buttons for now.
+- Policy and audit views (design 14) belong to later tickets.
 - The previous owner console (Bearer owner token, `app.js`) is replaced one for one by the tests above. The new page uses the session routes of the design, which arrive with the backend tickets (A1, C1); until then use `?fixtures=1`.

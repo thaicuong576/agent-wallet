@@ -14,7 +14,6 @@ const ROUTES = {
   mint: "/agent/mint",
   withdraw: "/agent/withdraw",
   presets: "/presets",
-  policy: "/policy",
   runs: "/runs",
   job: "/jobs/{job_id}",
   jobs: "/jobs",
@@ -25,14 +24,19 @@ const ROUTES = {
   decisions: "/decisions",
   stop: "/emergency-stop",
   release: "/emergency-stop/release",
+  approve: "/orders/{order_id}/approve",
+  reject: "/orders/{order_id}/reject",
 };
 
 export class ApiError extends Error {
-  constructor(status, slug, title, detail) {
+  constructor(status, slug, title, detail, extra = {}) {
     super(title || "Request failed");
     this.status = status;
     this.slug = slug || "";
     this.detail = detail || "";
+    // The whole problem body is kept: a 409 carries the active job_id, a 429 a Retry-After.
+    this.problem = extra.problem || null;
+    this.retryAfter = extra.retryAfter || null;
   }
 }
 
@@ -44,9 +48,17 @@ function slugOf(problem) {
 
 const HEX64 = /^0x[0-9a-f]{64}$/;
 const JOB_ID = /^[0-9a-f]{32}$/;
+const ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 // `scenario: "hostile"` (fixtures only) starts with a blocked hostile run already in the feed.
-export function createApi({ fixtures = false, demo = false, scenario = "", fetchImpl } = {}) {
+// `onUnauthorized` is told about every 401 so the shell can drop its signed-in state.
+export function createApi({
+  fixtures = false,
+  demo = false,
+  scenario = "",
+  fetchImpl,
+  onUnauthorized,
+} = {}) {
   const doFetch = fetchImpl || ((...a) => globalThis.fetch(...a));
 
   async function real(method, path, { body, headers } = {}) {
@@ -64,7 +76,12 @@ export function createApi({ fixtures = false, demo = false, scenario = "", fetch
       data = null;
     }
     if (!res.ok) {
-      throw new ApiError(res.status, slugOf(data), data && data.title, data && data.detail);
+      const retryAfter = res.headers && res.headers.get ? res.headers.get("Retry-After") : null;
+      if (res.status === 401 && onUnauthorized) onUnauthorized(path);
+      throw new ApiError(res.status, slugOf(data), data && data.title, data && data.detail, {
+        problem: data,
+        retryAfter,
+      });
     }
     return data;
   }
@@ -129,6 +146,13 @@ export function createApi({ fixtures = false, demo = false, scenario = "", fetch
         needSession();
         fx.minted = true;
         return { job_id: "a".repeat(32), status: "queued" };
+      case "withdraw":
+        needSession();
+        return { job_id: "e".repeat(32), status: "queued" };
+      case "approve":
+      case "reject":
+        needSession();
+        return { order_id: arg, status: key === "approve" ? "approved" : "rejected" };
       case "presets":
         return file("presets");
       case "policy": {
@@ -173,6 +197,18 @@ export function createApi({ fixtures = false, demo = false, scenario = "", fetch
             error_code: null,
             created_at: "2026-10-14T11:59:00Z",
             finished_at: "2026-10-14T11:59:03Z",
+          };
+        }
+        if (arg === "e".repeat(32)) {
+          return {
+            job_id: arg,
+            kind: "withdraw",
+            status: "succeeded",
+            planner_client: "none",
+            order_ids: [],
+            error_code: null,
+            created_at: "2026-10-14T12:10:00Z",
+            finished_at: "2026-10-14T12:10:03Z",
           };
         }
         const j = fx.jobs.find((x) => x.job_id === arg);
@@ -241,6 +277,11 @@ export function createApi({ fixtures = false, demo = false, scenario = "", fetch
     return fixtures ? fixtureCall(key, arg) : real(method, path, opts);
   }
 
+  // There is no policy route in contracts/openapi.yaml yet (ticket A4), so outside fixtures
+  // mode these two never reach the network.
+  const noPolicyRoute = () =>
+    Promise.reject(new ApiError(501, "not-available", "Choosing a preset is not available yet"));
+
   const withStepUp = (stepUp) => (stepUp ? { "X-Step-Up": stepUp } : {});
 
   return {
@@ -264,15 +305,28 @@ export function createApi({ fixtures = false, demo = false, scenario = "", fetch
     mint: (amountUsdc) =>
       call("mint", "POST", ROUTES.mint, { body: { amount_usdc: String(amountUsdc) } }),
     presets: () => call("presets", "GET", ROUTES.presets),
-    policy: () => call("getPolicy", "GET", ROUTES.policy),
-    setPreset: (presetId, stepUp) =>
-      call(
-        "policy",
-        "PUT",
-        ROUTES.policy,
-        { body: { preset_id: presetId }, headers: withStepUp(stepUp) },
-        { preset_id: presetId },
-      ),
+    withdraw: (token, amount, stepUp) =>
+      call("withdraw", "POST", ROUTES.withdraw, {
+        body: { token, amount },
+        headers: withStepUp(stepUp),
+      }),
+    approve: (orderId, stepUp) =>
+      ORDER_ID.test(orderId)
+        ? call(
+            "approve",
+            "POST",
+            ROUTES.approve.replace("{order_id}", orderId),
+            { headers: withStepUp(stepUp) },
+            orderId,
+          )
+        : Promise.reject(new ApiError(0, "", "Not an order id")),
+    reject: (orderId) =>
+      ORDER_ID.test(orderId)
+        ? call("reject", "POST", ROUTES.reject.replace("{order_id}", orderId), {}, orderId)
+        : Promise.reject(new ApiError(0, "", "Not an order id")),
+    policy: () => (fixtures ? fixtureCall("getPolicy") : noPolicyRoute()),
+    setPreset: (presetId) =>
+      fixtures ? fixtureCall("policy", { preset_id: presetId }) : noPolicyRoute(),
     run: (opts) => call("run", "POST", ROUTES.runs, { body: opts || {} }, opts || {}),
     job: (jobId) =>
       JOB_ID.test(jobId)
@@ -281,7 +335,15 @@ export function createApi({ fixtures = false, demo = false, scenario = "", fetch
     jobs: () => call("jobs", "GET", ROUTES.jobs),
     auditVerify: () => call("auditVerify", "GET", ROUTES.auditVerify),
     portfolio: () => call("portfolio", "GET", ROUTES.portfolio),
-    tier: () => call("tier", "GET", ROUTES.tier),
+    // GET /tier is the single-owner global state; in the webapp the tier and the stop flag of the
+    // signed-in owner come with GET /me, so outside fixtures mode that is the route used.
+    tier: () =>
+      fixtures
+        ? fixtureCall("tier")
+        : real("GET", ROUTES.me).then((m) => ({
+            tier: m.tier,
+            emergency_stop: Boolean(m.emergency_stop),
+          })),
     ips: () => call("ips", "GET", ROUTES.ips),
     decisions: (limit = 50) =>
       call("decisions", "GET", ROUTES.decisions + "?limit=" + encodeURIComponent(limit)),

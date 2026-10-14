@@ -137,6 +137,16 @@ export const ERRORS = {
   "owner-only-function": "That action is reserved for the owner.",
   "custody-unavailable": "The agent key is temporarily unavailable. Try again shortly.",
   csrf: "The request was refused as unsafe. Reload the page and try again.",
+  "service-unavailable": "The service or the chain RPC is not reachable right now. Try again shortly.",
+  "invalid-request": "The request was not accepted. Check what you entered and try again.",
+  "not-found": "That item was not found.",
+  "not-available": "That option is not available yet.",
+  "emergency-stop-state": "The emergency stop is on, so this cannot be done until it is released.",
+  "not-pending": "That order has already been decided.",
+  RPC_UNAVAILABLE: "The chain RPC was unavailable, so nothing was sent. Try again shortly.",
+  GATEWAY_BUSY: "The agent was busy with another action. Nothing was sent. Try again.",
+  RECONCILE_REQUIRED: "A previous transaction needs to be reconciled first. Nothing was sent.",
+  EXECUTION_FAILED: "The transaction could not be completed. Nothing was lost.",
 };
 
 export const OUTCOMES = {
@@ -207,6 +217,44 @@ export function explainRecord(record) {
     rules: sentences,
     txHash: exec && exec.status === "executed" ? exec.tx_hash : null,
   };
+}
+
+// A job's record summary (GET /jobs/{id}) -> the DecisionRecord shape explainRecord reads.
+// The summary holds rule codes but no evidence, so sentences are the general ones.
+export function recordFromSummary(sum, job) {
+  const s = sum && typeof sum === "object" ? sum : {};
+  const codes = Array.isArray(s.rule_codes) ? s.rule_codes : [];
+  const rules = codes.map((code) => ({ code, evidence: {} }));
+  const block = { rules_hit: rules, reason: typeof s.reason === "string" ? s.reason : "" };
+  const rec = {
+    seq: s.seq,
+    order_id: s.order_id,
+    outcome: s.outcome,
+    planner_client: s.planner_client || (job && job.planner_client) || "none",
+    created_at: (job && (job.finished_at || job.created_at)) || "",
+    order: s.function
+      ? { function: s.function, token: s.token, amount: s.amount, order_id: s.order_id }
+      : null,
+  };
+  if (s.outcome === "no_action") rec.no_action = block;
+  else rec.decision = block;
+  if (s.tx_hash || s.outcome === "failed") {
+    rec.execution = {
+      status: s.outcome === "failed" ? "failed" : "executed",
+      tx_hash: s.tx_hash || null,
+      error_code: job && job.error_code,
+    };
+  }
+  return rec;
+}
+
+// One sentence for a finished job that is not a normal record: failed, interrupted, denied.
+export function explainJob(job) {
+  if (!job) return "";
+  const code = job.error_code;
+  if (code && Object.prototype.hasOwnProperty.call(RULES, code)) return RULES[code].text;
+  if (job.status === "interrupted") return "The server restarted while this was running. Check the feed for what went through.";
+  return explainError(code);
 }
 
 export function formatUnits(value, decimals, maxFrac = 4) {
