@@ -5,9 +5,9 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 
 - **Generated at:** 2026-10-14T12:00:00Z (Deterministic evaluation clock)
 - **Environment:** Offline, replay mode, testnet only, no network, no private keys
-- **Overall Result:** PASSED (44/44, 100.0%)
-- **Failing Scenarios:** None. All 44 scenarios passed.
-- **Rule Code Coverage:** 25 / 28 codes (89.3%)
+- **Overall Result:** PASSED (46/46, 100.0%)
+- **Failing Scenarios:** None. All 46 scenarios passed.
+- **Rule Code Coverage:** 27 / 28 codes (96.4%)
 - **Command to Reproduce:**
   ```sh
   python -m evals.run
@@ -18,15 +18,15 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | Category | Total | Passed | Failed | Pass Rate |
 | :--- | :--- | :--- | :--- | :--- |
 | `allow` | 3 | 3 | 0 | 100.0% |
-| `deny` | 18 | 18 | 0 | 100.0% |
+| `deny` | 20 | 20 | 0 | 100.0% |
 | `escalate` | 3 | 3 | 0 | 100.0% |
 | `injection` | 12 | 12 | 0 | 100.0% |
 | `integrity` | 2 | 2 | 0 | 100.0% |
 | `no_action` | 2 | 2 | 0 | 100.0% |
 | `tier_and_stop` | 4 | 4 | 0 | 100.0% |
-| **Total** | **44** | **44** | **0** | **100.0%** |
+| **Total** | **46** | **46** | **0** | **100.0%** |
 
-## Rule Code Coverage (25 / 28)
+## Rule Code Coverage (27 / 28)
 
 | Rule Code | Family | Description | Status | Covered by Scenario |
 | :--- | :--- | :--- | :--- | :--- |
@@ -55,8 +55,8 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `TIER.EMERGENCY_STOP_RELEASED` | TIER | The owner released the emergency stop. It is a status, not a violation. | ✅ Covered | `tier_and_stop-04-emergency-stop-release-allows` |
 | `TIER.APPROVAL_REQUIRED` | TIER | The order is above the approval threshold and waits for the owner. This is the T3 behaviour; it is a rule, not a tier. | ✅ Covered | `escalate-01-pending` |
 | `TIER.APPROVAL_REJECTED` | TIER | The owner rejected a pending order. | ✅ Covered | `escalate-03-rejected-never-executes` |
-| `ACCESS.OWNER_ONLY_FUNCTION` | ACCESS | The order calls an owner-only function (mint or transfer) with a non-owner origin. | ⚠️ Not covered | - |
-| `TIER.GLOBAL_STOP` | TIER | The global stop is engaged. Orders are denied while it is engaged and the engaging record uses this code. It is a status, not a violation. | ⚠️ Not covered | - |
+| `ACCESS.OWNER_ONLY_FUNCTION` | ACCESS | The order calls an owner-only function (mint or transfer) with a non-owner origin. | ✅ Covered | `deny-access-owner-only-function` |
+| `TIER.GLOBAL_STOP` | TIER | The global stop is engaged. Orders are denied while it is engaged and the engaging record uses this code. It is a status, not a violation. | ✅ Covered | `deny-tier-global-stop` |
 | `TIER.POLICY_CHANGED` | TIER | The IPS was updated to a new preset. It is a status, not a violation. | ⚠️ Not covered | - |
 
 ## Detailed Scenario Results
@@ -78,6 +78,7 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `deny-access-function-not-allowed` | Function approve not in IPS universe (ACCESS.FUNCTION_NOT_ALLOWED) | `denied (ACCESS.FUNCTION_NOT_ALLOWED)` | `denied (ACCESS.FUNCTION_NOT_ALLOWED)` | ✅ Pass |
 | `deny-access-recipient-not-allowed` | Recipient uniswap_router not in IPS (ACCESS.RECIPIENT_NOT_ALLOWED) | `denied (ACCESS.RECIPIENT_NOT_ALLOWED)` | `denied (ACCESS.RECIPIENT_NOT_ALLOWED)` | ✅ Pass |
 | `deny-access-unlimited-approval` | Approve asks for unlimited allowance (ACCESS.UNLIMITED_APPROVAL) | `denied (ACCESS.UNLIMITED_APPROVAL)` | `denied (ACCESS.UNLIMITED_APPROVAL, LIMIT.PER_TX, LIMIT.PER_DAY)` | ✅ Pass |
+| `deny-access-owner-only-function` | Planner cannot call owner-only function mint (ACCESS.OWNER_ONLY_FUNCTION) | `denied (ACCESS.OWNER_ONLY_FUNCTION)` | `denied (ACCESS.OWNER_ONLY_FUNCTION)` | ✅ Pass |
 | `deny-limit-per-tx` | Order value 150 USD exceeds per-tx limit of 100 USD (LIMIT.PER_TX) | `denied (LIMIT.PER_TX)` | `denied (LIMIT.PER_TX)` | ✅ Pass |
 | `deny-limit-per-day` | Order pushes 24h spend to 330 USD, over 300 USD limit (LIMIT.PER_DAY) | `denied (LIMIT.PER_DAY)` | `denied (LIMIT.PER_DAY)` | ✅ Pass |
 | `deny-limit-tx-per-hour` | Hourly transaction count 5 already at limit of 5 (LIMIT.TX_PER_HOUR) | `denied (LIMIT.TX_PER_HOUR)` | `denied (LIMIT.TX_PER_HOUR)` | ✅ Pass |
@@ -91,6 +92,7 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `deny-risk-slippage-too-high` | Estimated slippage 75 bps exceeds 50 bps limit (RISK.SLIPPAGE_TOO_HIGH) | `denied (RISK.SLIPPAGE_TOO_HIGH)` | `denied (RISK.SLIPPAGE_TOO_HIGH)` | ✅ Pass |
 | `deny-risk-cost-exceeds-benefit` | Benefit is below required multiple of cost (RISK.COST_EXCEEDS_BENEFIT) | `denied (RISK.COST_EXCEEDS_BENEFIT)` | `denied (RISK.COST_EXCEEDS_BENEFIT)` | ✅ Pass |
 | `deny-risk-data-stale` | Risk input age 8000s exceeds 7200s max allowed age (RISK.DATA_STALE) | `denied (RISK.DATA_STALE)` | `denied (RISK.DATA_STALE)` | ✅ Pass |
+| `deny-tier-global-stop` | Global stop active in state denies all orders (TIER.GLOBAL_STOP) | `denied (TIER.GLOBAL_STOP)` | `denied (TIER.GLOBAL_STOP)` | ✅ Pass |
 
 ### Category: `escalate`
 

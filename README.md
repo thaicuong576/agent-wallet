@@ -9,7 +9,7 @@ An AI wallet agent for FinTechathon 2026 (Topic F, Agent Wallet). The agent hold
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scriptsctivate
 pip install -r requirements-dev.txt
 python -m pytest -q                              # full test suite, offline
-python -m evals.run                              # 44 scenarios, 25/25 rule codes; writes docs/evidence/eval-report.md
+python -m evals.run                              # 46 scenarios, 27/28 rule codes; writes docs/evidence/eval-report.md
 python -m core.audit.verify docs/evidence/audit-chain.jsonl   # hash chain of the live run
 ```
 | Evidence | Where |

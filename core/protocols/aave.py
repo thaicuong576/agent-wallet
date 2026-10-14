@@ -15,6 +15,7 @@ import jsonschema
 from web3 import Web3
 
 from core.protocols.addresses import (
+    AAVE_V3_FAUCET,
     AAVE_V3_POOL,
     AAVE_V3_USDC,
     SUPPORTED_FUNCTIONS,
@@ -28,6 +29,9 @@ from core.protocols.addresses import (
 APPROVE_SELECTOR: Final[str] = "0x095ea7b3"
 SUPPLY_SELECTOR: Final[str] = "0x617ba037"
 WITHDRAW_SELECTOR: Final[str] = "0x69328dec"
+FAUCET_MINT_SELECTOR: Final[str] = "0xc6c3bbe6"
+MINT_SELECTOR: Final[str] = FAUCET_MINT_SELECTOR
+TRANSFER_SELECTOR: Final[str] = "0xa9059cbb"
 
 # Load Order JSON Schema
 SCHEMA_PATH: Final[Path] = (
@@ -138,12 +142,37 @@ def build_withdraw_calldata(asset: str, amount: int, to: str) -> str:
     return WITHDRAW_SELECTOR + encoded.hex()
 
 
-def build_calls(order: dict, wallet_address: str) -> list[Call]:
+def build_mint_calldata(token: str, to: str, amount: int) -> str:
+    """Encode Aave Faucet mint(address,address,uint256) calldata."""
+    if amount <= 0:
+        raise ValueError(f"Mint amount must be positive, got {amount}")
+    encoded = eth_abi.encode(
+        ["address", "address", "uint256"],
+        [Web3.to_checksum_address(token), Web3.to_checksum_address(to), amount],
+    )
+    return FAUCET_MINT_SELECTOR + encoded.hex()
+
+
+def build_transfer_calldata(to: str, amount: int) -> str:
+    """Encode ERC-20 transfer(address,uint256) calldata."""
+    if amount <= 0:
+        raise ValueError(f"Transfer amount must be positive, got {amount}")
+    encoded = eth_abi.encode(
+        ["address", "uint256"],
+        [Web3.to_checksum_address(to), amount],
+    )
+    return TRANSFER_SELECTOR + encoded.hex()
+
+
+def build_calls(
+    order: dict, wallet_address: str, *, owner_address: str | None = None
+) -> list[Call]:
     """Turn a validated Order into a list of Call(to, data, value) objects.
 
     Args:
         order: Order dictionary to translate.
         wallet_address: Wallet address used when recipient is 'self'.
+        owner_address: Owner address used when recipient is 'owner'.
 
     Returns:
         List of Call objects to execute.
@@ -156,7 +185,9 @@ def build_calls(order: dict, wallet_address: str) -> list[Call]:
 
     recipient = order["recipient"]
     try:
-        recipient_address = resolve_recipient(recipient, wallet_address)
+        recipient_address = resolve_recipient(
+            recipient, wallet_address, owner_address=owner_address
+        )
     except ValueError as err:
         raise OrderValidationError(str(err)) from err
 
@@ -186,6 +217,26 @@ def build_calls(order: dict, wallet_address: str) -> list[Call]:
             to=recipient_address,
         )
         return [Call(to=AAVE_V3_POOL, data=data, value=0)]
+
+    elif func == "mint":
+        # Token is pinned to AAVE_V3_USDC; target is pinned to AAVE_V3_FAUCET constant;
+        # to is the agent wallet
+        data = build_mint_calldata(
+            token=AAVE_V3_USDC,
+            to=recipient_address,
+            amount=amount_int,
+        )
+        return [Call(to=AAVE_V3_FAUCET, data=data, value=0)]
+
+    elif func == "transfer":
+        # Recipient is owner (resolved server-side); target is USDC contract or owner for ETH
+        token = order.get("token")
+        if token == "USDC":
+            data = build_transfer_calldata(to=recipient_address, amount=amount_int)
+            return [Call(to=AAVE_V3_USDC, data=data, value=0)]
+        elif token == "ETH":
+            return [Call(to=recipient_address, data="0x", value=amount_int)]
+        raise OrderValidationError(f"Unsupported token for transfer: '{token}'")
 
     raise OrderValidationError(f"Unhandled function: {func}")
 

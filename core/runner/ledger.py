@@ -71,7 +71,7 @@ class AuditLedger:
             if not isinstance(order, dict):
                 continue
             function = order.get("function")
-            if function == "approve":
+            if function in ("approve", "mint", "transfer"):
                 continue
             amount_obj = order.get("amount")
             if not isinstance(amount_obj, dict):

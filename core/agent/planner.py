@@ -14,7 +14,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import jsonschema
 import jsonschema.protocols
@@ -25,6 +25,10 @@ from core.agent.reader import ReaderFacts
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_ORDER_SCHEMA_PATH = ROOT / "contracts" / "schemas" / "order.schema.json"
+
+PLANNER_FUNCTIONS: Final[frozenset[str]] = frozenset(
+    {"approve", "supply", "withdraw", "exactInputSingle"}
+)
 
 
 class OrderValidationError(ValueError):
@@ -167,10 +171,20 @@ class Planner:
         self._validator = _get_strict_order_validator(self.schema_path)
 
     def validate_order(self, order: dict[str, Any]) -> list[str]:
-        """Validate an order dict strictly against order.schema.json, returning error messages."""
+        """Validate an order dict strictly against order.schema.json and planner restrictions."""
         if not isinstance(order, dict):
             return ["Order must be a dictionary"]
-        return [err.message for err in self._validator.iter_errors(order)]
+        recip = order.get("recipient")
+        if recip == "owner":
+            return ["Recipient 'owner' is not permitted for planner orders"]
+        func = order.get("function")
+        if func not in PLANNER_FUNCTIONS:
+            allowed = sorted(PLANNER_FUNCTIONS)
+            return [f"Function '{func}' is not permitted for planner (expected one of {allowed})"]
+        errors = [err.message for err in self._validator.iter_errors(order)]
+        if errors:
+            return errors
+        return []
 
     def plan(
         self,

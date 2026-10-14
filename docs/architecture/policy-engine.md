@@ -1,18 +1,31 @@
-# Policy engine: access, limit, allocation, and risk-input rules
+# Policy engine: access, limit, allocation, risk-input, and owner-function rules
 
-Owner: `core.policy` (`core/policy/engine.py`). A pure evaluation function `evaluate(ips, state, order=None, risk_inputs=None, now=None) -> dict` that inspects proposed orders against the Investment Policy Statement (IPS) and current portfolio state, producing a strictly validated `Decision`.
+Owner: `core.policy` (`core/policy/engine.py`). A pure evaluation function `evaluate(ips, state, order=None, risk_inputs=None, now=None, origin="planner", tier="T2", emergency_stop=False, global_stop=False) -> dict` that inspects proposed orders against the Investment Policy Statement (IPS) and current portfolio state, producing a strictly validated `Decision`.
 
 ## Where the policy engine sits
 
 ```mermaid
-flowchart LR
-  GW[core.gateway] -->|order, IPS, state, risk_inputs| PE[core.policy: pure engine]
-  IPS[(LoadedIps)] -. immutable policy .-> PE
-  STATE[(PortfolioState)] -. positions, 24h spend, tx count .-> PE
-  RISK[(RiskInputs)] -. metrics, ages, ratios .-> PE
-  PE -->|Decision: allow, deny, escalate, or no_action| GW
-  GW -->|if allow| SIM[Simulate & Sign]
-  GW -->|audit record| LOG[(core.audit: DecisionRecord)]
+flowchart TD
+  IN([Order In]) --> GS{Global Stop active?}
+  GS -->|Yes| D_GS[Deny: TIER.GLOBAL_STOP]
+  GS -->|No| OF{Owner Function: mint/transfer?}
+  
+  OF -->|Yes| ORG{origin == owner?}
+  ORG -->|No| D_OWN[Deny: ACCESS.OWNER_ONLY_FUNCTION]
+  ORG -->|Yes| TIER_CHECK{Stop or Tier restricted?}
+  TIER_CHECK -->|transfer: allowed under stop/T0/T1| A_OWN[Allow: Bypass limits & escalate]
+  TIER_CHECK -->|mint under stop: TIER.EMERGENCY_STOP| D_STOP[Deny: TIER.EMERGENCY_STOP]
+  TIER_CHECK -->|mint under T0: TIER.READ_ONLY| D_T0[Deny: TIER.READ_ONLY]
+  TIER_CHECK -->|mint under T1: TIER.PROPOSE_ONLY| D_T1[Deny: TIER.PROPOSE_ONLY]
+  TIER_CHECK -->|mint normal: T2| A_OWN
+  
+  OF -->|No: planner order| UNIF{In Universe tokens/protocols/funcs/recips?}
+  UNIF -->|No| D_UNIF[Deny: ACCESS.*]
+  UNIF -->|Yes| LIM{Spend Limits / Limits per hour?}
+  LIM -->|Exceeded| D_LIM[Deny: LIMIT.*]
+  LIM -->|OK| ALLOC{Allocation & Risk Checks}
+  ALLOC -->|Violated| D_RISK[Deny: ALLOC.* / RISK.*]
+  ALLOC -->|Passed| A_PLAN[Allow / Escalate / No Action]
 ```
 
 The policy engine is completely stateless and deterministic. It performs no network requests, executes no filesystem operations, invokes no LLM, and never mutates its input parameters.
@@ -21,16 +34,17 @@ The policy engine is completely stateless and deterministic. It performs no netw
 
 | Component | Signature / Return | Description |
 | :--- | :--- | :--- |
-| `evaluate` | `(ips: LoadedIps \| Mapping[str, Any], state: Mapping[str, Any], order: Mapping[str, Any] \| None = None, risk_inputs: Mapping[str, Any] \| None = None, now: datetime \| None = None) -> dict[str, Any]` | Evaluates access, limit, allocation, and risk-input rules and returns a `Decision` dictionary validating against `contracts/schemas/decision.schema.json` (or no-action record payload). |
+| `evaluate` | `(ips: LoadedIps \| Mapping[str, Any], state: Mapping[str, Any], order: Mapping[str, Any] \| None = None, risk_inputs: Mapping[str, Any] \| None = None, now: datetime \| None = None, origin: str = "planner", tier: str = "T2", emergency_stop: bool = False, global_stop: bool = False) -> dict[str, Any]` | Evaluates access, limit, allocation, risk-input, and owner-function rules and returns a `Decision` dictionary validating against `contracts/schemas/decision.schema.json` (or no-action record payload). |
 
 ## Implemented rules
 
 | Rule code | Family | Condition / Threshold | Evidence keys |
 | :--- | :--- | :--- | :--- |
-| `ACCESS.TOKEN_NOT_ALLOWED` | `ACCESS` | Order `token` or `token_out` is not in `ips.universe.tokens`. | `token` or `token_out` |
+| `ACCESS.OWNER_ONLY_FUNCTION` | `ACCESS` | Order `function` is an owner-only function (`mint`, `transfer`) but `origin != "owner"`. | `function`, `origin` |
+| `ACCESS.TOKEN_NOT_ALLOWED` | `ACCESS` | Order `token` or `token_out` is not in `ips.universe.tokens` (or token not allowed for owner function). | `token` or `token_out` |
 | `ACCESS.PROTOCOL_NOT_ALLOWED` | `ACCESS` | Order `protocol` is not in `ips.universe.protocols`. | `protocol` |
 | `ACCESS.FUNCTION_NOT_ALLOWED` | `ACCESS` | Order `function` is not in `ips.universe.functions`. | `function` |
-| `ACCESS.RECIPIENT_NOT_ALLOWED` | `ACCESS` | Order `recipient` is not in `ips.universe.recipients`. | `recipient` |
+| `ACCESS.RECIPIENT_NOT_ALLOWED` | `ACCESS` | Order `recipient` is not in `ips.universe.recipients` (or recipient not allowed for owner function). | `recipient` |
 | `ACCESS.UNLIMITED_APPROVAL` | `ACCESS` | Approve order with `amount >= 2**256 - 1` or exceeding order's own supply/withdraw amount. | `amount`, `max_uint256`, `supply_amount`, `withdraw_amount` |
 | `LIMIT.PER_TX` | `LIMIT` | Order USD value exceeds `limits.per_tx_usd`, or token price is missing in portfolio positions. | `order_usd`, `per_tx_usd` (or `price_missing`, `token`) |
 | `LIMIT.PER_DAY` | `LIMIT` | `state.spent_24h_usd` plus order USD value exceeds `limits.per_day_usd`. | `order_usd`, `spent_24h_usd`, `per_day_usd`, `projected_24h_usd` |
@@ -46,6 +60,10 @@ The policy engine is completely stateless and deterministic. It performs no netw
 | `RISK.SLIPPAGE_TOO_HIGH` | `RISK` | Estimated or specified slippage exceeds `risk.max_slippage_bps`. | `estimated_slippage_bps` / `order_slippage_bps`, `max_slippage_bps` |
 | `RISK.COST_EXCEEDS_BENEFIT` | `RISK` | Estimated benefit/cost multiple is below `risk.min_benefit_cost_ratio_bps`. | `actual_ratio_bps`, `estimated_benefit_usd`, `estimated_cost_usd`, `min_benefit_cost_ratio_bps` |
 | `RISK.DATA_STALE` | `RISK` | Risk inputs are missing (`risk_inputs=None`) or data age exceeds `risk.max_data_age_seconds`. | `data_age_seconds`, `max_data_age_seconds` (or `risk_inputs: "missing"`) |
+| `TIER.GLOBAL_STOP` | `TIER` | Global stop is active (`global_stop=True` or `state.global_stop=True`). Denies all operations. | `global_stop` |
+| `TIER.READ_ONLY` | `TIER` | Tier T0 active; non-rescue operations like `mint` are denied. | `tier` |
+| `TIER.PROPOSE_ONLY` | `TIER` | Tier T1 active; operations like `mint` are denied. | `tier` |
+| `TIER.EMERGENCY_STOP` | `TIER` | Emergency stop active; operations like `mint` are denied. | `emergency_stop` |
 
 ## Weight calculation and rebalance formulas
 
@@ -78,6 +96,17 @@ All allocation calculations use exact `decimal.Decimal` and integer basis points
 
    If $\Delta \le \text{rebalance\_band\_bps}$, the state is within the rebalance band and `ALLOC.WITHIN_REBALANCE_BAND` triggers a `no_action` outcome.
 
+## Owner functions and emergency bypass
+
+Per design section 7.3, the owner can propose two direct utility and rescue functions:
+1. `mint`: Testnet faucet utility pinning token to `USDC`, recipient to `self`, and protocol to `aave-v3`. Has no amount cap. Denied under emergency stop (`TIER.EMERGENCY_STOP`), T0 (`TIER.READ_ONLY`), T1 (`TIER.PROPOSE_ONLY`), and global stop (`TIER.GLOBAL_STOP`).
+2. `transfer`: Owner fund recovery pinning recipient to `owner` (resolved server-side), protocol to `wallet`, and token to `USDC` or `ETH`. Serves as the owner's emergency escape hatch and is allowed under emergency stop, T0, and T1, but denied under global stop (`TIER.GLOBAL_STOP`).
+
+Both owner functions:
+- Require `origin == "owner"`; any other origin denies with `ACCESS.OWNER_ONLY_FUNCTION`.
+- Bypass spend limits (`per_tx_usd`, `per_day_usd`), `escalate_above_usd`, hourly tx limits, and all allocation/risk-input checks.
+- Are excluded from 24h spend calculations in the audit ledger, while counting towards executed tx limits.
+
 ## Invariants and guarantees
 
 1. **Purity and determinism**: For identical inputs and timestamp, `evaluate` always returns identical decision dictionaries. Network sockets and file open calls raise without affecting execution.
@@ -94,7 +123,8 @@ All allocation calculations use exact `decimal.Decimal` and integer basis points
 | Every ACCESS and LIMIT rule has passing and blocking test cases | `tests/policy/test_access_rules.py`, `tests/policy/test_limit_rules.py` |
 | Every ALLOC rule has passing and blocking test cases | `tests/policy/test_alloc_rules.py` |
 | Every RISK rule has passing and blocking test cases | `tests/policy/test_risk_rules.py` |
+| Owner functions mint and transfer satisfy all tier, origin, and bypass rules | `tests/policy/test_owner_functions.py` |
 | Multiple simultaneous violations all appear in `rules_hit` | `tests/policy/test_multiple_violations.py` |
 | Execution is pure, offline, and does not mutate inputs | `tests/policy/test_engine_purity.py` |
 | Outputs validate against `decision.schema.json` | `tests/policy/test_schema_compliance.py` |
-| Independent check matches twice the rule count | `pytest tests/policy -q` (77 passed, $\ge 38$) |
+| Independent check matches policy suite | `pytest tests/policy -q` (100 passed) |
