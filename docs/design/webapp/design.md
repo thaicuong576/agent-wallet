@@ -561,7 +561,7 @@ paths:
     post:
       tags: [auth]
       operationId: authVerify
-      summary: Verify the wallet signature and start a session (Set-Cookie aw_session).
+      summary: "Verify the wallet signature and start a session (Set-Cookie aw_session)."
       requestBody:
         required: true
         content:
@@ -600,7 +600,7 @@ paths:
                 params: { type: object, additionalProperties: { type: [string, integer] } }
       responses:
         "200":
-          description: Challenge. Send `X-Step-Up: <challenge_id>.<signature>` on the action request.
+          description: "Challenge. Send header X-Step-Up with value <challenge_id>.<signature> on the action request."
           content:
             application/json:
               schema:
@@ -647,7 +647,7 @@ paths:
                 tx_hash: { type: string, pattern: "^0x[0-9a-f]{64}$" }
       responses:
         "202":
-          description: Registered; poll `GET /topups/{tx_hash}`.
+          description: "Registered; poll GET /topups/{tx_hash}."
           content: { application/json: { schema: { $ref: "#/components/schemas/Topup" } } }
         "422": { $ref: "#/components/responses/Problem" }
   /topups/{tx_hash}:
@@ -686,7 +686,7 @@ paths:
     post:
       tags: [agent]
       operationId: withdrawToOwner
-      summary: Transfer USDC or ETH from the agent wallet to the owner address. Needs a step-up signature.
+      summary: "Transfer USDC or ETH from the agent wallet to the owner address. Needs a step-up signature."
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: X-Step-Up, in: header, required: true, schema: { type: string } }
@@ -733,7 +733,7 @@ paths:
     put:
       tags: [owner]
       operationId: setPolicyPreset
-      summary: Select a preset. The only way the IPS is written; no endpoint accepts an IPS body.
+      summary: "Select a preset. The only way the IPS is written; no endpoint accepts an IPS body."
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: X-Step-Up, in: header, required: true, schema: { type: string } }
@@ -749,7 +749,7 @@ paths:
                 preset_id: { type: string, pattern: "^[a-z][a-z0-9-]{1,31}$" }
       responses:
         "200":
-          description: New IPS and hash; a `no_action` record with `TIER.POLICY_CHANGED` was appended.
+          description: "New IPS and hash; a no_action record with TIER.POLICY_CHANGED was appended."
           content:
             application/json:
               schema:
@@ -814,7 +814,7 @@ paths:
 components:
   responses:
     JobAccepted:
-      description: Job accepted. Poll `GET /jobs/{job_id}`.
+      description: "Job accepted. Poll GET /jobs/{job_id}."
       content:
         application/json:
           schema:
