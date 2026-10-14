@@ -38,6 +38,20 @@ def valid_order() -> dict[str, Any]:
 
 
 @pytest.fixture
+def valid_risk_inputs() -> dict[str, Any]:
+    """Load canonical valid risk inputs fixture."""
+    with open(EXAMPLES_DIR / "risk-inputs.valid.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def valid_swap_order() -> dict[str, Any]:
+    """Load canonical valid swap order fixture (swap 20 USDC for WETH)."""
+    with open(EXAMPLES_DIR / "order.valid.swap.json", encoding="utf-8") as f:
+        return json.load(f)
+
+
+@pytest.fixture
 def decision_validator() -> jsonschema.Draft202012Validator:
     """Validator for Decision schema."""
     with open(SCHEMAS_DIR / "decision.schema.json", encoding="utf-8") as f:

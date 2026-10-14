@@ -113,3 +113,92 @@ def test_schema_compliance_reason_length_limit(
     assert len(decision["reason"]) <= 500
     errors = list(decision_validator.iter_errors(decision))
     assert not errors
+
+
+def test_schema_compliance_alloc_deny_decision(
+    loaded_ips: LoadedIps,
+    valid_state: dict[str, Any],
+    valid_swap_order: dict[str, Any],
+    valid_risk_inputs: dict[str, Any],
+    decision_validator: jsonschema.Draft202012Validator,
+) -> None:
+    """Denied decision on ALLOC rule passes schema validation."""
+    order = copy.deepcopy(valid_swap_order)
+    order["amount"] = {"value": "80000000", "decimals": 6}
+
+    # Setup state where stable weight falls below 6000 bps
+    state = copy.deepcopy(valid_state)
+    state["positions"] = [
+        {
+            "token": "USDC",
+            "location": "wallet",
+            "balance": {"value": "650000000", "decimals": 6},
+            "price_usd": "1.00",
+            "value_usd": "650.00",
+            "weight_bps": 6500,
+        },
+        {
+            "token": "WETH",
+            "location": "wallet",
+            "balance": {"value": "140000000000000000", "decimals": 18},
+            "price_usd": "2500.00",
+            "value_usd": "350.00",
+            "weight_bps": 3500,
+        },
+    ]
+    state["total_value_usd"] = "1000.00"
+
+    decision = evaluate(loaded_ips, state, order, risk_inputs=valid_risk_inputs)
+    errors = list(decision_validator.iter_errors(decision))
+    assert not errors, f"Decision schema errors: {errors}"
+    assert decision["decision"] == "deny"
+    assert any(h["code"] == "ALLOC.MIN_STABLE_WEIGHT" for h in decision["rules_hit"])
+
+
+def test_schema_compliance_risk_deny_decision(
+    loaded_ips: LoadedIps,
+    valid_state: dict[str, Any],
+    valid_swap_order: dict[str, Any],
+    decision_validator: jsonschema.Draft202012Validator,
+) -> None:
+    """Denied decision on RISK rule (missing risk inputs) passes schema validation."""
+    decision = evaluate(loaded_ips, valid_state, valid_swap_order, risk_inputs=None)
+    errors = list(decision_validator.iter_errors(decision))
+    assert not errors, f"Decision schema errors: {errors}"
+    assert decision["decision"] == "deny"
+    assert any(h["code"] == "RISK.DATA_STALE" for h in decision["rules_hit"])
+
+
+def test_schema_compliance_swap_allow_decision(
+    loaded_ips: LoadedIps,
+    valid_state: dict[str, Any],
+    valid_swap_order: dict[str, Any],
+    valid_risk_inputs: dict[str, Any],
+    decision_validator: jsonschema.Draft202012Validator,
+) -> None:
+    """Allowed swap decision with risk inputs passes schema validation."""
+    decision = evaluate(loaded_ips, valid_state, valid_swap_order, risk_inputs=valid_risk_inputs)
+    errors = list(decision_validator.iter_errors(decision))
+    assert not errors, f"Decision schema errors: {errors}"
+    assert decision["decision"] == "allow"
+    assert decision["rules_hit"] == []
+
+
+def test_schema_compliance_multi_family_deny_decision(
+    loaded_ips: LoadedIps,
+    valid_state: dict[str, Any],
+    valid_swap_order: dict[str, Any],
+    decision_validator: jsonschema.Draft202012Validator,
+) -> None:
+    """Denied decision hitting ACCESS, LIMIT, ALLOC, and RISK passes schema validation."""
+    order = copy.deepcopy(valid_swap_order)
+    order["token"] = "DISALLOWED_TOKEN"
+    order["amount"] = {"value": "999999999999", "decimals": 6}
+
+    decision = evaluate(loaded_ips, valid_state, order, risk_inputs=None)
+    errors = list(decision_validator.iter_errors(decision))
+    assert not errors, f"Decision schema errors: {errors}"
+    assert decision["decision"] == "deny"
+    codes = {h["code"] for h in decision["rules_hit"]}
+    assert "ACCESS.TOKEN_NOT_ALLOWED" in codes
+    assert "RISK.DATA_STALE" in codes
