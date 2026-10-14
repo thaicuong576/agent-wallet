@@ -2,7 +2,7 @@
 
 Status: proposal, waiting for the orchestrator's `advice-1.md`. Risk label: **`rủi-ro-cao`**. The webapp moves four security boundaries: key custody, the owner's authentication, the order contract (a new `mint` function) and the meaning of "no endpoint writes the IPS". Nothing in this phase changes code.
 
-Scope of this phase: five questions (key custody, multi-tenancy, authentication and sessions, run flow, deployment), at most three options each. The other items (order contract, top-up, API fragment, frontend, threats, tickets, evidence) are answered in Phase B (`design.md`).
+Scope of this phase: five questions (key custody, multi-tenancy, authentication and sessions, run flow, deployment), at most three options each. The other items (order contract, top-up, API fragment, frontend, threats, tickets, evidence) are answered in Phase B (`system-design.md`).
 
 ## 0. Facts read from the repo that drive the choices
 
@@ -180,7 +180,7 @@ Honesty rules from the addendum are adopted: reference prices and replayed or fa
 
 ## Owner addendum 2 (2026-10-14 night): decisions that supersede parts of this proposal
 
-The owner decided the hosting and storage questions that were open here. `design.md` (see its "Amendments" table) is the source of truth; this section keeps the proposal consistent.
+The owner decided the hosting and storage questions that were open here. `system-design.md` (see its "Amendments" table) is the source of truth; this section keeps the proposal consistent.
 
 | Proposal section | Was | Now (owner decision) |
 | :--- | :--- | :--- |
@@ -190,7 +190,7 @@ The owner decided the hosting and storage questions that were open here. `design
 | Mint (heads-up in Phase A) | caps of 1,000 per call and 3,000 per day | **no amount cap in our contract**; the faucet's on-chain maximum and cooldown apply; rate limit is a call count per owner per hour |
 | New dependency | none | `psycopg[binary]` 3.x, an owner approval item |
 | Open question 1 (funds exit) | open | answered by advice 1: owner-signed `transfer` to the owner (Stage 1) |
-| Open question 3 (hosted demo) | owner choice | Render plus Supabase, with the unverified items listed in `design.md` 15.4 |
+| Open question 3 (hosted demo) | owner choice | Render plus Supabase, with the unverified items listed in `system-design.md` 15.4 |
 
 ---
 
