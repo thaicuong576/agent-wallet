@@ -20,7 +20,7 @@ def test_openai_client_missing_key_raises_error(monkeypatch):
 
 def test_openai_client_reads_env_key_at_call_time(monkeypatch):
     """Reads OPENAI_API_KEY from env at call time and passes it in Authorization header."""
-    fake_key = "sk-test-secret-key-12345"
+    fake_key = "mock-key-call-time"
     captured_req = None
 
     def fake_caller(req: urllib.request.Request, timeout: float) -> bytes:
@@ -83,7 +83,7 @@ def test_openai_client_schema_response_format(monkeypatch):
 
 def test_openai_client_never_echoes_key_on_failure(monkeypatch):
     """The API key never appears in any raised exception message or log."""
-    secret_key = "sk-super-secret-key-9999999999"
+    secret_key = "mock-super-secret-key-xyz"
     monkeypatch.setenv("OPENAI_API_KEY", secret_key)
 
     def failing_caller(req: urllib.request.Request, timeout: float) -> bytes:
@@ -102,7 +102,7 @@ def test_openai_client_never_echoes_key_on_failure(monkeypatch):
 
 def test_openai_client_never_echoes_key_on_malformed_json(monkeypatch):
     """Malformed JSON response raises LLMError without exposing key."""
-    secret_key = "sk-key-for-json-test"
+    secret_key = "mock-key-for-json-test"
     monkeypatch.setenv("OPENAI_API_KEY", secret_key)
 
     def bad_json_caller(req: urllib.request.Request, timeout: float) -> bytes:
@@ -118,7 +118,7 @@ def test_openai_client_never_echoes_key_on_malformed_json(monkeypatch):
 
 def test_openai_client_repr_and_str_never_contain_key(monkeypatch):
     """Client repr never exposes secret key."""
-    secret_key = "sk-key-must-not-be-in-repr"
+    secret_key = "mock-key-must-not-be-in-repr"
     client = OpenAIClient(api_key=secret_key, model="gpt-4o-mini")
     assert secret_key not in repr(client)
     assert secret_key not in str(client)
