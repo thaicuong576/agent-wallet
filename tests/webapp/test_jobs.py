@@ -14,6 +14,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -36,7 +37,9 @@ from core.gateway.exceptions import GatewayBusy, ReconcileRequired
 from core.gateway.gateway import Gateway
 from core.gateway.tenant import TenantRegistry, TenantSettings
 from core.policy.ips import load_ips
+from core.runner.ledger import AuditLedger
 from core.simulate import SimulationResult
+from core.storage.sqlite import SqliteLedgerQueries
 from core.tiers.owner import OwnerControls
 from core.tiers.store import TierStore
 
@@ -153,7 +156,7 @@ class Env:
         OwnerControls(TierStore(tenant.paths.state)).engage_stop()
 
 
-def make_env(tmp_path: Path, **job_kwargs: Any) -> Env:
+def make_env(tmp_path: Path, *, backend: Any = None, **job_kwargs: Any) -> Env:
     chain = FakeChain()
     clock = Clock()
     flags = Flags()
@@ -167,7 +170,7 @@ def make_env(tmp_path: Path, **job_kwargs: Any) -> Env:
         sender=lambda raw: sent.append(raw) or "0x" + "ab" * 32,
         clock=clock,
     )
-    registry = TenantRegistry(settings, chain)
+    registry = TenantRegistry(settings, chain, backend=backend)
     wallet = WalletService(chain, clock=clock)
     executor = ManualExecutor()
     env = Env(chain, registry, wallet, None, executor, clock, flags, sent)  # type: ignore[arg-type]
@@ -223,6 +226,7 @@ class FakeTenant:
     gateway: Any
     tier_view: Any
     paths: Any
+    stores: Any
 
 
 class _Tier:
@@ -242,12 +246,17 @@ class _Paths:
 def fake_tenant(tmp_path: Path, gateway: Any, name: str = "a") -> FakeTenant:
     root = tmp_path / "owners" / name
     root.mkdir(parents=True, exist_ok=True)
+    stores = SimpleNamespace(
+        jobs=SqliteJobs(root / "webapp.sqlite"),
+        ledger=SqliteLedgerQueries(AuditLedger(root / "audit.sqlite")),
+    )
     return FakeTenant(
         owner="0x" + name.encode().hex().ljust(40, "0"),
         agent_address="0x" + "99" * 20,
         gateway=gateway,
         tier_view=_Tier(),
         paths=_Paths(root, root / "audit.sqlite"),
+        stores=stores,
     )
 
 

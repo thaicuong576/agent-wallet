@@ -9,13 +9,27 @@ from core.storage.sqlite.adapters import (
     SqliteTiers,
 )
 from core.storage.sqlite.tenant import SqliteTenantStores, open_tenant, tenant_dir
+from core.storage.sqlite.webapp import (
+    WEBAPP_DB,
+    SqliteBackend,
+    SqliteJobs,
+    SqlitePolicySelection,
+    SqliteSettings,
+    SqliteTopups,
+)
 
 __all__ = [
+    "WEBAPP_DB",
     "SqliteAuditStore",
+    "SqliteBackend",
     "SqliteGatewayLockProvider",
+    "SqliteJobs",
     "SqliteLedgerQueries",
+    "SqlitePolicySelection",
+    "SqliteSettings",
     "SqliteTenantStores",
     "SqliteTiers",
+    "SqliteTopups",
     "open_tenant",
     "tenant_dir",
 ]

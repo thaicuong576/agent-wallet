@@ -20,6 +20,7 @@ from core.storage.postgres.adapters import (
     PgPolicySelectionStore,
     PgSettings,
     PgTiers,
+    PgTopupStore,
     validate_owner,
 )
 from core.storage.postgres.pool import DEFAULT_POOL_SIZE, PgPool
@@ -45,6 +46,7 @@ class PgTenantStores:
     keystore: PgKeystoreStore
     jobs: PgJobStore
     policy_selection: PgPolicySelectionStore
+    topups: PgTopupStore
 
     def close(self) -> None:
         """Connections belong to the backend pool; a tenant handle holds none."""
@@ -83,6 +85,7 @@ class PostgresBackend:
             keystore=PgKeystoreStore(self._pool, owner),
             jobs=PgJobStore(self._pool, owner),
             policy_selection=PgPolicySelectionStore(self._pool, owner),
+            topups=PgTopupStore(self._pool, owner),
         )
 
     def auth(self) -> PgAuthStore:
@@ -97,6 +100,16 @@ class PostgresBackend:
     def keystore_admin(self) -> PgKeystoreStore:
         """Unbound keystore handle for secret rotation (reads every owner's encrypted row)."""
         return PgKeystoreStore(self._pool, None)
+
+    def mark_jobs_interrupted(self) -> int:
+        """Startup recovery: every owner's queued or running job becomes interrupted.
+
+        Row-level security binds one owner per transaction, so the owners are visited one by one.
+        """
+        total = 0
+        for owner in self.keystore_admin().owners():
+            total += self.open_tenant(str(owner)).jobs.mark_interrupted()
+        return total
 
     def migrate(self) -> None:
         """Apply pending migrations with the DDL-capable URL, then verify the schema."""

@@ -1,10 +1,11 @@
 """Jobs: run, mint and withdraw as polled background jobs (design 8.2, 10).
 
 One active job per owner, rate limits per owner per hour, a single worker pool across owners.
-The `jobs` table lives in the owner's own `webapp.sqlite` and holds ids only (job id, order ids,
-audit seqs, planner label, error code), never an order body, a note or a key: the audit log is the
-truth. This module is the only place that proposes with `origin="owner"` (design 7.3, 13); the
-gateway decides, the job only reports what the gateway recorded.
+The jobs live in the owner's `JobStore` (`tenant.stores.jobs`: `webapp.sqlite` on SQLite, the
+`jobs` table on Postgres) and hold ids only (job id, order ids, audit seqs, planner label, error
+code), never an order body, a note or a key: the audit log is the truth. This module is the only
+place that proposes with `origin="owner"` (design 7.3, 13); the gateway decides, the job only
+reports what the gateway recorded.
 """
 
 from __future__ import annotations
@@ -14,13 +15,11 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from concurrent.futures import Executor, ThreadPoolExecutor
-from contextlib import closing, contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -36,15 +35,15 @@ from core.agent.client import LLMClient, LLMError, OpenAIClient
 from core.agent.planner import FallbackPlanner
 from core.gateway.exceptions import GatewayBusy, GatewayError, InvalidOrder, ReconcileRequired
 from core.gateway.tenant import Tenant
-from core.runner.ledger import AuditLedger
 from core.runner.portfolio import PortfolioReader
 from core.runner.runner import Runner
+from core.storage.interfaces import JobInProgress, JobStore, RateLimited
+from core.storage.sqlite.webapp import SqliteJobs, mark_jobs_interrupted
 
 log = logging.getLogger("agent_wallet.jobs")
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ORDER_SCHEMA = ROOT_DIR / "contracts" / "schemas" / "order.schema.json"
-WEBAPP_DB = "webapp.sqlite"
 
 KINDS = ("run", "mint", "withdraw")
 ACTIVE = ("queued", "running")
@@ -102,19 +101,7 @@ def rate_limited(retry_after_s: int) -> AuthProblem:
     )
 
 
-class JobInProgress(Exception):
-    def __init__(self, job_id: str) -> None:
-        super().__init__(job_id)
-        self.job_id = job_id
-
-
-class RateLimited(Exception):
-    def __init__(self, retry_after_s: int) -> None:
-        super().__init__(retry_after_s)
-        self.retry_after_s = retry_after_s
-
-
-# ---------------------------------------------------------------- jobs table (per owner)
+# ---------------------------------------------------------------- timestamps
 
 
 def _ts(value: datetime) -> str:
@@ -122,114 +109,13 @@ def _ts(value: datetime) -> str:
 
 
 def _parse(value: str) -> datetime:
-    return datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
-
-
-class SqliteJobs:
-    """JobStore for one owner's `webapp.sqlite`. A connection per call; the partial unique index
-    is the atomic one-active-job rule (design 5.1, 10)."""
-
-    _COLUMNS = frozenset(
-        {"status", "planner_client", "order_ids", "seqs", "error_code", "started_at", "finished_at"}
-    )
-    _SCHEMA = """
-        CREATE TABLE IF NOT EXISTS jobs(
-            job_id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
-            planner_client TEXT NOT NULL DEFAULT 'none', order_ids TEXT NOT NULL DEFAULT '[]',
-            seqs TEXT NOT NULL DEFAULT '[]', error_code TEXT,
-            created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
-        CREATE UNIQUE INDEX IF NOT EXISTS jobs_one_active ON jobs((1))
-            WHERE status IN ('queued', 'running');
-        CREATE INDEX IF NOT EXISTS jobs_kind_created ON jobs(kind, created_at);
-    """
-
-    def __init__(self, path: Path | str) -> None:
-        self._path = str(path)
-        with self._connect() as db:
-            db.executescript(self._SCHEMA)
-
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
-        with closing(sqlite3.connect(self._path, timeout=30, isolation_level=None)) as db:
-            db.row_factory = sqlite3.Row
-            yield db
-
-    def create(
-        self,
-        job_id: str,
-        kind: str,
-        created_at: datetime,
-        *,
-        limit: int | None = None,
-        window: timedelta = timedelta(hours=1),
-    ) -> None:
-        """Insert a queued job. Raises JobInProgress, or RateLimited when `limit` is reached."""
-        with self._connect() as db:
-            db.execute("BEGIN IMMEDIATE")
-            try:
-                active = db.execute(
-                    "SELECT job_id FROM jobs WHERE status IN ('queued', 'running')"
-                ).fetchone()
-                if active is not None:
-                    raise JobInProgress(active["job_id"])
-                if limit is not None:
-                    since = _ts(created_at - window)
-                    rows = db.execute(
-                        "SELECT created_at FROM jobs WHERE kind = ? AND created_at > ?"
-                        " ORDER BY created_at",
-                        (kind, since),
-                    ).fetchall()
-                    if len(rows) >= limit:
-                        oldest = _parse(rows[len(rows) - limit]["created_at"])
-                        wait = int((oldest + window - created_at).total_seconds()) + 1
-                        raise RateLimited(wait)
-                db.execute(
-                    "INSERT INTO jobs(job_id, kind, status, created_at) VALUES (?, ?, 'queued', ?)",
-                    (job_id, kind, _ts(created_at)),
-                )
-                db.execute("COMMIT")
-            except BaseException:
-                db.execute("ROLLBACK")
-                raise
-
-    def update(self, job_id: str, **fields: Any) -> None:
-        unknown = set(fields) - self._COLUMNS
-        if unknown:
-            raise ValueError(f"unknown job fields: {sorted(unknown)}")
-        sets = ", ".join(f"{name} = ?" for name in fields)  # names come from the allowlist above
-        values = [
-            json.dumps(v) if name in ("order_ids", "seqs") else v for name, v in fields.items()
-        ]
-        with self._connect() as db:
-            db.execute(f"UPDATE jobs SET {sets} WHERE job_id = ?", (*values, job_id))  # noqa: S608
-
-    @staticmethod
-    def _row(row: sqlite3.Row) -> dict[str, Any]:
-        out = dict(row)
-        out["order_ids"] = json.loads(out["order_ids"])
-        out["seqs"] = json.loads(out["seqs"])
-        return out
-
-    def get(self, job_id: str) -> dict[str, Any] | None:
-        with self._connect() as db:
-            row = db.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
-        return self._row(row) if row else None
-
-    def list(self, limit: int = 50) -> list[dict[str, Any]]:
-        with self._connect() as db:
-            rows = db.execute(
-                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
-            ).fetchall()
-        return [self._row(r) for r in rows]
-
-    def mark_interrupted(self, now: datetime | None = None) -> int:
-        stamp = _ts(now or datetime.now(UTC))
-        with self._connect() as db:
-            return db.execute(
-                "UPDATE jobs SET status = 'interrupted', finished_at = ?"
-                " WHERE status IN ('queued', 'running')",
-                (stamp,),
-            ).rowcount
+    """Stored job times: microseconds on SQLite, whole seconds on Postgres rows."""
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.strptime(value, fmt).replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    raise ValueError("unrecognised job timestamp")
 
 
 # ---------------------------------------------------------------- planners and the owner path
@@ -331,15 +217,17 @@ class JobService:
     # -- storage
 
     @staticmethod
-    def store(tenant: Tenant) -> SqliteJobs:
-        return SqliteJobs(tenant.paths.root / WEBAPP_DB)
+    def store(tenant: Tenant) -> JobStore:
+        return tenant.stores.jobs
 
-    def mark_interrupted_on_startup(self, data_dir: Path) -> int:
-        """At process start every queued or running job of every owner becomes `interrupted`."""
-        total = 0
-        for db_file in sorted((Path(data_dir) / "owners").glob(f"*/{WEBAPP_DB}")):
-            total += SqliteJobs(db_file).mark_interrupted(self._clock())
-        return total
+    def mark_interrupted_on_startup(self, target: Any) -> int:
+        """At process start every queued or running job of every owner becomes `interrupted`.
+
+        `target` is the StorageBackend, or a SQLite data directory.
+        """
+        if isinstance(target, (str, Path)):
+            return mark_jobs_interrupted(target, self._clock())
+        return int(target.mark_jobs_interrupted())
 
     # -- public API
 
@@ -482,7 +370,7 @@ class JobService:
             store.update(job_id, **fields)
 
     def _dispatch(
-        self, tenant: Tenant, store: SqliteJobs, job_id: str, kind: str, args: dict[str, Any]
+        self, tenant: Tenant, store: JobStore, job_id: str, kind: str, args: dict[str, Any]
     ) -> Outcome:
         if kind == "run":
             return self._run(tenant, store, job_id, args)
@@ -527,7 +415,7 @@ class JobService:
 
     # -- run
 
-    def _run(self, tenant: Tenant, store: SqliteJobs, job_id: str, args: dict[str, Any]) -> Outcome:
+    def _run(self, tenant: Tenant, store: JobStore, job_id: str, args: dict[str, Any]) -> Outcome:
         now = self._clock()
         code = self._stopped(tenant, owner_stop_counts=True)
         if code is not None:
@@ -546,17 +434,16 @@ class JobService:
         note = args.get("note") or ""
         label, planner = self._select_planner(args.get("planner", "auto"))
         store.update(job_id, planner_client=label)
-        with closing(AuditLedger(tenant.paths.audit)) as ledger:
-            portfolio = PortfolioReader(self._rpc, tenant.agent_address, ledger)
-            ips = tenant.gateway.policy.ips
-            try:
-                records = self._runner(tenant, portfolio, ips, label, planner).run_once(note, now)
-            except LLMError:
-                # Nothing is proposed before the LLM answers, so retrying with the rule-based
-                # planner cannot duplicate an order.
-                label, planner = "fallback", FallbackPlanner()
-                store.update(job_id, planner_client=label)
-                records = self._runner(tenant, portfolio, ips, label, planner).run_once(note, now)
+        portfolio = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
+        ips = tenant.gateway.policy.ips
+        try:
+            records = self._runner(tenant, portfolio, ips, label, planner).run_once(note, now)
+        except LLMError:
+            # Nothing is proposed before the LLM answers, so retrying with the rule-based
+            # planner cannot duplicate an order.
+            label, planner = "fallback", FallbackPlanner()
+            store.update(job_id, planner_client=label)
+            records = self._runner(tenant, portfolio, ips, label, planner).run_once(note, now)
         status, error = classify(records, "run")
         return Outcome(
             status,
@@ -670,4 +557,4 @@ def list_jobs(
     return {"items": get_webapp(request).jobs.list(tenant)}
 
 
-__all__ = ["JobLimits", "JobService", "SqliteJobs", "router"]
+__all__ = ["JobInProgress", "JobLimits", "JobService", "RateLimited", "SqliteJobs", "router"]

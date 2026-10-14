@@ -9,13 +9,29 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import AbstractContextManager
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
 
 class StorageUnavailable(Exception):
     """A backend cannot be reached. The gateway fails closed: nothing is signed (503)."""
+
+
+class JobInProgress(Exception):
+    """The owner already has a queued or running job (HTTP 409)."""
+
+    def __init__(self, job_id: str) -> None:
+        super().__init__(job_id)
+        self.job_id = job_id
+
+
+class RateLimited(Exception):
+    """The hourly limit for a job kind is used up (HTTP 429)."""
+
+    def __init__(self, retry_after_s: int) -> None:
+        super().__init__(retry_after_s)
+        self.retry_after_s = retry_after_s
 
 
 @runtime_checkable
@@ -78,6 +94,8 @@ class IntentStore(Protocol):
     def begin_signing(self, order_id: str, body_hash: str, now: str) -> None: ...
 
     def unfinished(self, order_id: str) -> bool: ...
+
+    def get_intent(self, order_id: str) -> dict[str, Any] | None: ...
 
 
 @runtime_checkable
@@ -149,8 +167,20 @@ class AuthStore(Protocol):
 class JobStore(Protocol):
     """Run jobs; at most one active job per owner."""
 
-    def create(self, job_id: str, kind: str, created_at: datetime) -> None:
-        """Raises if the owner already has an active job."""
+    def create(
+        self,
+        job_id: str,
+        kind: str,
+        created_at: datetime,
+        *,
+        limit: int | None = None,
+        window: timedelta = timedelta(hours=1),
+    ) -> None:
+        """Insert a queued job atomically.
+
+        Raises JobInProgress when the owner already has an active job, and RateLimited when
+        ``limit`` jobs of this kind were created within ``window`` before ``created_at``.
+        """
         ...
 
     def update(self, job_id: str, **fields: Any) -> None: ...
@@ -160,6 +190,21 @@ class JobStore(Protocol):
     def list(self, limit: int = 50) -> list[dict[str, Any]]: ...
 
     def mark_interrupted(self) -> int: ...
+
+
+@runtime_checkable
+class TopupStore(Protocol):
+    """Top-up rows of one owner. A transaction hash is unknown to every other owner."""
+
+    def get(self, tx_hash: str) -> dict[str, Any] | None: ...
+
+    def put(self, tx_hash: str, amount_wei: int, now: datetime) -> dict[str, Any]:
+        """Insert a pending row unless the hash is known; return the stored row."""
+        ...
+
+    def settle(self, tx_hash: str, status: str, block_number: int | None) -> None:
+        """Move a pending row to ``confirmed`` or ``failed``; a settled row never changes."""
+        ...
 
 
 @runtime_checkable
@@ -189,6 +234,7 @@ class TenantStores(Protocol):
     keystore: KeystoreStore
     jobs: JobStore
     policy_selection: PolicySelectionStore
+    topups: TopupStore
 
 
 @runtime_checkable
@@ -198,6 +244,14 @@ class StorageBackend(Protocol):
     def auth(self) -> AuthStore: ...
 
     def settings(self) -> SettingsStore: ...
+
+    def keystore_admin(self) -> KeystoreStore:
+        """Keystore handle not bound to one owner: ``exists`` creates nothing, rotation uses it."""
+        ...
+
+    def mark_jobs_interrupted(self) -> int:
+        """Startup recovery: queued and running jobs of every owner become ``interrupted``."""
+        ...
 
     def migrate(self) -> None: ...
 

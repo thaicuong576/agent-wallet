@@ -1,8 +1,9 @@
 """Webapp wallet and agent routes: /me, /agent, /topups, /presets, /audit/verify (design 8.1, 12.2).
 
 The owner address comes only from the verified session (`require_session`); no route takes an
-owner address as a parameter. Top-ups and their status live in the owner's own `webapp.sqlite`, so
-a foreign transaction hash is simply unknown to another owner (404). Nothing here touches a key.
+owner address as a parameter. Top-ups and their status live in the owner's `TopupStore`
+(`tenant.stores.topups`), so a foreign transaction hash is simply unknown to another owner (404).
+Nothing here touches a key.
 """
 
 from __future__ import annotations
@@ -10,13 +11,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-import sqlite3
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from threading import Lock
 from typing import Annotated, Any
 
 import eth_abi
@@ -29,13 +27,13 @@ from core.audit.verify import verify_chain
 from core.gateway.tenant import CustodyUnavailable, Tenant, TenantNotFound, TenantRegistry
 from core.policy.ips import compute_ips_hash
 from core.protocols.addresses import AAVE_V3_A_USDC, AAVE_V3_USDC
+from core.storage.interfaces import TopupStore
 
 log = logging.getLogger("agent_wallet.wallet")
 
 EXPLORER_TX_URL = "https://sepolia.basescan.org/tx/"
 GAS_UNITS_FLOOR = 500_000  # design 8.1: gas_floor_wei = 2 x base fee x 500,000 gas (an estimate)
 SUGGESTED_TOPUP_FACTOR = 10  # suggested top-up = 10 x floor
-WEBAPP_DB = "webapp.sqlite"
 _TX_HASH = re.compile(r"^0x[0-9a-f]{64}$")
 RpcCall = Callable[[str, list[Any]], Any]
 
@@ -86,62 +84,6 @@ def problem_invalid(detail: str) -> AuthProblem:
     return AuthProblem(422, "invalid-request", "Invalid request", detail)
 
 
-# ---------------------------------------------------------------- per-owner webapp.sqlite
-
-
-def _ts(value: datetime) -> str:
-    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
-class TopupStore:
-    """Top-up rows in one owner's webapp.sqlite. A connection per call: threads share nothing."""
-
-    _SCHEMA = """
-        CREATE TABLE IF NOT EXISTS topups(
-            tx_hash TEXT PRIMARY KEY, amount_wei TEXT NOT NULL, status TEXT NOT NULL,
-            block_number INTEGER, created_at TEXT NOT NULL)
-    """
-
-    def __init__(self, path: Path) -> None:
-        self._path = Path(path)
-        self._lock = Lock()
-        with self._connect() as db:
-            db.execute(self._SCHEMA)
-
-    @contextmanager
-    def _connect(self) -> Iterator[sqlite3.Connection]:
-        db = sqlite3.connect(str(self._path), timeout=30, isolation_level=None)
-        db.row_factory = sqlite3.Row
-        try:
-            yield db
-        finally:
-            db.close()
-
-    def get(self, tx_hash: str) -> dict[str, Any] | None:
-        with self._connect() as db:
-            row = db.execute("SELECT * FROM topups WHERE tx_hash = ?", (tx_hash,)).fetchone()
-        return dict(row) if row else None
-
-    def put(self, tx_hash: str, amount_wei: int, now: datetime) -> dict[str, Any]:
-        with self._lock, self._connect() as db:
-            db.execute(
-                "INSERT OR IGNORE INTO topups(tx_hash, amount_wei, status, created_at)"
-                " VALUES (?, ?, 'pending', ?)",
-                (tx_hash, str(amount_wei), _ts(now)),
-            )
-        existing = self.get(tx_hash)
-        assert existing is not None
-        return existing
-
-    def settle(self, tx_hash: str, status: str, block_number: int | None) -> None:
-        with self._connect() as db:
-            db.execute(
-                "UPDATE topups SET status = ?, block_number = ? WHERE tx_hash = ?"
-                " AND status = 'pending'",
-                (status, block_number, tx_hash),
-            )
-
-
 # ---------------------------------------------------------------- wallet service
 
 
@@ -167,8 +109,9 @@ class WalletService:
         self._clock = clock
         self._chain_id = chain_id
 
-    def topups(self, tenant: Tenant) -> TopupStore:
-        return TopupStore(tenant.paths.root / WEBAPP_DB)
+    @staticmethod
+    def topups(tenant: Tenant) -> TopupStore:
+        return tenant.stores.topups
 
     # -- reads
 
