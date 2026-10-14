@@ -213,8 +213,9 @@ def main() -> int:
         "",
         f"Generated {started} by `scripts/webapp_evidence.py --execute` against `{args.url}`.",
         "",
-        "The owner is a throwaway testnet wallet held by the script; the server created and holds a "
-        "separate custodial agent key for it. Prices are mainnet reference values, not market prices.",
+        "The owner is a throwaway testnet wallet held by the script; the server created and "
+        "holds a separate custodial agent key for it. Prices are mainnet reference values, "
+        "not market prices.",
         "",
         f"Owner: `{owner.address}`  Agent: `{agent.get('address')}`",
         "",
