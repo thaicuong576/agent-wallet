@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "preset_id": "conservative",
+      "title": "Conservative",
+      "summary": "Keep most funds in stablecoins, lend only a little, and ask me before anything larger than 50 USD.",
+      "ips_hash": "0000000000000000000000000000000000000000000000000000000000000065",
+      "limits": {
+        "per_tx_usd": "50",
+        "per_day_usd": "100",
+        "escalate_above_usd": "50"
+      }
+    },
+    {
+      "preset_id": "balanced",
+      "title": "Balanced",
+      "summary": "Lend more of the stablecoins, still ask me before anything larger than 100 USD.",
+      "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+      "limits": {
+        "per_tx_usd": "100",
+        "per_day_usd": "300",
+        "escalate_above_usd": "100"
+      }
+    }
+  ]
+}

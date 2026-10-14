@@ -1,0 +1,15 @@
+{
+  "address": "0x9a8b7c6d5e4f30211203f4e5d6c7b8a998877665",
+  "eth_wei": "20000000000000000",
+  "gas_floor_wei": "5000000000000000",
+  "usdc": {
+    "value": "98000000",
+    "decimals": 6
+  },
+  "ausdc": {
+    "value": "2000000",
+    "decimals": 6
+  },
+  "price_source": "mainnet_reference",
+  "custody": "custodial-testnet"
+}
