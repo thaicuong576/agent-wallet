@@ -63,3 +63,58 @@ def test_access_and_limit_all_limit_violations_appear(
     assert "LIMIT.PER_DAY" in hit_codes
     assert "LIMIT.TX_PER_HOUR" in hit_codes
     assert len(hit_codes) == 3
+
+
+def test_access_limit_alloc_risk_multiple_violations_all_appear(
+    loaded_ips: LoadedIps,
+    valid_state: dict[str, Any],
+    valid_swap_order: dict[str, Any],
+    valid_risk_inputs: dict[str, Any],
+) -> None:
+    """An order triggering ACCESS, LIMIT, ALLOC, and RISK violations lists all of them."""
+    order = copy.deepcopy(valid_swap_order)
+    order["protocol"] = "disallowed-protocol"  # ACCESS.PROTOCOL_NOT_ALLOWED
+    order["token_out"] = "DISALLOWED_TOKEN"  # ACCESS.TOKEN_NOT_ALLOWED
+    order["amount"] = {"value": "200000000", "decimals": 6}  # LIMIT.PER_TX (200 > 100)
+
+    # State: USDC 500 (50%), WETH 500 (50%) -> post swap, stable drops even more
+    state = copy.deepcopy(valid_state)
+    state["positions"] = [
+        {
+            "token": "USDC",
+            "location": "wallet",
+            "balance": {"value": "500000000", "decimals": 6},
+            "price_usd": "1.00",
+            "value_usd": "500.00",
+            "weight_bps": 5000,
+        },
+        {
+            "token": "WETH",
+            "location": "wallet",
+            "balance": {"value": "200000000000000000", "decimals": 18},
+            "price_usd": "2500.00",
+            "value_usd": "500.00",
+            "weight_bps": 5000,
+        },
+    ]
+    state["total_value_usd"] = "1000.00"
+    state["tx_count_1h"] = 10  # LIMIT.TX_PER_HOUR (max 5)
+
+    risk_inputs = copy.deepcopy(valid_risk_inputs)
+    risk_inputs["pool_tvl_usd"] = "1000.00"  # RISK.POOL_TVL_TOO_LOW
+    risk_inputs["reward_apy_share_bps"] = 9000  # RISK.REWARD_APY_SHARE_TOO_HIGH
+    risk_inputs["data_age_seconds"] = 99999  # RISK.DATA_STALE
+
+    decision = evaluate(loaded_ips, state, order, risk_inputs=risk_inputs)
+    assert decision["decision"] == "deny"
+    hit_codes = {h["code"] for h in decision["rules_hit"]}
+
+    assert "ACCESS.PROTOCOL_NOT_ALLOWED" in hit_codes
+    assert "ACCESS.TOKEN_NOT_ALLOWED" in hit_codes
+    assert "LIMIT.PER_TX" in hit_codes
+    assert "LIMIT.TX_PER_HOUR" in hit_codes
+    assert "ALLOC.MIN_STABLE_WEIGHT" in hit_codes
+    assert "RISK.POOL_TVL_TOO_LOW" in hit_codes
+    assert "RISK.REWARD_APY_SHARE_TOO_HIGH" in hit_codes
+    assert "RISK.DATA_STALE" in hit_codes
+    assert len(decision["rules_hit"]) >= 8
