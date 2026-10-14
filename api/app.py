@@ -20,6 +20,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from api import jobs as webapp_jobs
+from api import wallet as webapp_wallet
+from api.auth import install_auth_handlers
+from api.auth import router as auth_router
 from core.gateway.audit import AuditSink, InMemoryAuditSink
 from core.gateway.exceptions import GatewayError, InvalidOrder, OrderIdConflict
 from core.gateway.gateway import Gateway
@@ -228,6 +232,7 @@ def create_app(
     portfolio: dict[str, Any] | None = None,
     eval_report: dict[str, Any] | None = None,
     execution_handler: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    webapp: webapp_wallet.WebappServices | None = None,
 ) -> FastAPI:
     """FastAPI application factory implementing every path of contracts/openapi.yaml."""
     # Build default in-memory deny-all T0 components if omitted
@@ -329,6 +334,16 @@ def create_app(
             title=title,
             detail=str(exc.detail) if exc.detail else title,
         )
+
+    # Webapp routes (design 12.2). Always mounted so the contract and the app agree; without
+    # `webapp` services every session route answers 503 (fail closed). Existing routes are
+    # unchanged and keep the single-owner token mode.
+    app.state.webapp = webapp
+    app.state.auth_service = webapp.auth if webapp is not None else None
+    install_auth_handlers(app)
+    app.include_router(auth_router)
+    app.include_router(webapp_wallet.router)
+    app.include_router(webapp_jobs.router)
 
     # Unauthenticated health endpoint
     @app.get("/health")
