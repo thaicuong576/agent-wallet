@@ -163,6 +163,13 @@ class Gateway:
         sim_failed = False
         sim_err_msg = ""
 
+        # Simulate as the account that will sign: without `from` an RPC simulates from the zero
+        # address and judges balances and allowances of the wrong account.
+        sender = getattr(self.signer, "address", None)
+        sim_calls = [
+            {**call, "from": sender} if sender and "from" not in call else call for call in calls
+        ]
+
         if self.simulator is None:
             sim_failed = True
             sim_err_msg = "Simulator not configured"
@@ -172,9 +179,9 @@ class Gateway:
         else:
             try:
                 if len(calls) == 1:
-                    sim_result = self.simulator.simulate(calls[0])
+                    sim_result = self.simulator.simulate(sim_calls[0])
                 else:
-                    sim_result = self.simulator.simulate_bundle(calls)
+                    sim_result = self.simulator.simulate_bundle(sim_calls)
             except Exception as e:
                 sim_failed = True
                 sim_err_msg = _sanitize_error_detail(e)

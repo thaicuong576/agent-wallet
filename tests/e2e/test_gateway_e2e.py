@@ -938,3 +938,56 @@ def test_fail_closed_on_tierview_read_error(
     assert len(sim.calls) == 0
     assert len(signer.calls) == 0
     assert not list(decision_record_validator.iter_errors(record))
+
+
+def test_simulation_runs_from_the_signer_address():
+    """The simulator must see `from` = signer address, but the signed tx must not carry it."""
+    from core.signer import FakeSigner
+
+    seen: dict[str, list] = {"sim": [], "sign": []}
+
+    class RecordingSimulator:
+        def simulate(self, tx):
+            seen["sim"].append(dict(tx))
+            from core.simulate import SimulationResult
+
+            return SimulationResult(ok=True, error=None, gas_used=1, raw={})
+
+    class RecordingSigner(FakeSigner):
+        def sign_and_send(self, tx):
+            seen["sign"].append(dict(tx))
+            return super().sign_and_send(tx)
+
+    from core.gateway.gateway import Gateway
+
+    class Allow:
+        def evaluate(self, order):
+            return {
+                "schema_version": 1,
+                "order_id": order["order_id"],
+                "decision": "allow",
+                "rules_hit": [],
+                "reason": "ok",
+                "ips_hash": "0" * 64,
+                "decided_at": "2026-10-14T00:00:00Z",
+            }
+
+    signer = RecordingSigner()
+    gw = Gateway(
+        policy=Allow(),
+        simulator=RecordingSimulator(),
+        signer=signer,
+        tx_builder=lambda o: [{"to": "0x" + "22" * 20, "data": "0x", "chainId": 84532}],
+        tier="T2",
+    )
+    import json
+    import pathlib
+
+    order = json.loads(
+        (
+            pathlib.Path(__file__).resolve().parents[2] / "contracts/examples/order.valid.json"
+        ).read_text()
+    )
+    gw.propose(order)
+    assert seen["sim"][0]["from"] == signer.address
+    assert "from" not in seen["sign"][0]
