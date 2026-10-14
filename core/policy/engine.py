@@ -116,8 +116,6 @@ def evaluate(
     allowed_recipients = set(universe.get("recipients", []))
 
     order_dict: Mapping[str, Any] = order if order is not None else {}
-    if "origin" in order_dict:
-        origin = str(order_dict["origin"])
     order_token = order_dict.get("token")
     order_function = order_dict.get("function")
     order_protocol = order_dict.get("protocol")
