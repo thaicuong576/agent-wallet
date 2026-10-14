@@ -530,3 +530,15 @@ def test_risk_rule_approve_does_not_need_risk_inputs(
     hit_codes = [h["code"] for h in decision["rules_hit"]]
     assert "RISK.DATA_STALE" not in hit_codes
     assert decision["decision"] == "allow"
+
+
+def test_risk_rule_incomplete_risk_inputs_fail_closed(
+    loaded_ips: LoadedIps,
+    valid_state: dict[str, Any],
+    valid_order: dict[str, Any],
+) -> None:
+    """Risk inputs with a missing field never pass as fresh: denied with RISK.DATA_STALE."""
+    decision = evaluate(loaded_ips, valid_state, valid_order, risk_inputs={"data_age_seconds": 0})
+    assert decision["decision"] == "deny"
+    hit = next(h for h in decision["rules_hit"] if h["code"] == "RISK.DATA_STALE")
+    assert hit["evidence"] == {"risk_inputs": "incomplete"}

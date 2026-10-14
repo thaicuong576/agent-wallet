@@ -11,6 +11,17 @@ from core.policy.ips import LoadedIps, compute_ips_hash
 
 UINT256_MAX: int = (1 << 256) - 1
 
+_REQUIRED_RISK_KEYS = (
+    "pool_tvl_usd",
+    "reward_apy_share_bps",
+    "apy_deviation_bps",
+    "stablecoin_depeg_bps",
+    "utilization_bps",
+    "estimated_slippage_bps",
+    "estimated_cost_usd",
+    "data_age_seconds",
+)
+
 
 def _calculate_order_usd(
     order: Mapping[str, Any],
@@ -381,16 +392,21 @@ def evaluate(
         ips_risk = ips_data.get("risk", {})
         needs_risk_inputs = order_function in ("supply", "withdraw", "exactInputSingle")
 
-        if risk_inputs is None:
+        # Fail closed: absent, non-mapping or incomplete risk inputs never pass as fresh.
+        risk_inputs_ok = isinstance(risk_inputs, Mapping) and all(
+            key in risk_inputs for key in _REQUIRED_RISK_KEYS
+        )
+        if not risk_inputs_ok:
             if needs_risk_inputs:
+                evidence = "missing" if risk_inputs is None else "incomplete"
                 rules_hit.append(
                     {
                         "code": "RISK.DATA_STALE",
-                        "evidence": {"risk_inputs": "missing"},
+                        "evidence": {"risk_inputs": evidence},
                     }
                 )
-                reasons.append("Risk inputs are required for this order but are missing")
-        elif isinstance(risk_inputs, (dict, Mapping)):
+                reasons.append(f"Risk inputs are required for this order but are {evidence}")
+        else:
             # 1. RISK.DATA_STALE (age check)
             data_age_seconds = int(risk_inputs.get("data_age_seconds", 0))
             max_data_age = int(ips_risk.get("max_data_age_seconds", 0))
