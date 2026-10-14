@@ -33,8 +33,9 @@ from core.audit.sink import SqliteAuditSink  # noqa: E402
 from core.gateway.factory import build_signer  # noqa: E402
 from core.gateway.gateway import Gateway  # noqa: E402
 from core.gateway.policy import EnginePolicy  # noqa: E402
+from core.gateway.txbuilder import AaveTxBuilder  # noqa: E402
 from core.policy.ips import parse_ips  # noqa: E402
-from core.protocols.aave import AAVE_V3_POOL, build_calls  # noqa: E402
+from core.protocols.aave import AAVE_V3_POOL  # noqa: E402
 from core.simulate import RpcSimulator  # noqa: E402
 from core.tiers.owner import OwnerControls  # noqa: E402
 from core.tiers.store import TierStore  # noqa: E402
@@ -136,33 +137,6 @@ def make_order(function: str, recipient: str) -> dict[str, Any]:
     }
 
 
-def full_tx(call: Any, sender: str, dry_run: bool = False) -> dict[str, Any]:
-    """Fill nonce, gas and fees (the signer signs exactly what it is given)."""
-    base = {"from": sender, "to": call.to, "data": call.data, "value": hex(call.value)}
-    try:
-        gas = int(rpc("eth_estimateGas", [base]), 16)
-    except RuntimeError:
-        # Dry run only: supply cannot be estimated before approve is mined; the bundle simulation
-        # covers it. A live run never falls back, a failed estimate stops the order.
-        if not dry_run:
-            raise
-        gas = 400_000
-    block = rpc("eth_getBlockByNumber", ["latest", False])
-    base_fee = int(block["baseFeePerGas"], 16)
-    tip = 1_000_000  # 0.001 gwei
-    return {
-        "chainId": CHAIN_ID,
-        "type": 2,
-        "to": call.to,
-        "data": call.data,
-        "value": call.value,
-        "nonce": int(rpc("eth_getTransactionCount", [sender, "pending"]), 16),
-        "gas": gas * 13 // 10,
-        "maxPriorityFeePerGas": tip,
-        "maxFeePerGas": base_fee * 2 + tip,
-    }
-
-
 def send_raw(raw: bytes) -> str:
     return str(rpc("eth_sendRawTransaction", ["0x" + raw.hex().removeprefix("0x")]))
 
@@ -192,9 +166,12 @@ USDC = "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f"
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--execute", action="store_true", help="broadcast for real")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="dry run with RPC bundle simulation (default)"
+    )
     args = parser.parse_args()
 
-    live = args.execute
+    live = args.execute and not args.dry_run
     if live and os.environ.get("AGENT_WALLET_LIVE_CONFIRM") != CONFIRM_VALUE:
         print("Refusing live run: the owner's confirmation variable is not set.")
         return 2
@@ -222,8 +199,12 @@ def main() -> int:
     audit_path.parent.mkdir(exist_ok=True)
     audit = SqliteAuditSink(audit_path if live else ":memory:")
 
-    def tx_builder(order: dict[str, Any]) -> list[dict[str, Any]]:
-        return [full_tx(c, wallet, dry_run=not live) for c in build_calls(order, wallet)]
+    tx_builder = AaveTxBuilder(
+        rpc,
+        wallet,
+        chain_id=CHAIN_ID,
+        allow_estimate_fallback=not live,
+    )
 
     gateway = Gateway(
         policy=EnginePolicy(ips, lambda: portfolio_state(wallet), fresh_risk_inputs),
@@ -257,11 +238,9 @@ def main() -> int:
             results.append((function, order["order_id"], execution["tx_hash"], receipt))
 
     if not live:
-        sample = [
-            full_tx(c, wallet, dry_run=True)
-            for c in build_calls(make_order("approve", "aave_pool"), wallet)
-            + build_calls(make_order("supply", "self"), wallet)
-        ]
+        sample = tx_builder(make_order("approve", "aave_pool")) + tx_builder(
+            make_order("supply", "self")
+        )
         first_nonce = int(rpc("eth_getTransactionCount", [wallet, "latest"]), 16)
         for offset, tx in enumerate(sample):
             tx["nonce"] = first_nonce + offset

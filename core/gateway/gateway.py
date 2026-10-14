@@ -136,13 +136,6 @@ class Gateway:
                 if rec:
                     decided_at = rec.get("decided_at")
                     decided_by = rec.get("decided_by") or "owner"
-            elif hasattr(self.tier_view, "_store") and hasattr(
-                self.tier_view._store, "get_approval"
-            ):
-                rec = self.tier_view._store.get_approval(order_id)
-                if rec:
-                    decided_at = rec.get("decided_at")
-                    decided_by = rec.get("decided_by") or "owner"
             return status, decided_at, decided_by
         except Exception:
             return None, None, None
@@ -151,10 +144,32 @@ class Gateway:
         """Build tx requests, simulate, sign and send. Returns (outcome, execution)."""
         if self.tx_builder is None:
             raise GatewayError("tx_builder is not configured; no default transaction is built")
-        calls_raw = self.tx_builder(order)
-        calls = [calls_raw] if isinstance(calls_raw, dict) else list(calls_raw)
-        if not calls:
-            raise GatewayError("tx_builder returned no calls")
+        try:
+            calls_raw = self.tx_builder(order)
+            calls = [calls_raw] if isinstance(calls_raw, dict) else list(calls_raw)
+            if not calls:
+                raise GatewayError("tx_builder returned no calls")
+        except Exception as e:
+            detail = _sanitize_error_detail(f"tx build: {e}")
+            execution = {
+                "schema_version": 1,
+                "order_id": order_id,
+                "status": "failed",
+                "tx_hash": None,
+                "chain_id": 84532,
+                "block_number": None,
+                "gas_used": None,
+                "error_code": "SIMULATION_FAILED",
+                "detail": detail,
+                "executed_at": self._now_iso(),
+            }
+            exec_validator = _get_validator("execution-result")
+            exec_errors = list(exec_validator.iter_errors(execution))
+            if exec_errors:
+                raise GatewayError(
+                    f"ExecutionResult failed schema validation: {exec_errors[0].message}"
+                ) from e
+            return "failed", execution
 
         # Pre-flight simulation. Calls depend on each other (approve, then supply), so several
         # calls are simulated as one bundle in a single block; a simulator without bundle
