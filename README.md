@@ -40,13 +40,13 @@ docker compose up --build       # API on http://localhost:8000
 The container runs the API and static console at `/ui` as non-root (UID 10001). Runtime state persists in `./data:/app/data` under `AGENT_WALLET_DATA_DIR`. Repository scripts (`scripts/`, `evals/`) are not bundled into the image and run from a local checkout. Architecture note: [`docs/architecture/deployment.md`](docs/architecture/deployment.md).
 
 ## Run the UI
-A minimal owner console (plain HTML, CSS and JS, no build step, no external assets) is served by the API at `/ui`.
+The webapp UI (plain HTML, CSS and JS modules, no build step, no external assets) is served by the API at `/ui`. It follows the design in [`docs/design/webapp/system-design.md`](docs/design/webapp/system-design.md) and the look in [`DESIGN.md`](DESIGN.md): onboarding stepper (Connect, Fund, Mint, Policy, Run), dashboard, and a decision feed that explains every outcome in plain language.
 
 ```sh
-export AGENT_WALLET_OWNER_TOKEN=<a throwaway value>   # without it owner controls answer 503
-uvicorn api.main:app                                  # then open http://127.0.0.1:8000/ui
+uvicorn api.main:app                                  # then open http://127.0.0.1:8000/ui/
+# no backend needed for a look around: http://127.0.0.1:8000/ui/?fixtures=1&demo=1
 ```
-Type the owner token into the page; it stays in memory only. Without it, Stop, Release, Approve and Reject are disabled. The audit chain check runs in the browser; authoritative verification is `python -m core.audit.verify`. Design note: [`docs/architecture/ui.md`](docs/architecture/ui.md).
+`?fixtures=1` answers every call from `ui/fixtures/*.json` and a stub wallet (a banner chip says so). `&demo=1` starts signed in and funded; `&scenario=hostile` starts with a blocked hostile order in the feed. Without it the page talks to the session routes of the design (wallet sign-in, HttpOnly cookie) through `ui/api.js`; those routes arrive with the backend tickets. Previews: [`docs/previews/`](docs/previews/). Design note: [`docs/architecture/ui.md`](docs/architecture/ui.md).
 
 ## How it works
 ```mermaid
@@ -94,7 +94,7 @@ Environment variable names only (see `.env.example`). Values live in `.env`, whi
 | `core/` | Gateway, signer, policy engine, tiers, audit log, risk provider, planner and reader, protocol adapters |
 | `evals/` | Offline replay evaluation harness |
 | `api/` | FastAPI app |
-| `ui/` | Static owner console served at `/ui` |
+| `ui/` | Static webapp UI served at `/ui` |
 | `tests/` | pytest suite |
 | `scripts/` | Repository checks (secret scan) and the first-live-transaction script (dry run by default) |
 | `docs/` | Competition rules, design notes, architecture notes (see `docs/README.md`) |

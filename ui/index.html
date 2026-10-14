@@ -3,51 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>agent-wallet owner console</title>
+<title>agent-wallet</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <h1>agent-wallet owner console</h1>
-  <p class="meta"><span class="chip">Mode: testnet</span> <span class="chip">Chain: Base Sepolia (84532)</span></p>
-</header>
-<main>
-  <section aria-labelledby="h-token">
-    <h2 id="h-token">Owner token</h2>
-    <label for="token">Token (kept in this page's memory only)</label>
-    <input id="token" type="password" autocomplete="off" spellcheck="false">
-    <p id="token-note" class="note" role="status"></p>
-  </section>
-
-  <section aria-labelledby="h-tier">
-    <h2 id="h-tier">Tier and emergency stop</h2>
-    <p id="tier-state" role="status">Loading…</p>
-    <div class="row">
-      <button id="btn-stop" type="button" class="danger" disabled>Stop</button>
-      <button id="btn-release" type="button" disabled>Release</button>
+<a class="skip" href="#view">Skip to content</a>
+<header class="masthead">
+  <div class="bar">
+    <span class="wordmark">agent-wallet</span>
+    <nav aria-label="Main">
+      <a href="#/onboard">Set up</a>
+      <a href="#/dashboard">Dashboard</a>
+      <a href="#/feed">Feed</a>
+    </nav>
+    <div class="controls">
+      <span id="tier-chip" class="chip" role="status">Not connected</span>
+      <button id="btn-stop" type="button" class="danger" disabled>Emergency stop</button>
     </div>
-    <p id="owner-msg" class="note" role="status"></p>
-  </section>
-
-  <section aria-labelledby="h-pending">
-    <h2 id="h-pending">Pending approvals</h2>
-    <ul id="pending" class="cards"></ul>
-  </section>
-
-  <section aria-labelledby="h-decisions">
-    <h2 id="h-decisions">Decisions</h2>
-    <ul id="decisions" class="cards"></ul>
-  </section>
-
-  <section aria-labelledby="h-audit">
-    <h2 id="h-audit">Audit chain</h2>
-    <p class="note">Browser check only. Authoritative verification is <code>python -m core.audit.verify</code>.</p>
-    <div class="row"><button id="btn-verify" type="button">Check chain</button></div>
-    <p id="chain-status" role="status">Not checked yet.</p>
-    <ul id="records" class="cards"></ul>
-  </section>
+  </div>
+  <p id="stop-msg" class="note bar" role="status"></p>
+</header>
+<aside id="banner" class="banner" aria-label="Testnet notice">
+  <strong>Testnet only (Base Sepolia).</strong>
+  Custodial: the server holds this agent key. Do not send real funds.
+  Prices are mainnet reference values.
+  The agent cannot top up its own ETH: gas ETH has to come from your wallet.
+  <span id="mode-chip" class="chip neutral" hidden></span>
+</aside>
+<main id="view" tabindex="-1">
+  <noscript>This page needs JavaScript.</noscript>
 </main>
+<footer class="foot">Not financial advice. Every decision the agent makes is written to a hash-chained audit log.</footer>
 <script src="chain.js"></script>
-<script src="app.js"></script>
+<script type="module" src="main.js"></script>
 </body>
 </html>

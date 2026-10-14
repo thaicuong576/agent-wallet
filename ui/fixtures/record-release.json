@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "seq": 0,
+  "order_id": null,
+  "order": null,
+  "decision": null,
+  "no_action": {
+    "rules_hit": [
+      {
+        "code": "TIER.EMERGENCY_STOP_RELEASED",
+        "evidence": {
+          "released_by": "owner"
+        }
+      }
+    ],
+    "reason": "Emergency stop released by the owner."
+  },
+  "outcome": "no_action",
+  "execution": null,
+  "approval": null,
+  "tier": "T2",
+  "emergency_stop": false,
+  "ips_hash": "e5bf9cf5648f7b23af6583f67c1f303c83475f19578290c3efe35d2d4e6397d1",
+  "created_at": "2026-10-14T12:20:00Z",
+  "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "hash": "0000000000000000000000000000000000000000000000000000000000000001"
+}
