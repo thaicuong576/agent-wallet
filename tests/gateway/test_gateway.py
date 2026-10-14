@@ -21,6 +21,16 @@ from core.signer import FakeSigner, SignerError
 from core.simulate import SimulationResult
 
 
+def stub_builder(order: dict) -> list[dict]:
+    """Explicit transaction builder for tests; the gateway has no default transaction."""
+    return [{"to": "0x2222222222222222222222222222222222222222", "data": "0x", "chainId": 84532}]
+
+
+def make_gateway(**kwargs) -> Gateway:
+    kwargs.setdefault("tx_builder", stub_builder)
+    return Gateway(**kwargs)
+
+
 def make_valid_order(**overrides) -> dict:
     """Helper creating a contract-valid Order dictionary."""
     base = {
@@ -110,7 +120,7 @@ def test_default_deny_all_policy():
     signer = FakeSigner()
     sink = InMemoryAuditSink()
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=None,  # defaults to DenyAllPolicy
         simulator=sim,
         signer=signer,
@@ -144,7 +154,7 @@ def test_injected_allow_policy_executes_and_signs():
             }
         ]
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=AllowPolicy(),
         simulator=sim,
         signer=signer,
@@ -168,8 +178,8 @@ def test_injected_allow_policy_executes_and_signs():
 
 
 def test_multi_call_signs_each_and_records_last_tx_hash():
-    """Multi-call order simulates each call and signs each; last tx_hash is recorded."""
-    sim = MockSimulator()
+    """Multi-call order is simulated as one bundle and signs each call; last tx_hash recorded."""
+    sim = BundleSimulator()
     signer = FakeSigner()
     sink = InMemoryAuditSink()
 
@@ -179,7 +189,7 @@ def test_multi_call_signs_each_and_records_last_tx_hash():
             {"to": "0x2222222222222222222222222222222222222222", "data": "0x02", "chainId": 84532},
         ]
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=AllowPolicy(),
         simulator=sim,
         signer=signer,
@@ -191,7 +201,7 @@ def test_multi_call_signs_each_and_records_last_tx_hash():
     rec = gw.propose(order)
 
     assert rec["outcome"] == "executed"
-    assert len(sim.calls) == 2
+    assert len(sim.bundles) == 1 and len(sim.bundles[0]) == 2
     assert len(signer.calls) == 2
     assert rec["execution"]["tx_hash"] is not None
 
@@ -204,7 +214,7 @@ def test_failed_simulation_stops_pipeline():
     signer = FakeSigner()
     sink = InMemoryAuditSink()
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=AllowPolicy(),
         simulator=sim,
         signer=signer,
@@ -235,7 +245,7 @@ def test_simulation_exception_handled():
     signer = FakeSigner()
     sink = InMemoryAuditSink()
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=AllowPolicy(),
         simulator=CrashingSimulator(),
         signer=signer,
@@ -257,7 +267,7 @@ def test_escalate_policy_produces_pending_approval():
     signer = FakeSigner()
     sink = InMemoryAuditSink()
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=EscalatePolicy(),
         simulator=sim,
         signer=signer,
@@ -281,7 +291,7 @@ def test_idempotency_same_order_returns_stored_record():
     signer = FakeSigner()
     sink = InMemoryAuditSink()
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=AllowPolicy(),
         simulator=sim,
         signer=signer,
@@ -300,7 +310,7 @@ def test_idempotency_same_order_returns_stored_record():
 
 def test_idempotency_different_body_raises_order_id_conflict():
     """Same order_id with different body raises OrderIdConflict."""
-    gw = Gateway(policy=AllowPolicy(), simulator=MockSimulator(), signer=FakeSigner())
+    gw = make_gateway(policy=AllowPolicy(), simulator=MockSimulator(), signer=FakeSigner())
 
     order1 = make_valid_order(token="USDC")
     order2 = copy.deepcopy(order1)
@@ -317,7 +327,7 @@ def test_invalid_order_raises_and_appends_nothing():
     """Order violating schema raises InvalidOrder; nothing appended to audit log or signed."""
     sink = InMemoryAuditSink()
     signer = FakeSigner()
-    gw = Gateway(audit_sink=sink, signer=signer)
+    gw = make_gateway(audit_sink=sink, signer=signer)
 
     # Missing required amount field
     invalid_order = {
@@ -340,7 +350,7 @@ def test_invalid_order_raises_and_appends_nothing():
 
 def test_non_dict_order_raises_invalid_order():
     """Non-dict order input raises InvalidOrder immediately."""
-    gw = Gateway()
+    gw = make_gateway()
     with pytest.raises(InvalidOrder):
         gw.propose(None)
     with pytest.raises(InvalidOrder):
@@ -352,17 +362,17 @@ def test_every_decision_record_validates_against_contract_schema():
     validator = _get_validator("decision-record")
 
     # 1. Denied
-    gw_deny = Gateway(policy=DenyAllPolicy(), audit_sink=InMemoryAuditSink())
+    gw_deny = make_gateway(policy=DenyAllPolicy(), audit_sink=InMemoryAuditSink())
     rec_deny = gw_deny.propose(make_valid_order())
     assert not list(validator.iter_errors(rec_deny))
 
     # 2. Pending approval
-    gw_esc = Gateway(policy=EscalatePolicy(), audit_sink=InMemoryAuditSink())
+    gw_esc = make_gateway(policy=EscalatePolicy(), audit_sink=InMemoryAuditSink())
     rec_esc = gw_esc.propose(make_valid_order())
     assert not list(validator.iter_errors(rec_esc))
 
     # 3. Executed
-    gw_exec = Gateway(
+    gw_exec = make_gateway(
         policy=AllowPolicy(),
         simulator=MockSimulator(),
         signer=FakeSigner(),
@@ -372,7 +382,7 @@ def test_every_decision_record_validates_against_contract_schema():
     assert not list(validator.iter_errors(rec_exec))
 
     # 4. Failed
-    gw_fail = Gateway(
+    gw_fail = make_gateway(
         policy=AllowPolicy(),
         simulator=MockSimulator(ok=False, error="simulation failure"),
         signer=FakeSigner(),
@@ -385,7 +395,7 @@ def test_every_decision_record_validates_against_contract_schema():
 def test_audit_hash_chain_recomputes_and_verifies():
     """Audit log chain correctly links seq, prev_hash, and recomputes SHA-256 canonical hash."""
     sink = InMemoryAuditSink()
-    gw = Gateway(
+    gw = make_gateway(
         policy=AllowPolicy(),
         simulator=MockSimulator(),
         signer=FakeSigner(),
@@ -415,7 +425,7 @@ def test_signer_exception_handled_with_safe_error_code():
             fake_key = "112233445566778899001122334455667788990011223344556677889900aabb"
             raise SignerError(f"Signing failed with key {fake_key}")
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=AllowPolicy(),
         simulator=MockSimulator(),
         signer=FailingSigner(),
@@ -437,7 +447,7 @@ def test_custom_clock_and_ips_hash():
     fixed_time = "2026-10-18T14:30:00Z"
     custom_ips = "aa" * 32
 
-    gw = Gateway(
+    gw = make_gateway(
         policy=AllowPolicy(ips_hash=custom_ips),
         simulator=MockSimulator(),
         signer=FakeSigner(),
@@ -451,3 +461,105 @@ def test_custom_clock_and_ips_hash():
     assert rec["ips_hash"] == custom_ips
     assert rec["decision"]["ips_hash"] == custom_ips
     assert rec["execution"]["executed_at"] == fixed_time
+
+
+class BundleSimulator:
+    """Simulator that supports dependent calls in one bundle."""
+
+    def __init__(self, ok: bool = True) -> None:
+        self.ok = ok
+        self.bundles: list[list[dict]] = []
+        self.single_calls: list[dict] = []
+
+    def simulate(self, tx: dict) -> SimulationResult:
+        self.single_calls.append(tx)
+        return SimulationResult(ok=self.ok, error=None if self.ok else "revert", gas_used=1, raw={})
+
+    def simulate_bundle(self, txs: list[dict]) -> SimulationResult:
+        self.bundles.append(list(txs))
+        return SimulationResult(ok=self.ok, error=None if self.ok else "revert", gas_used=2, raw={})
+
+
+def two_calls(order: dict) -> list[dict]:
+    return [
+        {"to": "0x2222222222222222222222222222222222222222", "data": "0x01", "chainId": 84532},
+        {"to": "0x3333333333333333333333333333333333333333", "data": "0x02", "chainId": 84532},
+    ]
+
+
+def test_dependent_calls_are_simulated_as_one_bundle():
+    sim, signer = BundleSimulator(), FakeSigner()
+    gw = make_gateway(policy=AllowPolicy(), simulator=sim, signer=signer, tx_builder=two_calls)
+    record = gw.propose(make_valid_order())
+    assert record["outcome"] == "executed"
+    assert len(sim.bundles) == 1 and len(sim.bundles[0]) == 2
+    assert sim.single_calls == []
+    assert len(signer.calls) == 2
+
+
+def test_multiple_calls_without_bundle_support_fail_closed():
+    sim, signer = MockSimulator(), FakeSigner()
+    gw = make_gateway(policy=AllowPolicy(), simulator=sim, signer=signer, tx_builder=two_calls)
+    record = gw.propose(make_valid_order())
+    assert record["outcome"] == "failed"
+    assert signer.calls == []
+
+
+def test_failed_bundle_never_signs():
+    sim, signer = BundleSimulator(ok=False), FakeSigner()
+    gw = make_gateway(policy=AllowPolicy(), simulator=sim, signer=signer, tx_builder=two_calls)
+    record = gw.propose(make_valid_order())
+    assert record["outcome"] == "failed"
+    assert signer.calls == []
+
+
+def test_allow_without_tx_builder_signs_nothing():
+    from core.gateway import GatewayError
+
+    signer = FakeSigner()
+    gw = Gateway(policy=AllowPolicy(), simulator=MockSimulator(), signer=signer)
+    with pytest.raises(GatewayError):
+        gw.propose(make_valid_order())
+    assert signer.calls == []
+
+
+def test_emergency_stop_denies_before_policy_simulator_and_signer():
+    sim, signer = MockSimulator(), FakeSigner()
+    gw = make_gateway(policy=AllowPolicy(), simulator=sim, signer=signer, emergency_stop=True)
+    record = gw.propose(make_valid_order())
+    assert record["outcome"] == "denied"
+    assert record["decision"]["rules_hit"][0]["code"] == "TIER.EMERGENCY_STOP"
+    assert signer.calls == [] and sim.calls == []
+
+
+@pytest.mark.parametrize("tier,code", [("T0", "TIER.READ_ONLY"), ("T1", "TIER.PROPOSE_ONLY")])
+def test_read_only_and_propose_only_tiers_never_sign(tier, code):
+    signer = FakeSigner()
+    gw = make_gateway(policy=AllowPolicy(), simulator=MockSimulator(), signer=signer, tier=tier)
+    record = gw.propose(make_valid_order())
+    assert record["outcome"] == "denied"
+    assert record["decision"]["rules_hit"][0]["code"] == code
+    assert signer.calls == []
+
+
+def test_order_is_not_resigned_after_the_audit_append_failed():
+    from core.gateway import GatewayError
+
+    class FailingSink(InMemoryAuditSink):
+        def append(self, record):
+            raise RuntimeError("disk full")
+
+    signer = FakeSigner()
+    gw = make_gateway(
+        policy=AllowPolicy(),
+        simulator=MockSimulator(),
+        signer=signer,
+        audit_sink=FailingSink(),
+    )
+    order = make_valid_order()
+    with pytest.raises(RuntimeError):
+        gw.propose(order)
+    assert len(signer.calls) == 1
+    with pytest.raises(GatewayError):
+        gw.propose(order)
+    assert len(signer.calls) == 1
