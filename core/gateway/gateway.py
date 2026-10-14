@@ -34,17 +34,6 @@ def _get_validator(schema_name: str) -> jsonschema.Draft202012Validator:
     return jsonschema.Draft202012Validator(schema_data)
 
 
-def _default_tx_builder(order: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        {
-            "to": "0x1111111111111111111111111111111111111111",
-            "data": "0x",
-            "chainId": 84532,
-            "value": 0,
-        }
-    ]
-
-
 def _sanitize_error_detail(err: Any) -> str:
     msg = str(err).replace("\n", " ").strip()
     # Redact any 32-byte hex keys (64 hex characters) to protect secrets
@@ -66,7 +55,6 @@ class Gateway:
         tx_builder: Callable[[dict[str, Any]], list[dict[str, Any]]] | None = None,
         tier: str = "T2",
         emergency_stop: bool = False,
-        **kwargs: Any,
     ) -> None:
         self.ips_hash = ips_hash or DEFAULT_IPS_HASH
         self.policy: Policy = (
@@ -75,11 +63,13 @@ class Gateway:
         self.simulator = simulator
         self.signer = signer
         self.audit_sink: AuditSink = audit_sink if audit_sink is not None else InMemoryAuditSink()
-        self.tx_builder = tx_builder or _default_tx_builder
+        self.tx_builder = tx_builder
         self.clock = clock
         self.tier = tier
         self.emergency_stop = emergency_stop
         self._orders: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+        # Orders that reached the signing step but were not recorded: never retried automatically.
+        self._in_flight: set[str] = set()
 
     def _now_iso(self) -> str:
         if self.clock is not None:
@@ -92,6 +82,27 @@ class Gateway:
             if isinstance(val, str):
                 return val
         return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _tier_gate(self, order_id: str) -> dict[str, Any] | None:
+        """Fail-safe: emergency stop and read-only tiers deny before policy or signer."""
+        code = reason = None
+        if self.emergency_stop:
+            code, reason = "TIER.EMERGENCY_STOP", "Emergency stop is engaged; no order is executed."
+        elif self.tier == "T0":
+            code, reason = "TIER.READ_ONLY", "Tier T0 is read-only; no order is executed."
+        elif self.tier == "T1":
+            code, reason = "TIER.PROPOSE_ONLY", "Tier T1 is propose-only; no order is executed."
+        if code is None:
+            return None
+        return {
+            "schema_version": 1,
+            "order_id": order_id,
+            "decision": "deny",
+            "rules_hit": [{"code": code, "evidence": {"tier": str(self.tier)}}],
+            "reason": reason,
+            "ips_hash": self.ips_hash,
+            "decided_at": self._now_iso(),
+        }
 
     def propose(self, order: dict[str, Any]) -> dict[str, Any]:
         """Propose an order through policy evaluation, simulation, signing, and audit recording."""
@@ -115,8 +126,15 @@ class Gateway:
                 f"Order ID {order_id} conflict: different order body already recorded"
             )
 
-        # 3. Policy evaluation
-        raw_decision = self.policy.evaluate(order)
+        if order_id in self._in_flight:
+            raise GatewayError(
+                f"Order {order_id} reached signing but was not recorded; reconcile before retrying"
+            )
+
+        # 3. Policy evaluation (tier and emergency-stop gate first)
+        raw_decision = self._tier_gate(order_id)
+        if raw_decision is None:
+            raw_decision = self.policy.evaluate(order)
         if not isinstance(raw_decision, dict):
             raise GatewayError("Policy evaluate must return a dictionary")
 
@@ -150,13 +168,16 @@ class Gateway:
             execution = None
         elif dec_outcome == "allow":
             # 6. On allow: build tx requests, simulate, sign and send
+            if self.tx_builder is None:
+                raise GatewayError("tx_builder is not configured; no default transaction is built")
             calls_raw = self.tx_builder(order)
             calls = [calls_raw] if isinstance(calls_raw, dict) else list(calls_raw)
-
             if not calls:
-                calls = _default_tx_builder(order)
+                raise GatewayError("tx_builder returned no calls")
 
-            # Pre-flight simulation for every call
+            # Pre-flight simulation. Calls depend on each other (approve, then supply), so several
+            # calls are simulated as one bundle in a single block; a simulator without bundle
+            # support fails closed.
             total_gas: int | None = None
             sim_failed = False
             sim_err_msg = ""
@@ -164,24 +185,25 @@ class Gateway:
             if self.simulator is None:
                 sim_failed = True
                 sim_err_msg = "Simulator not configured"
+            elif len(calls) > 1 and not hasattr(self.simulator, "simulate_bundle"):
+                sim_failed = True
+                sim_err_msg = "Bundle simulation is not supported by this simulator"
             else:
-                for call in calls:
-                    try:
-                        sim_result = self.simulator.simulate(call)
-                    except Exception as e:
-                        sim_failed = True
-                        sim_err_msg = _sanitize_error_detail(e)
-                        break
-
+                try:
+                    if len(calls) == 1:
+                        sim_result = self.simulator.simulate(calls[0])
+                    else:
+                        sim_result = self.simulator.simulate_bundle(calls)
+                except Exception as e:
+                    sim_failed = True
+                    sim_err_msg = _sanitize_error_detail(e)
+                else:
                     if not sim_result.ok:
                         sim_failed = True
                         sim_err_msg = _sanitize_error_detail(
                             sim_result.error or "Simulation rejected transaction"
                         )
-                        break
-
-                    if sim_result.gas_used is not None:
-                        total_gas = (total_gas or 0) + sim_result.gas_used
+                    total_gas = sim_result.gas_used
 
             if sim_failed:
                 outcome = "failed"
@@ -208,6 +230,7 @@ class Gateway:
                     sign_failed = True
                     sign_err_msg = "Signer not configured"
                 else:
+                    self._in_flight.add(order_id)
                     for call in calls:
                         try:
                             receipt = self.signer.sign_and_send(call)
@@ -296,7 +319,8 @@ class Gateway:
         if dr_errors:
             raise GatewayError(f"DecisionRecord failed schema validation: {dr_errors[0].message}")
 
-        # Store for idempotency
+        # Store for idempotency; the order is now safely recorded
         self._orders[order_id] = (copy.deepcopy(order), copy.deepcopy(stored_record))
+        self._in_flight.discard(order_id)
 
         return copy.deepcopy(stored_record)

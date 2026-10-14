@@ -174,6 +174,56 @@ class RpcSimulator:
             raw=resp,
         )
 
+    def simulate_bundle(self, txs: list[dict[str, Any]]) -> SimulationResult:
+        """Simulate dependent calls (for example approve then supply) in one block (eth_simulateV1).
+
+        Fails closed: there is no sequential eth_call fallback, because each eth_call would see the
+        state before the earlier calls and a dependent call would be judged against the wrong state.
+        """
+        calls = [self._format_tx_call(tx) for tx in txs]
+        params = [
+            {
+                "blockStateCalls": [{"calls": calls}],
+                "validation": True,
+                "traceTransfers": True,
+            }
+        ]
+        try:
+            resp = self._send_rpc("eth_simulateV1", params, req_id=3)
+        except Exception as e:
+            return SimulationResult(
+                ok=False, error=str(e), gas_used=None, raw={"exception": str(e)}
+            )
+
+        if resp.get("error"):
+            if self._is_method_not_found(resp["error"]):
+                msg = "Bundle simulation needs eth_simulateV1, which this RPC does not support"
+            else:
+                err = resp["error"]
+                msg = err.get("message") if isinstance(err, dict) else str(err)
+            return SimulationResult(ok=False, error=msg, gas_used=None, raw=resp)
+
+        result = resp.get("result")
+        block = result[0] if isinstance(result, list) and result else None
+        block_calls = block.get("calls") if isinstance(block, dict) else None
+        if not isinstance(block_calls, list) or len(block_calls) != len(calls):
+            return SimulationResult(
+                ok=False, error="Invalid bundle simulation response format", gas_used=None, raw=resp
+            )
+
+        gas_total = 0
+        for index, item in enumerate(block_calls):
+            if item.get("status") not in ("0x1", 1, True):
+                err = item.get("error")
+                detail = err.get("message") if isinstance(err, dict) else str(err or "reverted")
+                return SimulationResult(
+                    ok=False, error=f"Call {index} failed: {detail}", gas_used=None, raw=resp
+                )
+            raw_gas = item.get("gasUsed")
+            if isinstance(raw_gas, str) and raw_gas.startswith("0x"):
+                gas_total += int(raw_gas, 16)
+        return SimulationResult(ok=True, error=None, gas_used=gas_total, raw=resp)
+
     def _simulate_eth_call(self, call: dict[str, Any]) -> SimulationResult:
         try:
             resp = self._send_rpc("eth_call", [call, "latest"], req_id=2)
