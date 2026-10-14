@@ -31,7 +31,8 @@ class AaveTxBuilder:
         allow_estimate_fallback: bool = False,
         *,
         clock: Any = None,
-        build_calls_fn: Callable[[dict[str, Any], str], list[Any]] | None = None,
+        build_calls_fn: Callable[..., list[Any]] | None = None,
+        owner_address: str | None = None,
     ) -> None:
         self.rpc = rpc
         self.wallet = wallet
@@ -39,6 +40,7 @@ class AaveTxBuilder:
         self.max_head_age_s = max_head_age_s
         self.allow_estimate_fallback = allow_estimate_fallback
         self.clock = clock
+        self.owner_address = owner_address
         self.build_calls = build_calls_fn if build_calls_fn is not None else build_calls
 
     def _now_timestamp(self) -> float:
@@ -56,7 +58,9 @@ class AaveTxBuilder:
             return val.timestamp()
         raise TxBuildError(f"unsupported clock value: {val!r}")
 
-    def __call__(self, order: dict[str, Any]) -> list[dict[str, Any]]:
+    def __call__(
+        self, order: dict[str, Any], *, owner_address: str | None = None
+    ) -> list[dict[str, Any]]:
         # 1. Chain ID check
         try:
             chain_id_res = self.rpc("eth_chainId", [])
@@ -116,7 +120,11 @@ class AaveTxBuilder:
 
         # 4. Protocol call translation
         try:
-            calls = self.build_calls(order, self.wallet)
+            owner = owner_address or self.owner_address
+            if owner is not None:
+                calls = self.build_calls(order, self.wallet, owner_address=owner)
+            else:
+                calls = self.build_calls(order, self.wallet)
         except Exception as err:
             raise TxBuildError(f"build_calls failed: {err}") from err
 
@@ -177,10 +185,11 @@ class AaveTxBuilder:
         except Exception as err:
             raise TxBuildError(f"eth_getBalance failed: {err}") from err
 
+        # Gas floor (design 8.1). A plain ETH transfer also has to leave the fee payable, so its
+        # value counts toward what the wallet must hold.
         total_gas_cost = sum(t["gas"] * t["maxFeePerGas"] for t in txs)
-        if balance < total_gas_cost:
-            raise TxBuildError(
-                f"insufficient gas funds: balance {balance} < required {total_gas_cost}"
-            )
+        required = total_gas_cost + sum(t["value"] for t in txs)
+        if balance < required:
+            raise TxBuildError(f"insufficient gas funds: balance {balance} < required {required}")
 
         return txs
