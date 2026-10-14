@@ -1,5 +1,8 @@
 # Owner UI
 
+> Visual language: see [`DESIGN.md`](../../DESIGN.md) (the UI design system). Behaviour and architecture: [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md).
+
+
 A static single page (`ui/`: `index.html`, `style.css`, `app.js`, `chain.js`) mounted by `api/main.py` at `/ui`. It has no build step, no dependency and no external asset. It talks only to endpoints in `contracts/openapi.yaml`.
 
 ```mermaid
