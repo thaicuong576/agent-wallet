@@ -53,7 +53,7 @@ def _load_base_risk_inputs() -> dict[str, Any]:
 
 
 def get_all_scenarios() -> list[Scenario]:
-    """Return all 44 evaluation scenarios in deterministic order."""
+    """Return all 46 evaluation scenarios in deterministic order."""
     scenarios: list[Scenario] = []
 
     # =========================================================================
@@ -109,7 +109,7 @@ def get_all_scenarios() -> list[Scenario]:
     )
 
     # =========================================================================
-    # Category 2: deny (18 scenarios: 5 ACCESS, 3 LIMIT, 2 ALLOC, 8 RISK)
+    # Category 2: deny (20 scenarios: 6 ACCESS, 3 LIMIT, 2 ALLOC, 8 RISK, 1 TIER)
     # =========================================================================
     # ACCESS (5)
     ips_token_deny = _load_base_ips()
@@ -201,6 +201,25 @@ def get_all_scenarios() -> list[Scenario]:
             },
             expected_outcome="denied",
             expected_rule_codes=["ACCESS.UNLIMITED_APPROVAL"],
+        )
+    )
+
+    scenarios.append(
+        Scenario(
+            id="deny-access-owner-only-function",
+            category="deny",
+            description="Planner cannot call owner-only function mint (ACCESS.OWNER_ONLY_FUNCTION)",
+            inputs={
+                "order": _make_base_order(
+                    proposed_by="planner",
+                    function="mint",
+                    token="USDC",
+                    recipient="self",
+                    amount={"value": "100000000", "decimals": 6},
+                ),
+            },
+            expected_outcome="denied",
+            expected_rule_codes=["ACCESS.OWNER_ONLY_FUNCTION"],
         )
     )
 
@@ -458,6 +477,23 @@ def get_all_scenarios() -> list[Scenario]:
             },
             expected_outcome="denied",
             expected_rule_codes=["RISK.DATA_STALE"],
+        )
+    )
+
+    # TIER (1: TIER.GLOBAL_STOP)
+    state_global_stop = _load_base_state()
+    state_global_stop["global_stop"] = True
+    scenarios.append(
+        Scenario(
+            id="deny-tier-global-stop",
+            category="deny",
+            description="Global stop active in state denies all orders (TIER.GLOBAL_STOP)",
+            inputs={
+                "state": state_global_stop,
+                "order": _make_base_order(amount={"value": "50000000", "decimals": 6}),
+            },
+            expected_outcome="denied",
+            expected_rule_codes=["TIER.GLOBAL_STOP"],
         )
     )
 

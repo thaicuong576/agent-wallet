@@ -41,24 +41,27 @@ TOKEN_ADDRESSES: Final[dict[str, str]] = {
     "USDC": AAVE_V3_USDC,
 }
 
-SUPPORTED_PROTOCOLS: Final[frozenset[str]] = frozenset({"aave-v3"})
-SUPPORTED_TOKENS: Final[frozenset[str]] = frozenset({"USDC"})
-SUPPORTED_FUNCTIONS: Final[frozenset[str]] = frozenset({"approve", "supply", "withdraw"})
-SUPPORTED_RECIPIENTS: Final[frozenset[str]] = frozenset({"self", "aave_pool"})
+SUPPORTED_PROTOCOLS: Final[frozenset[str]] = frozenset({"aave-v3", "wallet"})
+SUPPORTED_TOKENS: Final[frozenset[str]] = frozenset({"USDC", "ETH"})
+SUPPORTED_FUNCTIONS: Final[frozenset[str]] = frozenset(
+    {"approve", "supply", "withdraw", "mint", "transfer"}
+)
+SUPPORTED_RECIPIENTS: Final[frozenset[str]] = frozenset({"self", "aave_pool", "owner"})
 
 
-def resolve_recipient(recipient: str, wallet_address: str) -> str:
+def resolve_recipient(recipient: str, wallet_address: str, owner_address: str | None = None) -> str:
     """Resolve an order recipient enum to an on-chain address.
 
     Args:
-        recipient: Order recipient enum ('self' or 'aave_pool').
+        recipient: Order recipient enum ('self', 'aave_pool', or 'owner').
         wallet_address: Wallet address passed in by the caller.
+        owner_address: Owner address passed in by the caller (required for 'owner').
 
     Returns:
         Checksummed recipient address string.
 
     Raises:
-        ValueError: If recipient is not supported or wallet_address is invalid.
+        ValueError: If recipient is not supported or required address is invalid.
     """
     if recipient == "self":
         if not wallet_address or not isinstance(wallet_address, str):
@@ -72,4 +75,14 @@ def resolve_recipient(recipient: str, wallet_address: str) -> str:
         return Web3.to_checksum_address(wallet_address)
     if recipient == "aave_pool":
         return AAVE_V3_POOL
+    if recipient == "owner":
+        if not owner_address or not isinstance(owner_address, str):
+            raise ValueError(
+                f"Valid owner address is required when recipient is 'owner', got '{owner_address}'"
+            )
+        if not Web3.is_address(owner_address):
+            raise ValueError(
+                f"Valid owner address is required when recipient is 'owner', got '{owner_address}'"
+            )
+        return Web3.to_checksum_address(owner_address)
     raise ValueError(f"Unsupported recipient enum for Aave adapter: '{recipient}'")

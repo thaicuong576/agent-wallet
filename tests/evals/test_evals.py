@@ -123,11 +123,8 @@ def test_eval_reports_are_byte_identical_across_runs(tmp_path: Path):
     assert json1.read_bytes() == json2.read_bytes()
 
 
-# Codes added by the webapp contract change (ticket C1). The eval scenarios for them land with
-# ticket C2 (policy and gateway); C2 removes this set and restores full coverage.
+# TIER.POLICY_CHANGED belongs to Ticket A4 (PUT /policy and presets) and remains pending.
 PENDING_WEBAPP_CODES = {
-    "ACCESS.OWNER_ONLY_FUNCTION",
-    "TIER.GLOBAL_STOP",
     "TIER.POLICY_CHANGED",
 }
 
@@ -135,13 +132,13 @@ PENDING_WEBAPP_CODES = {
 def test_rule_codes_catalog_coverage():
     """Every rule code except the pending webapp codes must be covered by the scenarios."""
     all_codes = load_all_rule_codes()
-    assert len(all_codes) == 25 + len(PENDING_WEBAPP_CODES)
+    assert len(all_codes) == 27 + len(PENDING_WEBAPP_CODES)
 
     _, results = run_evals(verbose=False)
     data = generate_results_data(results, all_codes)
 
     cov = data["rule_coverage"]
-    assert len(cov["covered"]) == 25
+    assert len(cov["covered"]) == 27
     assert set(cov["uncovered"]) == PENDING_WEBAPP_CODES
 
 

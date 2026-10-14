@@ -6,7 +6,7 @@ import json
 import uuid
 
 from core.agent.client import ScriptedClient
-from core.agent.planner import Planner
+from core.agent.planner import PLANNER_SYSTEM_PROMPT, Planner
 from core.agent.reader import ReaderFacts
 from core.policy.engine import evaluate as evaluate_policy
 from core.policy.ips import parse_ips
@@ -310,3 +310,95 @@ def test_planner_flags_recipient_outside_ips_universe_policy_decides():
     assert decision["decision"] == "deny"
     hit_codes = [h["code"] for h in decision["rules_hit"]]
     assert "ACCESS.RECIPIENT_NOT_ALLOWED" in hit_codes
+
+
+def test_planner_validate_order_rejects_mint():
+    """Planner rejects orders proposing function 'mint'."""
+    planner = Planner(client=None)
+    bad_order = {
+        "schema_version": 1,
+        "order_id": str(uuid.uuid4()),
+        "created_at": "2026-10-14T12:30:00Z",
+        "proposed_by": "planner",
+        "protocol": "aave-v3",
+        "function": "mint",
+        "token": "USDC",
+        "amount": {"value": "1000000", "decimals": 6},
+        "recipient": "self",
+    }
+    errors = planner.validate_order(bad_order)
+    assert len(errors) > 0
+    assert any("not permitted for planner" in e for e in errors)
+
+
+def test_planner_validate_order_rejects_transfer():
+    """Planner rejects orders proposing function 'transfer'."""
+    planner = Planner(client=None)
+    bad_order = {
+        "schema_version": 1,
+        "order_id": str(uuid.uuid4()),
+        "created_at": "2026-10-14T12:30:00Z",
+        "proposed_by": "planner",
+        "protocol": "wallet",
+        "function": "transfer",
+        "token": "USDC",
+        "amount": {"value": "1000000", "decimals": 6},
+        "recipient": "owner",
+    }
+    errors = planner.validate_order(bad_order)
+    assert len(errors) > 0
+    assert any("not permitted for planner" in e for e in errors)
+
+
+def test_planner_validate_order_rejects_recipient_owner():
+    """Planner rejects orders proposing recipient 'owner'."""
+    planner = Planner(client=None)
+    bad_order = {
+        "schema_version": 1,
+        "order_id": str(uuid.uuid4()),
+        "created_at": "2026-10-14T12:30:00Z",
+        "proposed_by": "planner",
+        "protocol": "aave-v3",
+        "function": "supply",
+        "token": "USDC",
+        "amount": {"value": "1000000", "decimals": 6},
+        "recipient": "owner",
+    }
+    errors = planner.validate_order(bad_order)
+    assert len(errors) > 0
+    assert any("Recipient 'owner' is not permitted" in e for e in errors)
+
+
+def test_planner_system_prompt_does_not_mention_mint_or_transfer():
+    """PLANNER_SYSTEM_PROMPT does not advertise owner functions mint or transfer to the LLM."""
+    assert "mint" not in PLANNER_SYSTEM_PROMPT
+    assert "transfer" not in PLANNER_SYSTEM_PROMPT
+
+
+def test_planner_rejects_owner_function_order_end_to_end():
+    """End-to-end: Planner rejects an LLM proposal attempting to call mint."""
+    canned = json.dumps(
+        {
+            "action": "propose",
+            "order": {
+                "schema_version": 1,
+                "order_id": str(uuid.uuid4()),
+                "created_at": "2026-10-14T12:30:00Z",
+                "proposed_by": "planner",
+                "protocol": "aave-v3",
+                "function": "mint",
+                "token": "USDC",
+                "amount": {"value": "1000000", "decimals": 6},
+                "recipient": "self",
+            },
+        }
+    )
+    planner = Planner(client=ScriptedClient(canned))
+    result = planner.plan(
+        portfolio_state=SAMPLE_PORTFOLIO_STATE,
+        ips=SAMPLE_IPS_DATA,
+    )
+    assert result.is_no_action
+    assert len(result.orders) == 0
+    assert len(result.validation_errors) > 0
+    assert any("not permitted for planner" in e for e in result.validation_errors)

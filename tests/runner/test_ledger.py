@@ -276,3 +276,46 @@ def test_approve_not_in_spend(tmp_path: Path) -> None:
     # Count should include both approve and supply (2 executed txs)
     assert ledger.executed_count_since(now - timedelta(hours=1)) == 2
     ledger.close()
+
+
+def test_mint_transfer_not_in_spend_but_in_count(tmp_path: Path) -> None:
+    """Verify mint and transfer are excluded from 24h spend but included in tx count."""
+    db_path = tmp_path / "audit.sqlite"
+    sink = SqliteAuditSink(db_path)
+
+    # Executed mint of 1,000,000 USDC
+    sink.append(
+        _make_record(
+            outcome="executed",
+            function="mint",
+            value="1000000000000",
+            created_at="2026-10-14T09:05:00Z",
+        )
+    )
+    # Executed transfer of 500 USDC
+    sink.append(
+        _make_record(
+            outcome="executed",
+            function="transfer",
+            value="500000000",
+            created_at="2026-10-14T09:08:00Z",
+        )
+    )
+    # Executed supply of 40 USDC
+    sink.append(
+        _make_record(
+            outcome="executed",
+            function="supply",
+            value="40000000",
+            created_at="2026-10-14T09:10:00Z",
+        )
+    )
+    sink.close()
+
+    now = datetime(2026, 10, 14, 10, 0, 0, tzinfo=UTC)
+    ledger = AuditLedger(db_path)
+    # Spend should only be 40 USD; mint and transfer are excluded
+    assert ledger.spent_usd_since(now - timedelta(hours=24)) == Decimal("40.00")
+    # Count should include mint, transfer, and supply (3 executed txs)
+    assert ledger.executed_count_since(now - timedelta(hours=1)) == 3
+    ledger.close()

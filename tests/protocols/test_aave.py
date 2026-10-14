@@ -11,14 +11,20 @@ from web3 import Web3
 
 from core.protocols.aave import (
     APPROVE_SELECTOR,
+    FAUCET_MINT_SELECTOR,
+    MINT_SELECTOR,
     SUPPLY_SELECTOR,
+    TRANSFER_SELECTOR,
     WITHDRAW_SELECTOR,
     Call,
     OrderValidationError,
     build_calls,
+    build_mint_calldata,
+    build_transfer_calldata,
     order_to_calls,
 )
 from core.protocols.addresses import (
+    AAVE_V3_FAUCET,
     AAVE_V3_POOL,
     AAVE_V3_USDC,
     BASE_SEPOLIA_CHAIN_ID,
@@ -38,6 +44,28 @@ ERC20_ABI: Final[list[dict]] = [
             {"name": "amount", "type": "uint256"},
         ],
         "outputs": [{"name": "", "type": "bool"}],
+    },
+    {
+        "type": "function",
+        "name": "transfer",
+        "inputs": [
+            {"name": "to", "type": "address"},
+            {"name": "amount", "type": "uint256"},
+        ],
+        "outputs": [{"name": "", "type": "bool"}],
+    },
+]
+
+FAUCET_ABI: Final[list[dict]] = [
+    {
+        "type": "function",
+        "name": "mint",
+        "inputs": [
+            {"name": "token", "type": "address"},
+            {"name": "to", "type": "address"},
+            {"name": "amount", "type": "uint256"},
+        ],
+        "outputs": [{"name": "", "type": "uint256"}],
     }
 ]
 
@@ -72,19 +100,26 @@ def w3() -> Web3:
 
 
 def test_function_selectors(w3: Web3) -> None:
-    """Selectors match known values: approve 0x095ea7b3, supply 0x617ba037, withdraw 0x69328dec."""
+    """Selectors match known values for approve, supply, withdraw, mint, and transfer."""
     assert APPROVE_SELECTOR == "0x095ea7b3"
     assert SUPPLY_SELECTOR == "0x617ba037"
     assert WITHDRAW_SELECTOR == "0x69328dec"
+    assert FAUCET_MINT_SELECTOR == "0xc6c3bbe6"
+    assert MINT_SELECTOR == "0xc6c3bbe6"
+    assert TRANSFER_SELECTOR == "0xa9059cbb"
 
     # Independently compute Keccak hashes of function signatures
     approve_sig = "approve(address,uint256)"
     supply_sig = "supply(address,uint256,address,uint16)"
     withdraw_sig = "withdraw(address,uint256,address)"
+    mint_sig = "mint(address,address,uint256)"
+    transfer_sig = "transfer(address,uint256)"
 
     assert "0x" + w3.keccak(text=approve_sig)[:4].hex() == APPROVE_SELECTOR
     assert "0x" + w3.keccak(text=supply_sig)[:4].hex() == SUPPLY_SELECTOR
     assert "0x" + w3.keccak(text=withdraw_sig)[:4].hex() == WITHDRAW_SELECTOR
+    assert "0x" + w3.keccak(text=mint_sig)[:4].hex() == FAUCET_MINT_SELECTOR
+    assert "0x" + w3.keccak(text=transfer_sig)[:4].hex() == TRANSFER_SELECTOR
 
 
 def test_approve_calldata_matches_independent_fixture(w3: Web3) -> None:
@@ -308,8 +343,10 @@ def test_addresses_constants_and_sources() -> None:
     assert BASE_SEPOLIA_CHAIN_ID == 84532
     assert AAVE_V3_POOL == "0x8bAB6d1b75f19e9eD9fCe8b9BD338844fF79aE27"
     assert AAVE_V3_USDC == "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f"
+    assert AAVE_V3_FAUCET == "0xD9145b5F45Ad4519c7ACcD6E0A4A82e83bB8A6Dc"
     assert Web3.is_checksum_address(AAVE_V3_POOL)
     assert Web3.is_checksum_address(AAVE_V3_USDC)
+    assert Web3.is_checksum_address(AAVE_V3_FAUCET)
 
 
 def test_no_network_access_in_calldata_building(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -334,3 +371,112 @@ def test_no_network_access_in_calldata_building(monkeypatch: pytest.MonkeyPatch)
     }
     calls = build_calls(order, SAMPLE_WALLET)
     assert len(calls) == 1
+
+
+def test_mint_calldata_targets_faucet_and_agent(w3: Web3) -> None:
+    """Mint calldata calls Aave faucet mint(USDC, wallet, amount) with value=0."""
+    amount = 100_000_000
+    faucet_contract = w3.eth.contract(abi=FAUCET_ABI)
+    expected_calldata = faucet_contract.encode_abi("mint", [AAVE_V3_USDC, SAMPLE_WALLET, amount])
+
+    order = {
+        "schema_version": 1,
+        "order_id": "0b6f1d52-8a1c-4e3a-b7d2-5e9c3a1f4d60",
+        "created_at": "2026-10-16T09:00:00Z",
+        "proposed_by": "owner",
+        "protocol": "aave-v3",
+        "function": "mint",
+        "token": "USDC",
+        "amount": {"value": str(amount), "decimals": 6},
+        "recipient": "self",
+    }
+
+    built = build_mint_calldata(AAVE_V3_USDC, SAMPLE_WALLET, amount)
+    assert built == expected_calldata
+
+    calls = build_calls(order, SAMPLE_WALLET)
+    assert len(calls) == 1
+    assert calls[0].to == AAVE_V3_FAUCET
+    assert calls[0].data == expected_calldata
+    assert calls[0].value == 0
+
+
+def test_transfer_usdc_calldata_exact_bytes(w3: Web3) -> None:
+    """Transfer USDC calls ERC20 transfer(owner, amount) on USDC token with value=0."""
+    owner_address = "0x2222222222222222222222222222222222222222"
+    amount = 50_000_000
+    erc20_contract = w3.eth.contract(abi=ERC20_ABI)
+    expected_calldata = erc20_contract.encode_abi("transfer", [owner_address, amount])
+
+    built = build_transfer_calldata(owner_address, amount)
+    assert built == expected_calldata
+
+    order = {
+        "schema_version": 1,
+        "order_id": "0b6f1d52-8a1c-4e3a-b7d2-5e9c3a1f4d60",
+        "created_at": "2026-10-16T09:00:00Z",
+        "proposed_by": "owner",
+        "protocol": "wallet",
+        "function": "transfer",
+        "token": "USDC",
+        "amount": {"value": str(amount), "decimals": 6},
+        "recipient": "owner",
+    }
+
+    calls = build_calls(order, SAMPLE_WALLET, owner_address=owner_address)
+    assert len(calls) == 1
+    assert calls[0].to == AAVE_V3_USDC
+    assert calls[0].data == expected_calldata
+    assert calls[0].value == 0
+
+
+def test_transfer_eth_call_exact_values() -> None:
+    """Transfer ETH calls owner address with empty data (0x) and value=amount."""
+    owner_address = "0x2222222222222222222222222222222222222222"
+    amount = 1_000_000_000_000_000_000
+
+    order = {
+        "schema_version": 1,
+        "order_id": "0b6f1d52-8a1c-4e3a-b7d2-5e9c3a1f4d60",
+        "created_at": "2026-10-16T09:00:00Z",
+        "proposed_by": "owner",
+        "protocol": "wallet",
+        "function": "transfer",
+        "token": "ETH",
+        "amount": {"value": str(amount), "decimals": 18},
+        "recipient": "owner",
+    }
+
+    calls = build_calls(order, SAMPLE_WALLET, owner_address=owner_address)
+    assert len(calls) == 1
+    assert calls[0].to == owner_address
+    assert calls[0].data == "0x"
+    assert calls[0].value == amount
+
+
+def test_transfer_recipient_owner_resolved_server_side() -> None:
+    """Recipient 'owner' is resolved strictly server-side from owner_address."""
+    owner_address = "0x2222222222222222222222222222222222222222"
+    resolved = resolve_recipient("owner", SAMPLE_WALLET, owner_address=owner_address)
+    assert resolved == owner_address
+
+    with pytest.raises(ValueError, match="Valid owner address is required"):
+        resolve_recipient("owner", SAMPLE_WALLET, owner_address=None)
+
+    with pytest.raises(ValueError, match="Valid owner address is required"):
+        resolve_recipient("owner", SAMPLE_WALLET, owner_address="0xinvalid")
+
+    # When owner_address is not passed to build_calls for transfer with recipient='owner'
+    order = {
+        "schema_version": 1,
+        "order_id": "0b6f1d52-8a1c-4e3a-b7d2-5e9c3a1f4d60",
+        "created_at": "2026-10-16T09:00:00Z",
+        "proposed_by": "owner",
+        "protocol": "wallet",
+        "function": "transfer",
+        "token": "USDC",
+        "amount": {"value": "1000000", "decimals": 6},
+        "recipient": "owner",
+    }
+    with pytest.raises(OrderValidationError, match="owner address"):
+        build_calls(order, SAMPLE_WALLET, owner_address=None)
