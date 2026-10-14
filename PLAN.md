@@ -67,6 +67,12 @@ Critical path: scaffold → gateway → policy engine → eval harness → submi
 
 Full specs are written for P0 and P1 first; P2 and P3 specs are written after P1 finishes.
 
+## Decisions
+| Date | Decision | Why | Revisit |
+| :--- | :--- | :--- | :--- |
+| 14 Oct | Core stack is Python 3.11 (FastAPI, web3.py, pytest, SQLite) | Matches the approved blueprint; a Cloudflare Workers spike showed warm requests at 3 to 9 ms CPU but cold requests at 30 to 125 ms, too thin a margin on the free plan | Only if the Workers Paid plan is taken |
+| 14 Oct | Hosting is **not decided**; candidates are Render or Railway (also Azure from the student pack) | Hosting is optional for judging and does not block the core; the scaffold keeps the host swappable (Dockerfile, env-only config, `/health`, storage behind an interface) | Phase P3, tickets S7 and S8 |
+
 ## Risks and open questions
 | Risk | Effect | Owner | Check by |
 | :--- | :--- | :--- | :--- |
