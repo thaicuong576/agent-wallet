@@ -27,7 +27,8 @@ class SqliteAuditSink(AuditSink):
     Append-only guarantee:
       - No update or delete API is exposed
       - Database triggers block any raw SQL UPDATE or DELETE operations
-      - Thread-safe via internal RLock and atomic SQLite transactions
+      - Thread-safe and process-safe via internal RLock and atomic
+        SQLite BEGIN IMMEDIATE transactions
     """
 
     GENESIS_PREV_HASH = GENESIS_PREV_HASH
@@ -94,6 +95,7 @@ class SqliteAuditSink(AuditSink):
 
         with self._lock:
             with self._conn:
+                self._conn.execute("BEGIN IMMEDIATE;")
                 cursor = self._conn.execute(
                     "SELECT seq, hash FROM audit_records ORDER BY seq DESC LIMIT 1;"
                 )
@@ -137,6 +139,7 @@ class SqliteAuditSink(AuditSink):
         imported_count = 0
         with self._lock:
             with self._conn:
+                self._conn.execute("BEGIN IMMEDIATE;")
                 cursor = self._conn.execute(
                     "SELECT seq, hash FROM audit_records ORDER BY seq DESC LIMIT 1;"
                 )
