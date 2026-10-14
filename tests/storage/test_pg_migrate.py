@@ -106,12 +106,14 @@ def test_database_newer_than_code_refuses_start(pg_schema) -> None:  # noqa: F81
 def test_check_fails_closed_when_behind(pg_schema, tmp_path: Path) -> None:  # noqa: F811
     original = (migrate.MIGRATIONS_DIR / "0001_init.sql").read_text(encoding="utf-8")
     (tmp_path / "0001_init.sql").write_text(original, encoding="utf-8")
-    (tmp_path / "0002_next.sql").write_text("CREATE TABLE next_thing (id int);\n", encoding="utf-8")
+    second = (migrate.MIGRATIONS_DIR / "0002_close_data_api.sql").read_text(encoding="utf-8")
+    (tmp_path / "0002_close_data_api.sql").write_text(second, encoding="utf-8")
+    (tmp_path / "0003_next.sql").write_text("CREATE TABLE next_thing (id int);\n", encoding="utf-8")
     ahead = load_migrations(tmp_path)
     with pytest.raises(MigrationError, match="behind"):
         check_schema(pg_schema.dsn, ahead)
-    assert apply_migrations(pg_schema.dsn, ahead) == [2]
-    assert check_schema(pg_schema.dsn, ahead) == 2
+    assert apply_migrations(pg_schema.dsn, ahead) == [3]
+    assert check_schema(pg_schema.dsn, ahead) == 3
 
 
 @requires_pg
