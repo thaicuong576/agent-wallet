@@ -11,6 +11,7 @@ import os
 import pathlib
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -22,12 +23,24 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api import jobs as webapp_jobs
 from api import wallet as webapp_wallet
-from api.auth import install_auth_handlers
+from api.auth import (
+    Session,
+    get_service,
+    install_auth_handlers,
+    require_session,
+)
 from api.auth import router as auth_router
+from api.session import STEP_UP_HEADER
 from core.gateway.audit import AuditSink, InMemoryAuditSink
-from core.gateway.exceptions import GatewayError, InvalidOrder, OrderIdConflict
+from core.gateway.exceptions import (
+    GatewayBusy,
+    GatewayError,
+    InvalidOrder,
+    OrderIdConflict,
+    ReconcileRequired,
+)
 from core.gateway.gateway import Gateway
-from core.policy.ips import compute_ips_hash
+from core.policy.ips import _to_plain_data, compute_ips_hash
 from core.tiers.errors import (
     EmergencyStopActiveError,
     InvalidTierError,
@@ -223,6 +236,23 @@ def _check_owner_auth(request: Request) -> JSONResponse | None:
     return None
 
 
+TIER_RANK = {"T0": 0, "T1": 1, "T2": 2}
+
+
+@dataclass
+class _Scope:
+    """What an owner route acts on: the one global gateway (single mode) or the session tenant."""
+
+    tier_view: Any
+    owner_controls: Any
+    gateway: Any
+    audit_sink: Any
+    ips: dict[str, Any]
+    ips_hash: str
+    tenant: webapp_wallet.Tenant | None = None
+    session: Session | None = None
+
+
 def create_app(
     gateway: Gateway | None = None,
     tier_view: TierView | None = None,
@@ -345,6 +375,77 @@ def create_app(
     app.include_router(webapp_wallet.router)
     app.include_router(webapp_jobs.router)
 
+    def _single_scope() -> _Scope:
+        return _Scope(tier_view, owner_controls, gateway, audit_sink, active_ips, active_ips_hash)
+
+    def _session_scope(request: Request) -> _Scope:
+        """Multi mode: the verified session cookie names the tenant; nothing else can."""
+        session = require_session(request)
+        tenant = webapp_wallet.current_tenant(request, session)
+        gw = tenant.gateway
+        policy_ips = getattr(getattr(gw, "policy", None), "ips", None)
+        ips_doc = _to_plain_data(policy_ips) if policy_ips is not None else {"schema_version": 1}
+        return _Scope(
+            tier_view=tenant.stores.tier_read,
+            owner_controls=tenant.stores.tier_write,
+            gateway=gw,
+            audit_sink=gw.audit_sink,
+            ips=ips_doc,
+            ips_hash=getattr(gw, "ips_hash", None) or compute_ips_hash(ips_doc),
+            tenant=tenant,
+            session=session,
+        )
+
+    def _read_scope(request: Request) -> _Scope:
+        """Reads: the session in multi mode, no credential in single mode (as before)."""
+        return _session_scope(request) if webapp is not None else _single_scope()
+
+    def _owner_scope(request: Request) -> _Scope | JSONResponse:
+        """Owner actions: the session in multi mode, the shared owner token in single mode."""
+        if webapp is not None:
+            return _session_scope(request)
+        auth_err = _check_owner_auth(request)
+        if auth_err is not None:
+            return auth_err
+        return _single_scope()
+
+    def _require_step_up(
+        request: Request, scope: _Scope, action: str, params: dict[str, Any]
+    ) -> None:
+        """Multi mode: a fresh signature bound to `action` and `params` (design 6.2)."""
+        if scope.session is None:
+            return
+        service = get_service(request)
+        service.check_step_up(
+            scope.session, request.headers.get(STEP_UP_HEADER), action, params, service.clock()
+        )
+
+    def _queue_pending(scope: _Scope, order_id: str) -> None:
+        """Multi mode: the tenant gateway has no approval callback, so an order the gateway left
+        `pending_approval` is queued the first time its owner looks at it."""
+        if scope.tenant is None or scope.tier_view.approval_status(order_id) is not None:
+            return
+        found = scope.audit_sink.find_by_order_id(order_id)
+        if found is not None and found.get("outcome") == "pending_approval":
+            try:
+                scope.owner_controls.request_approval(order_id)
+            except Exception:  # noqa: BLE001 - a concurrent enqueue is fine
+                pass
+
+    def _tier_state(scope: _Scope) -> dict[str, Any]:
+        view = scope.tier_view
+        if hasattr(view, "get_tier_state"):
+            return view.get_tier_state()
+        if hasattr(view, "_store") and hasattr(view._store, "get_tier_state"):
+            return view._store.get_tier_state()
+        return {
+            "schema_version": 1,
+            "tier": view.current(),
+            "emergency_stop": view.is_stopped(),
+            "updated_at": utc_now_iso(),
+            "changed_by": "owner",
+        }
+
     # Unauthenticated health endpoint
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -440,9 +541,14 @@ def create_app(
                 detail="order_id must be a lowercase UUID.",
             )
 
-        auth_err = _check_owner_auth(request)
-        if auth_err is not None:
-            return auth_err
+        scope = _owner_scope(request)
+        if isinstance(scope, JSONResponse):
+            return scope
+        _require_step_up(request, scope, "approve", {"order_id": order_id})
+        tier_view, owner_controls = scope.tier_view, scope.owner_controls
+        gateway, audit_sink = scope.gateway, scope.audit_sink
+        active_ips_hash = scope.ips_hash
+        _queue_pending(scope, order_id)
 
         if tier_view.is_stopped():
             return make_problem_response(
@@ -460,7 +566,13 @@ def create_app(
                 title="Order Not Found",
                 detail=f"Order '{order_id}' not found in approval queue.",
             )
-        if status != "pending":
+        # Multi mode: an approval whose execution did not finish (gateway busy, reconcile) left
+        # the order approved but still `pending_approval` in the chain. A retry resumes it.
+        resume = False
+        if scope.tenant is not None and status == "approved":
+            latest = audit_sink.find_by_order_id(order_id)
+            resume = latest is not None and latest.get("outcome") == "pending_approval"
+        if status != "pending" and not resume:
             return make_problem_response(
                 status=409,
                 problem_type="not-pending",
@@ -496,7 +608,8 @@ def create_app(
             )
 
         try:
-            owner_controls.approve(order_id)
+            if not resume:
+                owner_controls.approve(order_id)
         except EmergencyStopActiveError as e:
             return make_problem_response(
                 status=409,
@@ -521,7 +634,34 @@ def create_app(
 
         # Execution of approved order
         now_ts = utc_now_iso()
-        if hasattr(gateway, "execute_approved"):
+        if scope.tenant is not None:
+            # The queue now says approved, so proposing the stored order again lets the
+            # gateway run its full decision path (tier, stops, policy, simulate, sign, audit).
+            # It is always re-proposed with planner origin: an owner-only function stays denied.
+            try:
+                stored_record = gateway.propose(orig_order, origin="planner")
+            except GatewayBusy:
+                return make_problem_response(
+                    status=409,
+                    problem_type="job-in-progress",
+                    title="Gateway Busy",
+                    detail="The gateway is busy; the approval is recorded, retry shortly.",
+                )
+            except ReconcileRequired as e:
+                return make_problem_response(
+                    status=409,
+                    problem_type="invalid-request",
+                    title="Reconcile Required",
+                    detail=str(e),
+                )
+            except (InvalidOrder, GatewayError) as e:
+                return make_problem_response(
+                    status=409,
+                    problem_type="invalid-request",
+                    title="Gateway Error",
+                    detail=str(e),
+                )
+        elif hasattr(gateway, "execute_approved"):
             stored_record = gateway.execute_approved(order_id)
         elif hasattr(gateway, "approve_and_execute"):
             stored_record = gateway.approve_and_execute(order_id)
@@ -587,9 +727,13 @@ def create_app(
                 detail="order_id must be a lowercase UUID.",
             )
 
-        auth_err = _check_owner_auth(request)
-        if auth_err is not None:
-            return auth_err
+        scope = _owner_scope(request)
+        if isinstance(scope, JSONResponse):
+            return scope
+        tier_view, owner_controls = scope.tier_view, scope.owner_controls
+        gateway, audit_sink = scope.gateway, scope.audit_sink
+        active_ips_hash = scope.ips_hash
+        _queue_pending(scope, order_id)
 
         status = tier_view.approval_status(order_id)
         if status is None:
@@ -704,7 +848,10 @@ def create_app(
         outcome: str | None = None,
         limit: int = 50,
         cursor: str | None = None,
+        *,
+        request: Request,
     ) -> JSONResponse:
+        audit_sink = _read_scope(request).audit_sink
         if order_id is not None and not UUID_REGEX.match(order_id):
             return make_problem_response(
                 status=422,
@@ -791,46 +938,48 @@ def create_app(
 
     # 5. GET /portfolio
     @app.get("/portfolio")
-    def get_portfolio() -> JSONResponse:
-        data = copy.deepcopy(default_portfolio)
+    def get_portfolio(request: Request) -> JSONResponse:
+        scope = _read_scope(request)
+        if scope.tenant is not None:
+            try:
+                data = webapp.wallet.portfolio_state(scope.tenant)  # type: ignore[union-attr]
+            except Exception:  # noqa: BLE001 - RPC text can carry URLs; never echo it
+                return make_problem_response(
+                    status=503,
+                    problem_type="service-unavailable",
+                    title="Chain RPC unavailable",
+                    detail="Could not read the portfolio; try again shortly.",
+                )
+        else:
+            data = copy.deepcopy(default_portfolio)
         get_validator("portfolio-state").validate(data)
         return JSONResponse(status_code=200, content=data)
 
     # 6. GET /ips
     @app.get("/ips")
-    def get_ips() -> JSONResponse:
+    def get_ips(request: Request) -> JSONResponse:
+        scope = _read_scope(request)
         body = {
             "schema_version": 1,
-            "ips": copy.deepcopy(active_ips),
-            "ips_hash": active_ips_hash,
+            "ips": copy.deepcopy(scope.ips),
+            "ips_hash": scope.ips_hash,
         }
         get_validator("ips-response").validate(body)
         return JSONResponse(status_code=200, content=body)
 
     # 7. GET /tier
     @app.get("/tier")
-    def get_tier() -> JSONResponse:
-        if hasattr(tier_view, "get_tier_state"):
-            state = tier_view.get_tier_state()
-        elif hasattr(tier_view, "_store") and hasattr(tier_view._store, "get_tier_state"):
-            state = tier_view._store.get_tier_state()
-        else:
-            state = {
-                "schema_version": 1,
-                "tier": tier_view.current(),
-                "emergency_stop": tier_view.is_stopped(),
-                "updated_at": utc_now_iso(),
-                "changed_by": "owner",
-            }
+    def get_tier(request: Request) -> JSONResponse:
+        state = _tier_state(_read_scope(request))
         get_validator("tier-state").validate(state)
         return JSONResponse(status_code=200, content=state)
 
     # 8. Owner PUT /tier
     @app.put("/tier")
     async def set_tier(request: Request) -> JSONResponse:
-        auth_err = _check_owner_auth(request)
-        if auth_err is not None:
-            return auth_err
+        scope = _owner_scope(request)
+        if isinstance(scope, JSONResponse):
+            return scope
 
         try:
             body = await request.json()
@@ -863,8 +1012,13 @@ def create_app(
             )
 
         tier_val = str(body["tier"])
+        if scope.tenant is not None and TIER_RANK[tier_val] > TIER_RANK.get(
+            scope.tier_view.current(), 0
+        ):
+            # Raising widens authority, so it needs a fresh signature bound to the new tier.
+            _require_step_up(request, scope, "tier_raise", {"tier": tier_val})
         try:
-            owner_controls.set_tier(tier_val)
+            scope.owner_controls.set_tier(tier_val)
         except InvalidTierError as e:
             return make_problem_response(
                 status=422,
@@ -873,21 +1027,10 @@ def create_app(
                 detail=str(e),
             )
 
-        if hasattr(gateway, "tier"):
+        if scope.tenant is None and hasattr(gateway, "tier"):
             gateway.tier = tier_val
 
-        if hasattr(tier_view, "get_tier_state"):
-            new_state = tier_view.get_tier_state()
-        elif hasattr(tier_view, "_store") and hasattr(tier_view._store, "get_tier_state"):
-            new_state = tier_view._store.get_tier_state()
-        else:
-            new_state = {
-                "schema_version": 1,
-                "tier": tier_val,
-                "emergency_stop": tier_view.is_stopped(),
-                "updated_at": utc_now_iso(),
-                "changed_by": "owner",
-            }
+        new_state = _tier_state(scope)
 
         get_validator("tier-state").validate(new_state)
         return JSONResponse(status_code=200, content=new_state)
@@ -895,9 +1038,11 @@ def create_app(
     # 9. Owner POST /emergency-stop
     @app.post("/emergency-stop")
     def engage_emergency_stop(request: Request) -> JSONResponse:
-        auth_err = _check_owner_auth(request)
-        if auth_err is not None:
-            return auth_err
+        scope = _owner_scope(request)  # fail-safe direction: the session alone is enough
+        if isinstance(scope, JSONResponse):
+            return scope
+        tier_view, owner_controls = scope.tier_view, scope.owner_controls
+        audit_sink, active_ips_hash = scope.audit_sink, scope.ips_hash
 
         if tier_view.is_stopped():
             return make_problem_response(
@@ -908,7 +1053,7 @@ def create_app(
             )
 
         owner_controls.engage_stop()
-        if hasattr(gateway, "emergency_stop"):
+        if scope.tenant is None and hasattr(gateway, "emergency_stop"):
             gateway.emergency_stop = True
 
         now_ts = utc_now_iso()
@@ -949,9 +1094,12 @@ def create_app(
     # 10. Owner POST /emergency-stop/release
     @app.post("/emergency-stop/release")
     def release_emergency_stop(request: Request) -> JSONResponse:
-        auth_err = _check_owner_auth(request)
-        if auth_err is not None:
-            return auth_err
+        scope = _owner_scope(request)
+        if isinstance(scope, JSONResponse):
+            return scope
+        _require_step_up(request, scope, "release_stop", {})
+        tier_view, owner_controls = scope.tier_view, scope.owner_controls
+        audit_sink, active_ips_hash = scope.audit_sink, scope.ips_hash
 
         if not tier_view.is_stopped():
             return make_problem_response(
@@ -962,7 +1110,7 @@ def create_app(
             )
 
         owner_controls.release_stop()
-        if hasattr(gateway, "emergency_stop"):
+        if scope.tenant is None and hasattr(gateway, "emergency_stop"):
             gateway.emergency_stop = False
 
         now_ts = utc_now_iso()

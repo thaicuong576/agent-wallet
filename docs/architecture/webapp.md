@@ -98,6 +98,10 @@ Limits (one place, `JobLimits`): 6 runs per owner per hour, 4 mint calls per own
 
 Mint and withdraw call `Gateway.propose(order, origin="owner")` through `propose_with_origin`, which passes the keyword only when the gateway accepts it. Until C3 lands the call is a plain `propose` and the engine denies the owner function (`ACCESS.OWNER_ONLY_FUNCTION`): fail closed. The operator global stop is an injected callable: the backend setting (`settings` row on Postgres), `AGENT_WALLET_GLOBAL_STOP=1` or `DATA_DIR/GLOBAL_STOP`; any one of them stops, and an unreadable flag counts as set.
 
+## Owner controls per session (ticket T1b)
+
+A new tenant starts at T0, where a mint ends `denied` with `TIER.READ_ONLY`, so the owner must be able to raise the tier from the page. In multi mode `GET`/`PUT /tier`, `POST /emergency-stop`, `POST /emergency-stop/release`, `GET /decisions`, `/portfolio`, `/ips` and `POST /orders/{id}/approve|reject` read the owner from the session and act on `tenant.stores.tier_read`, `tenant.stores.tier_write` and `tenant.gateway.audit_sink`. Step-up follows design 6.2: only widening actions need a fresh signature (`tier_raise` bound to the new tier, `release_stop`, `approve` bound to the order id); stop, lowering the tier and reject need the session only. The route table, the proofs and the notes on approval queueing are in [`api.md`](api.md#owner-routes-in-multi-mode). The portfolio read is `WalletService.portfolio_state(tenant)` in `api/wallet.py`.
+
 ## Wiring in `api/main.py` (`AGENT_WALLET_MODE=multi`)
 
 `build_webapp` reads the environment only and opens no connection (on Postgres the one exception is the schema check, which is the point: see [`storage.md`](storage.md)). Risk inputs for the policy engine are the repository's reference file stamped fresh (`reference_risk_inputs`, the same values `scripts/live_first_tx.py` uses; Base Sepolia has no indexer for them), because without them every `supply` is denied as `RISK.DATA_STALE`. The keystore secret is optional at start: reads work and wallet creation fails closed with `503 custody-unavailable`.
@@ -120,3 +124,4 @@ Mint and withdraw call `Gateway.propose(order, origin="owner")` through `propose
 | A second owner cannot read the first owner's rows | `test_storage_backends.py::test_second_owner_cannot_read_first_owners_rows` |
 | Works through a transaction-mode pooler (no session state) | `test_storage_backends.py::test_every_statement_works_on_a_fresh_connection` |
 | `migrate()` is not called without `DATABASE_MIGRATE_URL`; a schema that is behind fails closed | `test_storage_backends.py::test_app_role_without_migrate_url_only_checks_the_schema`, `test_schema_behind_the_code_fails_closed`, `test_postgres_behind_schema_refuses_to_start` |
+| Owner controls act on the session's tenant; raise, release and approve need a bound step-up | `tests/webapp/test_owner_routes.py` |

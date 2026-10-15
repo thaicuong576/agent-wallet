@@ -27,6 +27,7 @@ from core.audit.verify import verify_chain
 from core.gateway.tenant import CustodyUnavailable, Tenant, TenantNotFound, TenantRegistry
 from core.policy.ips import compute_ips_hash
 from core.protocols.addresses import AAVE_V3_A_USDC, AAVE_V3_USDC
+from core.runner.portfolio import PortfolioReader
 from core.storage.interfaces import TopupStore
 
 log = logging.getLogger("agent_wallet.wallet")
@@ -150,6 +151,14 @@ class WalletService:
             "price_source": "mainnet_reference",
             "custody": "custodial-testnet",
         }
+
+    def portfolio_state(self, tenant: Tenant) -> dict[str, Any]:
+        """Live portfolio-state of the tenant: chain balances and ledger limits, reference price.
+
+        Raises on any RPC failure; callers fail closed and never echo the error text.
+        """
+        reader = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
+        return reader.read(self._clock()).state
 
     # -- top-ups (design 8.1)
 
