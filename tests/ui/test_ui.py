@@ -1,4 +1,5 @@
-"""Webapp Stage 0 UI (F1): served at /ui, offline-safe, design 12.2 routes only, plain language.
+"""Webapp UI (F1, rebuilt for ticket 119 to docs/design/webapp/ui-contract.md): served at /ui,
+offline-safe, design 12.2 routes only, plain language, no warning banner.
 
 Static scans run everywhere; the node harness (tests/ui/harness.mjs) renders the real modules
 against a fake DOM and the fixture files and is skipped when node is missing.
@@ -24,26 +25,11 @@ from api.main import app
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 UI = ROOT / "ui"
 CHAIN = ROOT / "contracts" / "examples" / "decision-record.chain.json"
-UI_FILES = [
-    "index.html",
-    "style.css",
-    "main.js",
-    "api.js",
-    "explain.js",
-    "gauges.js",
-    "chain.js",
-    "wallet/adapter.js",
-    "wallet/injected.js",
-    "wallet/test.js",
-    "views/onboard.js",
-    "views/dashboard.js",
-    "views/feed.js",
-    "views/jobs.js",
-    "views/actions.js",
-    "views/approvals.js",
-    "views/activate.js",
-    "views/chat.js",
-]
+UI_FILES = sorted(
+    p.relative_to(UI).as_posix()
+    for p in UI.rglob("*")
+    if p.is_file() and p.suffix in {".html", ".css", ".js"}
+)
 JS_FILES = [f for f in UI_FILES if f.endswith(".js")]
 FIXTURES = sorted(p.name for p in (UI / "fixtures").glob("*.json"))
 
@@ -150,24 +136,67 @@ def test_ui_root_serves_index(client: TestClient) -> None:
 # ---- design 14.4 claims -----------------------------------------------------------------
 
 
-def test_banner_present_and_not_removable_by_api_data() -> None:
+def test_no_banner_element_and_testnet_custody_are_chip_footer_and_setup_text() -> None:
     html = (UI / "index.html").read_text(encoding="utf-8")
-    banner = re.search(r'<aside id="banner".*?</aside>', html, re.S)
-    assert banner, "banner element missing from index.html"
-    text = re.sub(r"<[^>]+>", " ", banner.group(0))
-    text = " ".join(text.split()).lower()
-    for phrase in (
-        "testnet only",
-        "custodial",
-        "do not send real funds",
-        "cannot top up its own eth",
-    ):
-        assert phrase in text, phrase
-    # The banner is static markup: no script touches it, and views are mounted in #view only.
-    for name in JS_FILES:
-        source = (UI / name).read_text(encoding="utf-8")
-        assert "banner" not in source.lower(), name
+    css = (UI / "style.css").read_text(encoding="utf-8")
+    # The full-width notice bar is gone: no element, no id, no class, no style rule.
+    assert not re.search(r"""id=["']banner|class=["'][^"']*\bbanner\b|<aside""", html)
+    assert ".banner" not in css and "#banner" not in css
+    # One small chip in the header ...
+    header = html[html.index("<header") : html.index("</header>")]
+    assert 'id="net-chip"' in header and "Base Sepolia testnet" in header
+    # ... and one grey line in the footer.
+    foot = re.search(r"<footer[^>]*>(.*?)</footer>", html, re.S)
+    assert foot, "footer missing"
+    text = " ".join(re.sub(r"<[^>]+>", " ", foot.group(1)).split())
+    assert text == "Testnet only. The server holds this agent's key. Not financial advice."
+    assert html.count("<footer") == 1
+    # The header never mentions custody or funds: that lives in the footer and in Setup.
+    assert "custod" not in header.lower()
+    # Views are mounted in #view only; no script writes to the shell markup of the notice.
     assert 'getElementById("view")' in (UI / "main.js").read_text(encoding="utf-8")
+    for name in JS_FILES:
+        assert "banner" not in (UI / name).read_text(encoding="utf-8").lower(), name
+
+
+def test_setup_text_states_testnet_and_custody() -> None:
+    source = (UI / "views" / "setup.js").read_text(encoding="utf-8")
+    assert (
+        "This is a testnet demo: the server holds the agent's key and no real funds are involved."
+        in source
+    )
+
+
+def test_header_has_the_four_tabs_chips_pill_and_stop_in_contract_order() -> None:
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    header = html[html.index("<header") : html.index("</header>")]
+    nav = html[html.index("<nav") : html.index("</nav>")]
+    hrefs = re.findall(r'href="(#/[a-z]+)"', nav)
+    assert hrefs == ["#/chat", "#/portfolio", "#/activity", "#/rules"]
+    labels = re.findall(r">([A-Za-z]+)</a>", nav)
+    assert labels == ["Chat", "Portfolio", "Activity", "Rules"]
+    order = [
+        header.index(i)
+        for i in (
+            'id="tabs"',
+            'id="net-chip"',
+            'id="addr-chip"',
+            'id="status-pill"',
+            'id="btn-stop"',
+        )
+    ]
+    assert order == sorted(order)
+    assert html.index('id="btn-stop"') < html.index('id="view"')  # outside #view, on every route
+
+
+def test_layout_guards_for_375px_are_in_the_stylesheet() -> None:
+    css = (UI / "style.css").read_text(encoding="utf-8")
+    assert "max-width: 900px" in css and "max-width: 520px" in css  # stacks under the chat
+    assert 'name="viewport"' in (UI / "index.html").read_text(encoding="utf-8")
+    assert "overflow-x: auto" in css  # only the tab strip scrolls
+    assert css.count("min-width: 0") >= 5 and "overflow-wrap: anywhere" in css
+    assert "overflow-x: scroll" not in css and "width: 100vw" not in css
+    assert "max-width: 1280px" in css and "--gutter: 32px" in css
 
 
 @pytest.mark.parametrize("name", UI_FILES)
@@ -215,6 +244,9 @@ def test_stop_visible_and_session_only() -> None:
     main = (UI / "main.js").read_text(encoding="utf-8")
     assert "await api.stop();" in main  # engaging needs no signature
     assert "api.release(await ctx.stepUp(" in main  # only the release path asks for one
+    assert 'stopBtn.textContent = frozen ? "Resume (needs signature)"' in (
+        UI / "gauges.js"
+    ).read_text(encoding="utf-8")
 
 
 @needs_node
@@ -262,6 +294,7 @@ def test_hostile_api_string_does_not_become_html() -> None:
     assert h["innerHTMLUsed"] is False
     assert h["injectedElements"] == 0
     assert h["shownAsText"] is True
+    assert h["rulesShownAsText"] is True and h["setupShownAsText"] is True
 
 
 @needs_node
@@ -275,20 +308,50 @@ def test_hostile_blocked_order_is_explained_in_words() -> None:
 @needs_node
 def test_page_works_from_fixtures() -> None:
     h = harness()
-    assert "Connect a wallet to begin" in h["signedOut"]["text"]
+    assert "Connect your wallet" in h["signedOut"]["text"]
     assert h["signedOut"]["hasConnectButton"]
     assert h["afterConnect"]["me"] is True
-    assert "Agent address" in h["afterConnect"]["text"]
-    assert "98 USDC" in h["dashboard"]
-    assert "gas floor" in h["dashboard"]
-    assert "Reference price" in h["dashboard"]
-    assert "Today's spend" in h["dashboard"]
+    assert "0x9a8b7c6d5e4f30211203f4e5d6c7b8a998877665" in h["afterConnect"]["text"]
+    assert "USDC (in wallet)" in h["dashboard"] and "98" in h["dashboard"]
+    assert "ETH (gas)" in h["dashboard"] and "Reference price" in h["dashboard"]
+    assert "Today's limit" in h["side"] and "$2.00 of $300.00 used" in h["side"]
+    assert "chain verified" in h["side"] and "enough" in h["side"]
+    for phrase in ("Per transaction", "Per day", "Approval threshold", "Allowed protocols"):
+        assert phrase in h["rules"], phrase
     for phrase in ("Blocked", "Waiting for you", "Failed", "Executed"):
         assert phrase in h["feed"], phrase
     assert "approval" in h["feed"]
     assert h["txLinks"] and all(
         re.fullmatch(r"https://sepolia\.basescan\.org/tx/0x[0-9a-f]{64}", u) for u in h["txLinks"]
     )
+
+
+@needs_node
+def test_step_card_kinds_done_blocked_pending_skipped_and_failed() -> None:
+    h = harness()
+    assert h["stepKindList"] == ["done", "blocked", "pending", "skipped", "fail"]
+    kinds = h["stepKinds"]
+    for kind in h["stepKindList"]:
+        assert kinds[kind]["cls"] == f"step-card {kind}", kind
+    # Plain words first, the rule code is a small secondary chip, and the state is a word too.
+    assert "the funds would go to an address your policy does not list" in kinds["blocked"]["text"]
+    assert "ACCESS.RECIPIENT_NOT_ALLOWED" in kinds["blocked"]["text"]
+    assert "Waiting for you" in kinds["pending"]["text"]
+    assert "Skipped" in kinds["skipped"]["text"] and "Executed" in kinds["done"]["text"]
+    assert "Failed" in kinds["fail"]["text"]
+
+
+@needs_node
+def test_setup_is_shown_for_t0_and_not_after_activation() -> None:
+    r = harness()["routing"]
+    assert r["signedOut"] == "setup" and r["t0"] == "setup" and r["t0Portfolio"] == "setup"
+    assert r["t2Default"] == "chat" and r["t2Setup"] == "chat"  # activated: land in Chat
+    assert r["t1Setup"] == "setup" and r["t2Portfolio"] == "portfolio"
+    assert r["alias"] == ["portfolio", "activity", "portfolio", "chat"]  # old hashes still work
+    assert r["unknown"] == "chat" and r["tierUnknown"] == "rules"
+    p = harness()["pills"]
+    assert p["t0"] == "Read only" and p["t2"].endswith("Agent active") and p["stopped"] == "Stopped"
+    assert p["addr"] == "0x9d9d…9d9d"
 
 
 @needs_node
@@ -321,7 +384,10 @@ def test_sign_in_signs_the_exact_message_and_shows_the_agent_address() -> None:
         "nonce": "n" * 32,
         "hasSig": True,
     }
-    assert "Agent address: 0x" + "22" * 20 in f["text"]
+    assert "0x" + "22" * 20 in f["text"]
+    card = flows()["connectCard"]
+    assert "Connect your wallet" in card and "Connect wallet" in card
+    assert "no transaction is sent" in card
 
 
 @needs_node
@@ -347,8 +413,9 @@ def test_mint_job_is_polled_and_its_record_links_to_basescan() -> None:
     m = flows()["mint"]
     assert m["polls"] == 3
     assert m["sleeps"] == [2000, 3000]  # poll every 2 s, backing off toward 5 s
-    assert "Executed" in m["text"] and "mint 1000 USDC" in m["text"]
-    assert m["links"] == [f"https://sepolia.basescan.org/tx/{TX}"]
+    assert "Executed" in m["text"] and "Minted 1000 USDC" in m["text"]
+    external = [u for u in m["links"] if u.startswith("http")]
+    assert external == [f"https://sepolia.basescan.org/tx/{TX}"]
 
 
 @needs_node
@@ -416,8 +483,9 @@ def test_real_mode_wallet_rejection_sends_nothing() -> None:
 @needs_node
 def test_activate_agent_sends_step_up_then_tier_raise_and_updates_chip() -> None:
     f = flows()
-    assert "Activate your agent" in f["t0Dashboard"]
-    assert "you can stop it at any time" in f["t0Dashboard"]
+    assert "Meet your agent" in f["t0Dashboard"]
+    assert "you can stop it any time" in f["t0Dashboard"]
+    assert "One free signature, no transaction" in f["t0Dashboard"]
     a = f["activate"]
     assert a["order"] == ["POST /auth/step-up", "PUT /tier"]
     assert a["stepUpBody"] == {"action": "tier_raise", "params": {"tier": "T2"}}
@@ -426,9 +494,11 @@ def test_activate_agent_sends_step_up_then_tier_raise_and_updates_chip() -> None
     assert "Action: tier_raise" in a["signedMessage"]
     assert a["tierState"]["tier"] == "T2" and a["serverTier"] == "T2"
     assert "Agent activated: tier T2" in a["text"]
-    assert f["activateChip"] == "Tier T2"
+    assert a["landedOn"] == "#/chat"  # activated: the owner lands in Chat
+    assert f["activateChip"].endswith("Agent active")
     assert f["afterActivateMe"] == "T2"
-    assert "Activate your agent" not in f["activatedDashboard"]
+    assert "Meet your agent" not in f["activatedDashboard"]
+    assert "Lower to read only" in f["activatedDashboard"]
 
 
 @needs_node
@@ -440,15 +510,16 @@ def test_lowering_the_tier_needs_no_signature() -> None:
 
 
 @needs_node
-def test_stepper_has_activate_step_and_prompt_disclosures() -> None:
+def test_setup_has_three_steps_and_wallet_prompt_disclosures() -> None:
     text = flows()["onboardActivate"]
-    assert "Activate agent" in text
     for phrase in (
-        "Wallet prompt: connect and sign a free login message",
+        "1 · Connected ✓",
+        "2 · Add gas",
+        "3 · Activate",
+        "Activate agent",
         "Wallet prompt: send test ETH (pays gas)",
-        "No wallet prompt: the server mints test USDC",
-        "Wallet prompt: one free signature to confirm the preset",
         "Wallet prompt: one free signature to raise the tier",
+        "Mint test USDC from the Portfolio page",
     ):
         assert phrase in text, phrase
 
@@ -457,11 +528,11 @@ def test_stepper_has_activate_step_and_prompt_disclosures() -> None:
 def test_frozen_state_appears_on_stop_and_clears_on_release() -> None:
     fz = flows()["freeze"]
     assert fz["calm"]["cls"] == "masthead" and fz["calm"]["msg"] == ""
+    assert fz["calm"]["pill"].endswith("Agent active") and fz["calm"]["btn"] == "Emergency stop"
     assert fz["frozen"]["cls"] == "masthead frozen"
-    assert "FROZEN" in fz["frozen"]["chip"]
-    assert "EMERGENCY STOP ACTIVE" in fz["frozen"]["msg"]
-    assert "All orders blocked" in fz["frozen"]["msg"]
-    assert fz["frozen"]["btn"].startswith("Release stop")
+    assert fz["frozen"]["pill"] == "Stopped" and "bad" in fz["frozen"]["pillCls"]
+    assert "All orders are blocked" in fz["frozen"]["title"]
+    assert fz["frozen"]["btn"] == "Resume (needs signature)"
     assert fz["released"] == {"cls": "masthead", "btn": "Emergency stop", "msg": ""}
 
 
@@ -477,8 +548,9 @@ def test_spend_bar_maths_and_card() -> None:
     assert m["full"]["remaining"] == "0.00"
     assert m["bad"]["level"] == "unknown" and m["zero"]["level"] == "unknown"
     assert f["spendCard"]["now"] == "20" and f["spendCard"]["width"] == "20%"
-    assert "40.00 / 200.00 USD spent in the last 24 hours" in f["spendCard"]["text"]
-    assert "Rolling 24-hour window" in f["spendCard"]["text"]
+    assert "$40.00 of $200.00 used" in f["spendCard"]["text"]
+    assert "Rolling 24 hours, no fixed reset time" in f["spendCard"]["text"]
+    assert "Orders above $50.00 wait for your approval" in f["spendCard"]["text"]
     assert [g["level"] for g in f["gas"]] == ["low", "ok", "low"]
 
 
@@ -512,7 +584,7 @@ def test_every_route_the_js_calls_exists_in_openapi() -> None:
         ("post", "/emergency-stop"), ("post", "/emergency-stop/release"),
         ("post", "/orders/{order_id}/approve"), ("post", "/orders/{order_id}/reject"),
         ("get", "/presets"), ("put", "/tier"), ("get", "/portfolio"), ("get", "/ips"),
-        ("get", "/decisions"),
+        ("get", "/decisions"), ("get", "/chat"), ("post", "/chat"),
     }  # fmt: skip
     for method, path in methods:
         assert method in spec["paths"][path], (method, path)
@@ -553,6 +625,16 @@ def test_design_tokens_come_from_design_md() -> None:
     assert "prefers-color-scheme: dark" in css
     assert "prefers-reduced-motion" in css
     assert ":focus-visible" in css
+    # Tokens of the approved mockups (docs/design/webapp/ui-contract.md).
+    for token, value in (
+        ("--ground", "#fafaf6"),
+        ("--tab-active", "#fff3bf"),
+        ("--owner-bubble", "#ffe680"),
+        ("--green", "#1f7a44"),
+        ("--red", "#c0392b"),
+        ("--r-card", "16px"),
+    ):
+        assert re.search(rf"{re.escape(token)}:\s*{value}", css), token
 
 
 # ---- audit chain check (kept from the owner console) ------------------------------------
@@ -602,13 +684,20 @@ def test_js_chain_check_names_first_bad_seq(tmp_path: pathlib.Path) -> None:
 
 
 def test_chat_is_the_first_tab_and_a_view() -> None:
-    html = (UI / "index.html").read_text(encoding="utf-8")
-    nav = html[html.index("<nav") : html.index("</nav>")]
-    assert nav.index('href="#/chat"') < nav.index('href="#/dashboard"')
-    for tab in ("#/dashboard", "#/feed", "#/approvals"):
-        assert f'href="{tab}"' in nav  # the existing tabs stay
     main = (UI / "main.js").read_text(encoding="utf-8")
-    assert "VIEWS = { chat," in main and '"#/chat"' in main  # default view once signed in
+    assert "const VIEWS = { chat," in main and "export function routeFor" in main
+    assert 'asked === "setup"' in main and ': "chat";' in main  # Chat is the default once active
+    for view in ("chat", "portfolio", "activity", "rules", "setup"):
+        assert (UI / "views" / f"{view}.js").is_file(), view
+    for gone in ("dashboard", "feed", "onboard"):
+        assert not (UI / "views" / f"{gone}.js").exists(), gone
+
+
+def test_rules_tab_reads_the_existing_ips_route() -> None:
+    assert '"/ips"' in (UI / "api.js").read_text(encoding="utf-8")
+    assert "api.ips()" in (UI / "views" / "rules.js").read_text(encoding="utf-8")
+    spec = yaml.safe_load((ROOT / "contracts" / "openapi.yaml").read_text(encoding="utf-8"))
+    assert "get" in spec["paths"]["/ips"]
 
 
 @needs_node
@@ -628,7 +717,8 @@ def test_chat_send_with_enter_shows_typing_then_step_cards() -> None:
     assert s["sleeps"] == [2000, 3000]  # the poll cadence of the other jobs
     assert s["bubbles"] == ["bubble user", "bubble agent"]
     assert s["cards"] == 2 and s["saysChips"] == 1
-    assert "Approved 10 USDC for the Aave pool." in s["text"] and "✓ Executed" in s["text"]
+    assert "Approved 10 USDC for the Aave pool." in s["text"] and "Executed" in s["text"]
+    assert "Transactions:" not in s["text"]  # hashes appear only as BaseScan links
     assert s["links"] == [f"https://sepolia.basescan.org/tx/{TX_CHAT}"] * 2
     assert s["sendDisabled"] is False
 
@@ -636,17 +726,17 @@ def test_chat_send_with_enter_shows_typing_then_step_cards() -> None:
 @needs_node
 def test_chat_blocked_step_is_explained_and_links_to_activate() -> None:
     b = chat_flows()["blocked"]
-    assert "✕ Blocked" in b["text"] and "↷ Skipped" in b["text"]
+    assert "Blocked" in b["text"] and "Skipped" in b["text"]
     assert "read-only mode (tier T0)" in b["text"]
     assert b["codes"] == ["TIER.READ_ONLY"]
-    assert b["cards"] == ["decision step-card bad", "decision step-card neutral"]
-    assert b["activateLinks"] == 2 and set(b["links"]) == {"#/dashboard"}  # no tx link
+    assert b["cards"] == ["step-card blocked", "step-card skipped"]
+    assert b["activateLinks"] == 2 and set(b["links"]) == {"#/setup"}  # no tx link
 
 
 @needs_node
 def test_chat_frozen_state_disables_the_composer() -> None:
     f = chat_flows()["frozen"]
-    assert "Your agent is frozen" in f["text"] and "Release it from the top bar" in f["text"]
+    assert "Your agent is frozen" in f["text"] and "Resume in the top bar" in f["text"]
     assert f["sendDisabled"] is True and f["inputDisabled"] is True and f["posts"] == 0
 
 
@@ -662,7 +752,7 @@ def test_chat_rate_limit_and_conflict_are_plain_words_and_keep_the_message() -> 
 
 
 @needs_node
-def test_chat_history_withdraw_hint_and_signed_out() -> None:
+def test_chat_history_prompt_chips_and_signed_out() -> None:
     f = chat_flows()
     assert f["history"]["bubbles"] == ["bubble user", "bubble agent"]
     assert f["history"]["getCalls"] == ["/chat?limit=50"]
@@ -670,9 +760,12 @@ def test_chat_history_withdraw_hint_and_signed_out() -> None:
         "Agent says" in f["history"]["text"] and "Wallet: 1000 USDC idle." in f["history"]["text"]
     )
     assert f["chipFilled"] == "Put 10 USDC to work in Aave"
-    hint = f["withdrawHint"]
-    assert "needs a signature from your wallet" in hint["text"]
-    assert hint["link"] == ["#/dashboard"] and hint["posts"] == 0 and hint["boxUnchanged"]
+    assert f["prompts"] == [
+        "What is my balance?",
+        "Put 10 USDC to work in Aave",
+        "Pull 5 USDC back out",
+    ]
+    assert f["postsAfterChip"] == 0  # a chip fills the box, it never sends
     assert f["maxLength"] == 500
     assert "Connect a wallet" in f["signedOut"]["text"] and f["signedOut"]["chatCalls"] == 0
 

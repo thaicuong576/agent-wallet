@@ -52,51 +52,97 @@ export function retryText(retryAfter, now = Date.now()) {
 
 // A navigation link styled as a button. `hash` is one of our own routes.
 export function cta(el, label, hash, cls = "primary") {
-  const a = el("a", "cta " + cls, label);
+  const a = el("a", "btn " + cls, label);
   a.setAttribute("href", hash);
   return a;
 }
 
-// An empty state that says what to do next, with a button that goes there (A-9).
-export function emptyState(el, text, hint, action) {
-  const box = el("li", "empty");
+// An empty state that says what to do next, with a button that goes there.
+export function emptyState(el, text, hint, action, tag = "li") {
+  const box = el(tag, "empty");
   box.append(el("p", "", text));
   if (hint) box.append(el("p", "note", hint));
   if (action) box.append(cta(el, action.label, action.hash));
   return box;
 }
 
-// Fills the elements of the top bar from the owner's tier state (A-3). `state` is null when
-// nobody is connected, "unavailable" when the tier could not be read, else {tier, emergency_stop}.
-export const FROZEN_TEXT = "EMERGENCY STOP ACTIVE · All orders blocked until you release it.";
-export function applyTopbar({ chip, stopBtn, stopMsg, masthead }, state) {
+// "0x9D1A…373a": the owner address as a chip.
+export function shortAddr(a) {
+  const s = String(a || "");
+  return s.length > 12 ? s.slice(0, 6) + "…" + s.slice(-4) : s;
+}
+
+// "2 min ago" from an ISO time; the date itself when it is old or unreadable.
+export function relTime(iso, now = Date.now()) {
+  const t = Date.parse(String(iso || ""));
+  if (Number.isNaN(t)) return "";
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  if (s < 7 * 86400) return Math.floor(s / 86400) + " d ago";
+  return String(iso).slice(0, 10);
+}
+
+// The in-view frozen card. Frozen has to be unmistakable without a full-width strip.
+export const FROZEN_TEXT = "Emergency stop is on. All orders are blocked until you resume the agent.";
+export function frozenCard(el) {
+  const card = el("div", "frozen-card");
+  card.setAttribute("role", "status");
+  const icon = el("span", "step-icon", "✕");
+  icon.className = "step-icon";
+  icon.style.background = "var(--red)";
+  const text = el("div");
+  text.append(
+    el("strong", "", "Your agent is frozen"),
+    el(
+      "p",
+      "",
+      "The emergency stop is on, so the agent will not answer or act. Use Resume in the top bar to continue; it needs one signature.",
+    ),
+  );
+  card.append(icon, text);
+  return card;
+}
+
+// Fills the header from the owner's tier state. `state` is null when nobody is connected,
+// "unavailable" when the tier could not be read, else {tier, emergency_stop}.
+export function applyTopbar({ pill, addrChip, stopBtn, stopMsg, masthead }, state, me) {
   const frozen = Boolean(state && state !== "unavailable" && state.emergency_stop);
   if (masthead) masthead.className = "masthead" + (frozen ? " frozen" : "");
+  if (addrChip) {
+    addrChip.hidden = !(state && me && me.address);
+    addrChip.textContent = me && me.address ? shortAddr(me.address) : "";
+    if (me && me.address) addrChip.setAttribute("title", me.address);
+  }
   if (!state) {
-    chip.textContent = "Not connected";
+    pill.hidden = true;
+    pill.textContent = "";
     stopBtn.disabled = true;
     stopBtn.textContent = "Emergency stop";
     stopBtn.dataset.stopped = "0";
-    if (stopMsg.dataset.frozen === "1") {
-      stopMsg.textContent = "";
-      stopMsg.dataset.frozen = "0";
-    }
     return;
   }
+  pill.hidden = false;
   stopBtn.disabled = false;
   if (state === "unavailable") {
-    chip.textContent = "Tier unavailable";
+    pill.className = "pill status warn";
+    pill.textContent = "Status unavailable";
     return;
   }
-  chip.textContent = "Tier " + state.tier + (frozen ? " · FROZEN" : "");
-  chip.className = "chip" + (frozen ? " bad" : "");
-  stopBtn.textContent = frozen ? "Release stop (needs signature)" : "Emergency stop";
   stopBtn.dataset.stopped = frozen ? "1" : "0";
+  stopBtn.textContent = frozen ? "Resume (needs signature)" : "Emergency stop";
   if (frozen) {
-    stopMsg.textContent = FROZEN_TEXT;
-    stopMsg.dataset.frozen = "1";
-  } else if (stopMsg.dataset.frozen === "1") {
-    stopMsg.textContent = "";
-    stopMsg.dataset.frozen = "0";
+    pill.className = "pill status bad";
+    pill.textContent = "Stopped";
+    pill.setAttribute("title", FROZEN_TEXT);
+  } else if (state.tier === "T2") {
+    pill.className = "pill status ok";
+    pill.textContent = "● Agent active";
+    pill.removeAttribute("title");
+  } else {
+    pill.className = "pill status warn";
+    pill.textContent = state.tier === "T1" ? "Propose only" : "Read only";
+    pill.removeAttribute("title");
   }
 }

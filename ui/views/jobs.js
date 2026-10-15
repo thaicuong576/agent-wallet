@@ -1,7 +1,7 @@
-// Shared by the dashboard, the feed and the approvals list: job progress and record loading.
+// Shared by Portfolio, Activity and the approvals card: job progress and record loading.
 // Every API string is written with textContent.
 import { explainJob, recordFromSummary } from "../explain.js";
-import { plannerLabel, recordCard } from "./feed.js";
+import { plannerLabel, recordCard } from "./cards.js";
 
 const STATUS_WORDS = {
   queued: "Queued…",
@@ -22,7 +22,7 @@ export async function recordsOfJob(ctx, job) {
   return page.items.filter((r) => ids.includes(r.order_id));
 }
 
-// Records for the feed and the approvals list, oldest first.
+// Records for Activity and the approvals card, oldest first.
 export async function loadRecords(ctx, limit = 50) {
   if (ctx.api.fixtures) return (await ctx.api.decisions(limit)).items;
   const list = await ctx.api.jobs();
@@ -43,17 +43,17 @@ export function jobPanel(ctx) {
   const node = el("div", "card job-panel");
   node.hidden = true;
   const title = el("h2", "", "Latest job");
-  const status = el("p", "status", "");
+  const status = el("p", "msg", "");
   status.setAttribute("role", "status");
-  const planner = el("p", "chip neutral", "");
+  const planner = el("p", "chip", "");
   planner.hidden = true;
-  const list = el("ul", "cards");
+  const list = el("ul", "steps");
   node.append(title, status, planner, list);
 
   function paint(job) {
     node.hidden = false;
     title.textContent = "Latest job: " + String(job.kind || "job");
-    status.className = "status" + (job.status === "failed" || job.status === "interrupted" ? " error" : "");
+    status.className = "msg" + (job.status === "failed" || job.status === "interrupted" ? " error" : "");
     status.textContent = STATUS_WORDS[job.status] || "Working…";
     if (job.status === "failed" || job.status === "interrupted" || job.status === "denied") {
       status.textContent += " " + explainJob(job);
@@ -68,7 +68,7 @@ export function jobPanel(ctx) {
     begin(text) {
       node.hidden = false;
       title.textContent = "Latest job";
-      status.className = "status";
+      status.className = "msg";
       status.textContent = text;
       planner.hidden = true;
       list.replaceChildren();
@@ -80,7 +80,7 @@ export function jobPanel(ctx) {
       try {
         records = await recordsOfJob(ctx, job);
       } catch (e) {
-        status.className = "status error";
+        status.className = "msg error";
         status.textContent += " " + ctx.describeError(e);
       }
       list.replaceChildren(...records.map((r) => recordCard(ctx, r)));
@@ -99,7 +99,7 @@ export async function runJob(ctx, panel, startText, start) {
 
 // "Audit chain: verified" from GET /audit/verify. Words and an icon, not colour alone.
 export function chainChip(ctx) {
-  const chip = ctx.el("span", "chip neutral", "Audit chain: checking…");
+  const chip = ctx.el("span", "chip", "Audit chain: checking…");
   async function check() {
     try {
       const v = await ctx.api.auditVerify();
@@ -111,7 +111,7 @@ export function chainChip(ctx) {
         chip.textContent = "✕ Audit chain broken at record " + v.first_bad_seq;
       }
     } catch (e) {
-      chip.className = "chip neutral";
+      chip.className = "chip";
       chip.textContent = "Audit chain: unavailable (" + ctx.describeError(e) + ")";
     }
   }

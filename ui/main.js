@@ -1,6 +1,6 @@
-// Shell: hash router, shared state, top bar (tier chip and emergency stop), wallet and API wiring.
-// Every API string is written with textContent. The testnet notice is static markup in
-// index.html and is never touched from here.
+// Shell: hash router, shared state, header (status pill, address chip, emergency stop), wallet and
+// API wiring. Every API string is written with textContent. There is no notice bar: testnet and
+// custody are the header chip, the footer line and the Setup text, all static markup.
 import { createApi, ApiError } from "./api.js";
 import { explainError } from "./explain.js";
 import { applyTopbar, retryText } from "./gauges.js";
@@ -8,10 +8,10 @@ import { discoverInjected } from "./wallet/injected.js";
 import { isUserRejection } from "./wallet/adapter.js";
 import { TestWallet } from "./wallet/test.js";
 import * as chat from "./views/chat.js";
-import * as onboard from "./views/onboard.js";
-import * as dashboard from "./views/dashboard.js";
-import * as feed from "./views/feed.js";
-import * as approvals from "./views/approvals.js";
+import * as setup from "./views/setup.js";
+import * as portfolio from "./views/portfolio.js";
+import * as activity from "./views/activity.js";
+import * as rules from "./views/rules.js";
 
 export function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -94,7 +94,19 @@ export function makeCtx({ api, wallet, sleep }) {
   return ctx;
 }
 
-const VIEWS = { chat, onboard, dashboard, feed, approvals };
+const VIEWS = { chat, portfolio, activity, rules, setup };
+// Old hashes keep working.
+const ALIASES = { dashboard: "portfolio", feed: "activity", approvals: "portfolio", onboard: "setup" };
+
+// Which screen to show. Chat is home once the agent is activated; Setup is shown until then
+// (always for a signed-out visitor and for tier T0). Pure, so the tests can call it.
+export function routeFor(hash, { signedIn, tier }) {
+  const raw = String(hash || "").replace(/^#\/?/, "");
+  const asked = Object.prototype.hasOwnProperty.call(ALIASES, raw) ? ALIASES[raw] : raw;
+  if (!signedIn || tier === "T0") return "setup";
+  if (asked === "setup") return tier === "T1" ? "setup" : "chat";
+  return Object.prototype.hasOwnProperty.call(VIEWS, asked) && asked !== "setup" ? asked : "chat";
+}
 
 function boot() {
   const params = new URLSearchParams(globalThis.location.search);
@@ -107,7 +119,6 @@ function boot() {
     scenario: fixtures ? params.get("scenario") || "" : "",
   });
   const root = document.getElementById("view");
-  const chip = document.getElementById("tier-chip");
   const stopBtn = document.getElementById("btn-stop");
   const stopMsg = document.getElementById("stop-msg");
   const modeChip = document.getElementById("mode-chip");
@@ -116,65 +127,91 @@ function boot() {
     modeChip.hidden = false;
   }
 
-  const bar = { chip, stopBtn, stopMsg, masthead: document.getElementById("masthead") };
+  const bar = {
+    pill: document.getElementById("status-pill"),
+    addrChip: document.getElementById("addr-chip"),
+    stopBtn,
+    stopMsg,
+    masthead: document.getElementById("masthead"),
+  };
+  let current = "";
   async function topbar() {
     const me = await ctx.refreshSession();
     if (!me) {
-      applyTopbar(bar, null);
+      applyTopbar(bar, null, null);
+      refreshRoute();
       return;
     }
     try {
       ctx.state.tier = await api.tier();
     } catch (e) {
       ctx.state.tier = null;
-      applyTopbar(bar, "unavailable");
+      applyTopbar(bar, "unavailable", me);
+      refreshRoute();
       return;
     }
-    applyTopbar(bar, ctx.state.tier);
+    applyTopbar(bar, ctx.state.tier, me);
+    refreshRoute();
+  }
+
+  let toastTimer = null;
+  function toast(text) {
+    stopMsg.textContent = text;
+    if (toastTimer) clearTimeout(toastTimer);
+    if (text) toastTimer = setTimeout(() => (stopMsg.textContent = ""), 8000);
   }
 
   stopBtn.addEventListener("click", async () => {
     stopBtn.disabled = true;
-    stopMsg.textContent = "Working…";
+    toast("Working…");
     let after = "";
     try {
       if (stopBtn.dataset.stopped === "1") {
         await api.release(await ctx.stepUp("release_stop", {}));
-        after = "Stop released.";
+        after = "The agent is running again.";
       } else {
         await api.stop();
+        after = "Stopped. Nothing can run until you resume.";
       }
     } catch (e) {
       after = describeError(e);
     }
     await topbar();
-    // While frozen the top bar keeps its own FROZEN text; otherwise show the outcome.
-    if (after && stopMsg.dataset.frozen !== "1") stopMsg.textContent = after;
-    else if (after) stopMsg.textContent = after + " " + stopMsg.textContent;
+    toast(after);
     ctx.changed();
   });
 
-  async function show() {
-    // Chat is the home view once signed in; before that, setting up is.
-    const home = ctx.state.me ? "#/chat" : "#/onboard";
-    const name = (globalThis.location.hash || home).replace(/^#\//, "");
-    const fallback = ctx.state.me ? "chat" : "onboard";
-    const view = VIEWS[name] || VIEWS[fallback];
-    for (const a of document.querySelectorAll("nav a")) {
-      const on = a.getAttribute("href") === "#/" + (VIEWS[name] ? name : fallback);
-      if (on) a.setAttribute("aria-current", "page");
+  function showRoute(force) {
+    const me = ctx.state.me;
+    const tier = ctx.state.tier && ctx.state.tier.tier;
+    const name = routeFor(globalThis.location.hash, { signedIn: Boolean(me), tier });
+    for (const a of document.querySelectorAll("#tabs a")) {
+      if (a.getAttribute("href") === "#/" + name) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     }
-    root.replaceChildren(view.render(ctx));
+    document.body.className = name === "setup" ? "screen-setup" : "";
+    if (!force && name === current) return;
+    current = name;
+    root.replaceChildren(VIEWS[name].render(ctx));
+  }
+  function refreshRoute() {
+    if (ctx) showRoute(false);
   }
 
   (async () => {
     const wallet = fixtures ? new TestWallet() : await discoverInjected(globalThis);
     ctx = makeCtx({ api, wallet });
     ctx.onChange(topbar);
-    globalThis.addEventListener("hashchange", show);
+    globalThis.addEventListener("hashchange", () => showRoute(true));
     await ctx.refreshSession(); // decides the home view before the first paint
-    show();
+    if (ctx.state.me) {
+      try {
+        ctx.state.tier = await api.tier();
+      } catch (e) {
+        ctx.state.tier = null;
+      }
+    }
+    showRoute(true);
     topbar();
   })();
 }
