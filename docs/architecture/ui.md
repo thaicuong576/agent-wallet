@@ -1,13 +1,14 @@
-# Webapp UI (Stage 0 views, F1c additions, chat tab)
+# Webapp UI (rebuilt to the approved UI contract, ticket 119)
 
-> Visual language: [`DESIGN.md`](../../DESIGN.md). Behaviour and architecture: [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md) (sections 12, 14). Tickets F1 and F1b (live API).
+> Look and layout: [`docs/design/webapp/ui-contract.md`](../design/webapp/ui-contract.md) and the three static mockups in [`docs/design/webapp/ui-contract/`](../design/webapp/ui-contract/) (`Main.html`, `Portfolio.html`, `Setup.html`). Tokens and behaviour: [`DESIGN.md`](../../DESIGN.md), [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md) (sections 12 and 14). Where the mockups and `DESIGN.md` disagree, the mockups win.
 
-A static single page under `ui/`, mounted by `api/main.py` at `/ui`. Plain ES modules, no build step, no dependency, no CDN, no web font: it works offline except for the wallet and the RPC behind it.
+A static single page under `ui/`, mounted by `api/main.py` at `/ui`. Plain ES modules, no build step, no dependency, no CDN, no web font, no `localStorage`: it works offline except for the wallet and the RPC behind it.
 
 ```mermaid
 flowchart LR
   subgraph Browser
-    M[main.js: router, top bar, stop] --> V[views: onboard, dashboard, feed]
+    M[main.js: routeFor, header, stop] --> V[views: chat, portfolio, activity, rules, setup]
+    V --> C[cards.js: step cards]
     V --> X[explain.js: rule code to sentence]
     M --> A[api.js: only network module]
     V --> W[wallet adapter]
@@ -18,22 +19,55 @@ flowchart LR
   W -.->|?fixtures=1| T[TestWallet stub]
 ```
 
-## Chat tab (ticket 115)
+## Shell
+Header (64 px, wraps to two rows below 900 px): logo mark and name, tabs **Chat · Portfolio · Activity · Rules**, then the network chip "Base Sepolia testnet", the owner address chip, the status pill and **Emergency stop**. There is **no warning banner** anywhere. Testnet and custody are stated three times, all static markup:
 
-`Chat` is the first tab and the home view once signed in (`#/chat`; signed out the home view is Set up). Dashboard, Feed and Approvals are unchanged.
+| Where | Text |
+| :--- | :--- |
+| Header chip | "Base Sepolia testnet" |
+| Footer, one grey line | "Testnet only. The server holds this agent's key. Not financial advice." |
+| Setup (first run) | "This is a testnet demo: the server holds the agent's key and no real funds are involved." |
 
-- **Conversation.** Owner and agent bubbles from `GET /chat`; after a send the owner's bubble appears at once and the list is reloaded from the server when the job ends. An agent bubble shows the text composed by the server; a paragraph that starts `Agent says:` is the model's own words and gets an "Agent says" chip.
-- **Composer.** Enter sends, Shift+Enter adds a line, a live `n / 500` counter, the text is kept when a request is refused.
-- **Suggested prompts.** "Put 10 USDC to work in Aave" and "What is my balance?" fill the composer. "Withdraw 5 USDC to my wallet" is a dashed hint chip: it sends nothing and explains that withdrawing needs a wallet signature, with a link to the Withdraw control on the Dashboard.
-- **Progress.** A typing indicator ("Agent is getting ready…", "Agent is thinking…") while `GET /jobs/{id}` is polled at the usual 2 s to 5 s cadence.
-- **Step cards.** Under each agent message, one card per step: function and amount, an outcome chip with an icon and a word (Executed, Blocked, Waiting for you, Failed, Skipped), the plain explanation, the rule code chips with their plain sentences, and the BaseScan link for an executed step. A blocked step reads in words, never as a bare code.
-- **States.** T0 or T1: a card explains that orders are blocked, with an "Activate your agent" link (the activate control is on the Dashboard); an agent message whose steps carry `TIER.READ_ONLY` repeats the link. Emergency stop: a frozen card, the composer is disabled and nothing is sent. `429`: plain words with the retry time and the message stays in the box. `409`: the running job is followed and then history reloads.
-- **Fixtures.** `?fixtures=1` scripts the same flow (blocked at T0, executed above it) with no backend.
+Status pill: "Agent active" (green, tier T2), "Read only" (amber, T0), "Propose only" (amber, T1), "Stopped" (red). **Frozen is unmistakable without a strip:** the pill turns solid red, the header gets a red rule and tint, the button becomes "Resume (needs signature)", and Chat, Portfolio, Activity and Rules show a red frozen card; the composer is disabled. Engaging the stop needs the session only; resuming asks for a fresh signature.
 
-Tests: `tests/ui/chat_flows.mjs` (fake server and fake DOM) with the `test_chat_*` cases in `tests/ui/test_ui.py`. Previews: `docs/previews/chat-*.png`.
+Fixtures mode adds a second chip, "Demo data (fixtures), not live".
 
-## Live mode (F1b)
-Real mode is the default when the page is served by the API; `?fixtures=1` keeps the demo. Every call goes through `api.js` with `credentials: "same-origin"` and `X-AW-CSRF: 1`; the browser adds the `Origin` header the API checks. Problem bodies (RFC 7807) become `ApiError` (slug, detail, `retryAfter`, the whole problem for the `job_id` of a 409) and `describeError` maps them to plain sentences. A 401 from any route clears the signed-in state once.
+## Routing
+`routeFor(hash, {signedIn, tier})` in `main.js` is a pure function (tested under node):
+
+| Situation | Screen |
+| :--- | :--- |
+| signed out, or tier T0 | Setup (the header shows only the logo and the fixtures chip) |
+| tier T2 (activated) | `#/chat` home; `#/setup` redirects to Chat |
+| tier T1 (lowered by the owner) | any tab; `#/setup` stays reachable to activate again |
+| old hashes | `#/dashboard` and `#/approvals` go to Portfolio, `#/feed` to Activity, `#/onboard` to Setup |
+
+After Activate succeeds the view calls `ctx.go("#/chat")` and the header re-routes.
+
+## Screens
+| Screen | File | Contents |
+| :--- | :--- | :--- |
+| Chat | `views/chat.js`, `views/side.js` | Conversation card ("Your agent"): owner bubbles right (yellow), agent bubbles left (grey), step cards under an agent message, typing state, suggested prompts above the composer ("What is my balance?", "Put 10 USDC to work in Aave", "Pull 5 USDC back out"), Enter sends, 500 character counter. Right column: wallet value and idle/earning bar, today's limit (rolling 24 h, approval threshold), gas with Top up, audit log line with verified state |
+| Portfolio | `views/portfolio.js`, `views/actions.js`, `views/approvals.js` | Total value with allocation bar and legend, earning card, holdings (USDC with Withdraw, aUSDC, ETH gas with Top up), recent activity, the waiting-for-approval card (Approve needs a signature, Reject does not), Mint test USDC, Run the agent, "Try a hostile note", Withdraw, job panel, lower-the-tier control |
+| Setup | `views/setup.js`, `views/activate.js` | Three steps (Connected, Add gas, Activate). Agent address with Copy, gas amount and send, Activate with its one-sentence explanation and one free signature |
+| Activity | `views/activity.js` | Every decision, newest first, as step cards; Verify audit chain with a verdict card; planner and reference-price chips |
+| Rules | `views/rules.js` | Read-only per transaction, per day, approval threshold, transactions per hour, allowed protocols, tokens and actions, from `GET /ips` (per owner in multi mode) |
+
+### Step cards (`views/cards.js`)
+One vocabulary for Chat, Activity, Portfolio and the job panel:
+
+| Kind | Look | Used for |
+| :--- | :--- | :--- |
+| `done` | green, ✓ | `executed`; "BaseScan ↗" link on the right |
+| `blocked` | red, ✕ | `denied`; plain sentence first, rule code as a small chip |
+| `pending` | amber, … | `pending_approval`; Approve and Reject on Portfolio |
+| `skipped` | grey, ↷ | a step not attempted because an earlier one was blocked, and "No action" |
+| `fail` | red, ! | an execution that errored |
+
+The state is also a word ("Executed", "Blocked", "Waiting for you", "Skipped", "Failed"), so it is never colour alone. Transaction hashes appear only as BaseScan links; the "Transactions: 0x..." sentence the server composes into the agent's text is hidden because the cards carry the links. "Agent says" paragraphs get an "Agent says" chip: that is the model's own words, the cards are the record.
+
+### Live mode
+Real mode is the default when the page is served by the API; `?fixtures=1` keeps the demo. Every call goes through `api.js` with `credentials: "same-origin"` and `X-AW-CSRF: 1`. Problem bodies (RFC 7807) become `ApiError` and `describeError` maps them to plain sentences. A 401 clears the signed-in state once. A 429 says when to try again from `Retry-After`. Jobs are polled at 2 s, backing off to 5 s.
 
 ```mermaid
 sequenceDiagram
@@ -46,106 +80,60 @@ sequenceDiagram
   P->>A: POST /auth/verify (sets cookie)
   P->>W: eth_sendTransaction (gas ETH to agent)
   P->>A: POST /topups, poll GET /topups/{hash}
-  P->>A: POST /agent/mint or /runs
+  P->>W: personal_sign(step-up, tier_raise)
+  P->>A: PUT /tier + X-Step-Up
+  P->>P: land in Chat
   loop 2 s, backing off to 5 s
     P->>A: GET /jobs/{id}
   end
-  P->>W: personal_sign(step-up) for withdraw, release, approve
-  P->>A: action with X-Step-Up header
 ```
 
-- **Jobs.** `views/jobs.js` follows a job to its records (`GET /jobs/{id}` carries record summaries) and draws them with the feed's card: outcome, plain sentence, BaseScan link, planner label (`openai`, `scripted`, `fallback`), reference-price label. `views/actions.js` holds Mint, Run, "Try a hostile note" (`planner: scripted_hostile`) and Withdraw; one job at a time, a 409 follows the job already running.
-- **Feed and approvals** read the owner's recent jobs, because `/decisions` is not per owner yet. `views/approvals.js` lists pending orders with Approve (step-up) and Reject.
-- **Chain status** comes from `GET /audit/verify`.
-- **Tier chip** reads `GET /me` in live mode (it carries the owner's tier and stop flag); `GET /tier` is the single-owner global state.
-
-## Activate agent and the UX adoption list (F1c)
-A new owner is at tier T0 and every order is denied `TIER.READ_ONLY`, so the page now has an explicit **Activate agent** control: a step in the Set up stepper and a callout on the dashboard while the tier is T0 or T1. It explains in one sentence what activating means, then runs the step-up flow.
-
-```mermaid
-sequenceDiagram
-  participant P as Page (views/activate.js)
-  participant W as Wallet
-  participant A as API
-  P->>A: POST /auth/step-up {action: tier_raise, params: {tier: T2}}
-  A-->>P: challenge_id, message
-  P->>W: personal_sign(message)
-  P->>A: PUT /tier {schema_version: 1, tier: T2} + X-Step-Up
-  A-->>P: tier state
-  P->>P: refresh tier chip (GET /me), keep the result card
-```
-
-Lowering the tier (`PUT /tier` without a header) and the emergency stop need the session only.
-
-| Item | Where |
-| :--- | :--- |
-| A-1 prompt disclosures | each stepper step shows a "Wallet prompt: ..." chip before the button (`views/onboard.js`) |
-| A-2 plain-language headline | blocked and waiting cards lead with the rule's sentence; rule codes are small mono chips (`views/feed.js`) |
-| A-3 FROZEN state | `applyTopbar` in `gauges.js` turns the masthead red, the chip reads "FROZEN" and the bar says "EMERGENCY STOP ACTIVE"; clears on release |
-| A-4 spend bar | `spendGauge` (BigInt maths) with `role="progressbar"`; the window is a rolling 24 hours, so there is no fixed reset time and the card says so |
-| A-5 gas floor | chip with a "Fund the agent" link to Set up when below the floor |
-| A-6 planner provenance | chips `OpenAI Planner`, `Offline Fallback`, `Scripted Demo` |
-| A-7 approvals card | amount, action, protocol, holding rule, Approve (signature) and Reject |
-| A-8 audit verdict | structured card: "Hash chain intact (N records verified)" or the first broken `seq` |
-| A-9 empty states | each says what to do and links there |
-| A-10 testnet and custody notice | static, first line "Testnet only (Base Sepolia) · Custodial server key · Mainnet reference prices" |
-
-A 429 shows when to try again from `Retry-After` (`retryText`). The dashboard now reads `/portfolio` and `/ips`, which are per owner in multi mode, and falls back to the owner's own balances if they fail.
-
-Tests: `tests/ui/flows.mjs` and `tests/ui/test_ui.py` (`test_activate_agent_sends_step_up_then_tier_raise_and_updates_chip`, `test_frozen_state_appears_on_stop_and_clears_on_release`, `test_spend_bar_maths_and_card`, and others). Previews: `docs/previews/f1c-*.png` (API in `AGENT_WALLET_MODE=multi`, fake chain RPC, throwaway keys).
-
-### Known gaps in the API (UI is ready, backend is not)
-- Stop, release, approve and reject are per session in multi mode since #104; `GET /portfolio` and `/ips` are per owner too. `GET /decisions` is read through the owner's jobs, and the in-browser chain check stays hidden outside fixtures mode.
-- There is no policy route yet (ticket A4): the Policy step shows the default preset.
+## Known gaps
+- **No policy route** (ticket A4): the preset step of the old stepper is gone from Setup; the default preset applies. `api.js` keeps `setPreset` for fixtures only.
+- **No rate route:** the Portfolio "Earning" card shows the aUSDC amount and says the rate is not exposed, instead of the mockup's "3.1% APY".
+- **"Pull 5 USDC back out"** is a prompt chip only; what the planner does with it is the planner's decision, shown as step cards.
+- `GET /decisions` is not per owner; Activity and the approvals card read the owner's recent jobs, and the in-browser chain check stays fixtures-only.
 
 ## Files
 | File | Role |
 | :--- | :--- |
-| `index.html` | Shell. The testnet banner and the top bar (tier chip, Emergency stop) are static markup |
-| `style.css` | `DESIGN.md` tokens as CSS custom properties, dark mode, focus ring, reduced motion |
-| `main.js` | Hash router, top bar, shared context (`makeCtx`), `describeError` |
+| `index.html` | Shell: header, tabs, chips, pill, Emergency stop, `#view`, footer line |
+| `style.css` | Tokens from the mockups and `DESIGN.md` as CSS custom properties, dark mode, focus ring, reduced motion, 1280 px and 375 px layouts |
+| `main.js` | `routeFor`, header wiring, stop and resume, shared context (`makeCtx`), `describeError` |
 | `api.js` | The only module that calls the network; `ROUTES` lists every path; `?fixtures=1` switch |
-| `gauges.js` | Pure helpers: spend and gas gauges, retry text, empty-state button, top bar state (FROZEN) |
-| `views/activate.js` | Activate agent (step-up then `PUT /tier`), lower tier, result card |
+| `gauges.js` | Pure helpers: spend and gas gauges, retry text, relative time, header state, frozen card |
 | `explain.js` | Rule code (all 25 plus `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, `TIER.POLICY_CHANGED`) and error code to plain language; unit helpers |
+| `views/cards.js` | Step cards, record cards, BaseScan link, planner labels |
+| `views/topup.js` | Gas top-up flow shared by Setup, Portfolio and the Chat side panel |
+| `views/chat.js`, `portfolio.js`, `activity.js`, `rules.js`, `setup.js` | The five screens, each with empty, loading and error states |
+| `views/side.js`, `actions.js`, `approvals.js`, `activate.js`, `jobs.js` | Chat side panel; Mint, Run, Withdraw; approvals card; activate and lower tier; job polling |
 | `wallet/adapter.js`, `injected.js`, `test.js` | Adapter interface, EIP-1193 implementation (EIP-6963 first), `TestWallet` stub |
-| `views/onboard.js`, `dashboard.js`, `feed.js`, `approvals.js` | The views, each with empty, loading and error states |
-| `views/chat.js` | Chat tab: bubbles, composer, prompt chips, typing indicator, step cards |
-| `views/jobs.js`, `views/actions.js` | Job panel and polling, record loading; Mint, Run, hostile note, Withdraw |
-| `chain.js` | In-browser audit hash check (unchanged), used by the feed's "Check in browser" |
+| `chain.js` | In-browser audit hash check, used by Activity's "Check in browser" (fixtures) |
 | `fixtures/*.json` | Data for the no-backend mode |
 
 ## Rules the page keeps
 - **API strings are text.** Every value from the API is written with `textContent`; no `innerHTML` anywhere. Evidence values are only interpolated into sentences when they match a conservative character set.
 - **No storage.** No `localStorage`, `sessionStorage` or cookie access from JS; the session is an HttpOnly cookie. Step-up signatures are asked per action and not kept.
-- **Honest labels.** A permanent banner (testnet only, custodial agent key, do not send real funds, the agent cannot top up its own ETH) is static markup that no script touches. Reference prices and fixture data carry a chip in words.
-- **State is not colour alone.** Outcome cards carry an icon and a word; wallet rejection reads "You declined in your wallet" and is not shown as a failure.
-- **Only listed routes.** `tests/ui/test_ui.py` checks that every path in `api.js` is in the design 12.2 list. The only external URLs are the BaseScan transaction link (navigation) and the chain parameters handed to the wallet.
+- **Honest labels.** Reference prices and fixture data carry a chip in words; "Agent says" text is labelled; step cards come from the audit log only.
+- **Only listed routes.** `tests/ui/test_ui.py` checks that every path in `api.js` is in the design 12.2 list and in `contracts/openapi.yaml`. The only external URLs are the BaseScan transaction link (navigation) and the chain parameters handed to the wallet.
+- **Keyboard and focus.** Every control is a button, link or form field; `:focus-visible` draws a 3 px ring; the skip link jumps to `#view`.
 
 ## Fixtures mode
-`/ui/?fixtures=1` serves everything from `ui/fixtures/` with an in-memory state and `TestWallet`; `&demo=1` starts signed in and funded, `&scenario=hostile` starts with a blocked hostile order. It exists for judges, previews and tests, and is labelled "Demo data (fixtures), not live" in the banner.
+`/ui/?fixtures=1` serves everything from `ui/fixtures/` with an in-memory state and `TestWallet`; `&demo=1` starts signed in and funded at T2, `&scenario=t0` starts at T0 (Setup with Activate), `&scenario=hostile` starts with a blocked hostile order in Activity. It exists for judges, previews and tests.
 
 ## Tests
-`tests/ui/test_ui.py` (static scans, route list, rule-code coverage, design tokens) and `tests/ui/harness.mjs` (runs the real modules against a fake DOM and the fixtures under node: hostile strings, fixture flow, wallet rejection, API error mapping). The audit-chain tests from the owner console are kept.
+`tests/ui/test_ui.py` (static scans, contract checks, route list, rule-code coverage, tokens) and three node programs that run the real modules against a fake DOM: `harness.mjs` (fixtures: hostile strings, routing, step card kinds, header pill), `flows.mjs` (fake server: sign-in, top-up, mint, run, withdraw, stop and resume, approvals, activate, 401 and 429) and `chat_flows.mjs` (chat flows). The node-based tests are skipped when `node` is not on the PATH; the static scans always run.
 
-### Design 14.4 and ticket names to the tests that prove them
-| Design name | Test in `tests/ui/test_ui.py` |
+| Contract item | Test |
 | :--- | :--- |
-| `test_render_safety.mjs::api_strings_never_reach_innerhtml` | `test_hostile_api_string_does_not_become_html` (rendered) and `test_no_local_storage_and_no_external_url` (no `innerHTML` in source) |
-| `test_banner.mjs::banner_present_on_every_view` | `test_banner_present_and_not_removable_by_api_data` |
-| `test_stop.mjs::stop_visible_and_session_only` | `test_stop_visible_and_session_only` |
-| `test_labels.mjs::reference_and_fallback_labels_rendered` | `test_reference_and_fallback_labels_rendered` |
-| `test_offline.mjs::no_external_assets_in_default_path` | `test_no_local_storage_and_no_external_url`, `test_fixtures_hold_no_secrets_or_external_assets` |
-| `test_storage.mjs::no_token_in_storage_or_globals` | `test_no_local_storage_and_no_external_url` |
-| `test_explain.mjs::every_rule_code_has_a_sentence` | `test_every_existing_rule_code_has_a_plain_language_sentence`, `test_explain_table_is_complete_and_non_empty` |
-| every `api.js` path is a 12.2 route | `test_api_paths_are_in_design_route_list` |
-| the page works from fixtures | `test_page_works_from_fixtures` |
-| old `test_js_endpoints_exist_in_openapi`, `test_js_read_endpoints_respond` | `test_existing_routes_used_by_ui_exist_in_openapi`, `test_js_read_endpoints_respond` |
+| No banner element; chip, footer line and Setup text present | `test_no_banner_element_and_testnet_custody_are_chip_footer_and_setup_text`, `test_setup_text_states_testnet_and_custody` |
+| Four tabs, chips, pill and stop in order | `test_header_has_the_four_tabs_chips_pill_and_stop_in_contract_order` |
+| Setup for T0, not after activation | `test_setup_is_shown_for_t0_and_not_after_activation`, `test_activate_agent_sends_step_up_then_tier_raise_and_updates_chip` |
+| Step card kinds | `test_step_card_kinds_done_blocked_pending_skipped_and_failed` |
+| Frozen state | `test_frozen_state_appears_on_stop_and_clears_on_release`, `test_chat_frozen_state_disables_the_composer` |
+| No horizontal overflow guards | `test_layout_guards_for_375px_are_in_the_stylesheet` (the real check is in the browser: `scrollWidth <= innerWidth` on every screen at 1280 and 375 px) |
+| Every JS-called route is in `openapi.yaml` | `test_every_route_the_js_calls_exists_in_openapi`, `test_rules_tab_reads_the_existing_ips_route` |
+| API strings stay inert text | `test_hostile_api_string_does_not_become_html`, `test_chat_hostile_strings_stay_text_and_fixtures_flow_works` |
 
-F1b adds `tests/ui/flows.mjs`: a fake `fetch` (bodies copied from `api/wallet.py`, `api/jobs.py`, `api/auth.py`) and `TestWallet` drive sign-in, top-up, mint, run, blocked hostile run, withdraw, stop, release, verify and approvals; `test_every_route_the_js_calls_exists_in_openapi` checks `ROUTES` against `contracts/openapi.yaml`. Previews of the live page: `docs/previews/f1b-dashboard.png`, `f1b-running-job.png`, `f1b-blocked-hostile.png` (API in `AGENT_WALLET_MODE=multi` with throwaway secrets, a stubbed RPC and a stub wallet).
-
-The node-based tests are skipped when `node` is not on the PATH; the static scans always run.
-
-## Scope notes
-- Policy and audit views (design 14) belong to later tickets.
-- The previous owner console (Bearer owner token, `app.js`) is replaced one for one by the tests above. The new page uses the session routes of the design, which arrive with the backend tickets (A1, C1); until then use `?fixtures=1`.
+## Previews
+`docs/previews/ui2-<screen>-<1280|375>.png` for chat, portfolio, activity, rules and setup, taken from the built page (fixtures mode, light scheme) next to the mockups they implement.

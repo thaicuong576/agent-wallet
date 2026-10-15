@@ -111,11 +111,15 @@ fs.cpSync(UI, COPY, { recursive: true });
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 const imp = (rel) => import(pathToFileURL(path.join(COPY, rel)).href);
 const { createApi, ROUTES } = await imp("api.js");
-const { makeCtx, describeError } = await imp("main.js");
+const { makeCtx, describeError, routeFor } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
-const onboard = await imp("views/onboard.js");
-const dashboard = await imp("views/dashboard.js");
-const feed = await imp("views/feed.js");
+const setup = await imp("views/setup.js");
+const portfolio = await imp("views/portfolio.js");
+const activity = await imp("views/activity.js");
+const rules = await imp("views/rules.js");
+const cards = await imp("views/cards.js");
+const side = await imp("views/side.js");
+const gauges = await imp("gauges.js");
 const explain = await imp("explain.js");
 
 const out = {};
@@ -140,15 +144,19 @@ function mk({ demo = true, override = {}, wallet } = {}) {
   const agent = JSON.parse(fs.readFileSync(path.join(UI, "fixtures", "agent.json"), "utf8"));
   agent.address = HOSTILE;
   agent.price_source = HOSTILE;
-  const presets = JSON.parse(fs.readFileSync(path.join(UI, "fixtures", "presets.json"), "utf8"));
-  presets.items[0].title = HOSTILE;
-  presets.items[0].summary = HOSTILE;
-  const { ctx } = mk({ override: { decisions: rec, agent, presets } });
-  const f = feed.render(ctx);
-  const d = dashboard.render(ctx);
+  const ips = JSON.parse(fs.readFileSync(path.join(UI, "fixtures", "ips.json"), "utf8"));
+  ips.ips.universe.protocols = [HOSTILE];
+  ips.ips.objective = HOSTILE;
+  const { ctx } = mk({ override: { decisions: rec, agent, ips } });
+  await ctx.refreshSession();
+  const f = activity.render(ctx);
+  const d = portfolio.render(ctx);
+  const rulesView = rules.render(ctx);
+  const s = side.sidePanel(ctx).node;
+  const u = setup.render(ctx);
   await tick();
   await tick();
-  const all = [f, d];
+  const all = [f, d, rulesView, s, u];
   let anchors = 0;
   let injected = 0;
   for (const root of all) {
@@ -165,13 +173,15 @@ function mk({ demo = true, override = {}, wallet } = {}) {
     injectedElements: injected,
     anchors,
     shownAsText: f.textContent.includes(HOSTILE) || d.textContent.includes(HOSTILE),
+    rulesShownAsText: rulesView.textContent.includes(HOSTILE),
+    setupShownAsText: u.textContent.includes(HOSTILE),
   };
 }
 
 // 2. the page works from fixtures
 {
   const { ctx } = mk({ demo: false });
-  const o = onboard.render(ctx);
+  const o = setup.render(ctx);
   await tick();
   out.signedOut = {
     text: o.textContent,
@@ -183,17 +193,21 @@ function mk({ demo = true, override = {}, wallet } = {}) {
 {
   const { ctx } = mk({ demo: true });
   await ctx.refreshSession();
-  const d = dashboard.render(ctx);
-  const f = feed.render(ctx);
+  const d = portfolio.render(ctx);
+  const f = activity.render(ctx);
+  const sp = side.sidePanel(ctx);
+  const rl = rules.render(ctx);
   await tick();
   await tick();
   out.dashboard = d.textContent;
+  out.side = sp.node.textContent;
+  out.rules = rl.textContent;
   out.feed = f.textContent;
   out.txLinks = find(f, (n) => n.tagName === "A").map((n) => n.attrs.href);
   // run hostile, then reload the feed
   const accepted = await ctx.api.run({ planner: "scripted_hostile" });
   const job = await ctx.pollJob(accepted.job_id);
-  const f2 = feed.render(ctx);
+  const f2 = activity.render(ctx);
   await tick();
   await tick();
   out.job = job.status;
@@ -203,13 +217,13 @@ function mk({ demo = true, override = {}, wallet } = {}) {
 
 // planner labels: scripted and fallback are named in words, live or absent planners get none
 out.plannerLabels = Object.fromEntries(
-  ["scripted", "fallback", "openai", "none"].map((k) => [k, feed.plannerLabel({ planner_client: k })]),
+  ["scripted", "fallback", "openai", "none"].map((k) => [k, cards.plannerLabel({ planner_client: k })]),
 );
 
 // 3. wallet rejection is not a failure
 {
   const { ctx } = mk({ demo: false, wallet: new TestWallet({ reject: true }) });
-  const o = onboard.render(ctx);
+  const o = setup.render(ctx);
   await tick();
   await click(byText(o, "button", "Connect wallet")[0]);
   out.rejected = o.textContent;
@@ -226,6 +240,57 @@ out.plannerLabels = Object.fromEntries(
     parse: String(explain.parseUnits("0.01", 18)),
     parseBad: explain.parseUnits("1e3", 18),
   };
+}
+
+// 3b. step card kinds, rendered through the real card module
+{
+  const { ctx } = mk();
+  const usdc = { value: "10000000", decimals: 6 };
+  const base = { token: "USDC", amount: usdc, rule_codes: [], tx_hash: null };
+  const mkStep = (o) => cards.stepCard(ctx, { ...base, function: "supply", ...o });
+  const list = {
+    done: mkStep({ outcome: "executed", explanation: "Supplied 10 USDC to Aave." }),
+    blocked: mkStep({ outcome: "denied", rule_codes: ["ACCESS.RECIPIENT_NOT_ALLOWED"] }),
+    pending: mkStep({ outcome: "pending_approval", rule_codes: ["TIER.APPROVAL_REQUIRED"] }),
+    skipped: mkStep({ outcome: "skipped", explanation: "Not attempted: the previous step was blocked." }),
+    fail: mkStep({ outcome: "failed" }),
+  };
+  out.stepKinds = Object.fromEntries(
+    Object.entries(list).map(([k, n]) => [k, { cls: n.className, text: n.textContent }]),
+  );
+  out.stepKindList = cards.STEP_KINDS;
+}
+
+// 3c. routing: Setup until activated, then Chat; old hashes still land somewhere
+{
+  const r = (hash, signedIn, tier) => routeFor(hash, { signedIn, tier });
+  out.routing = {
+    signedOut: r("#/chat", false, null),
+    t0: r("#/chat", true, "T0"),
+    t0Portfolio: r("#/portfolio", true, "T0"),
+    t2Default: r("", true, "T2"),
+    t2Setup: r("#/setup", true, "T2"),
+    t1Setup: r("#/setup", true, "T1"),
+    t2Portfolio: r("#/portfolio", true, "T2"),
+    alias: ["#/dashboard", "#/feed", "#/approvals", "#/onboard"].map((h) => r(h, true, "T2")),
+    unknown: r("#/nope", true, "T2"),
+    tierUnknown: r("#/rules", true, null),
+  };
+  const mk2 = (tag) => document.createElement(tag);
+  const parts = {
+    pill: mk2("span"),
+    addrChip: mk2("span"),
+    stopBtn: mk2("button"),
+    stopMsg: mk2("p"),
+    masthead: mk2("header"),
+  };
+  const me = { address: "0x" + "9d".repeat(20) };
+  gauges.applyTopbar(parts, { tier: "T0", emergency_stop: false }, me);
+  out.pills = { t0: parts.pill.textContent, addr: parts.addrChip.textContent };
+  gauges.applyTopbar(parts, { tier: "T2", emergency_stop: false }, me);
+  out.pills.t2 = parts.pill.textContent;
+  gauges.applyTopbar(parts, { tier: "T2", emergency_stop: true }, me);
+  out.pills.stopped = parts.pill.textContent;
 }
 
 // 5. API layer: only listed routes, errors become ApiError

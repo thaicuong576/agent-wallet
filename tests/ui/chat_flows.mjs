@@ -317,7 +317,7 @@ const out = {};
   await fire(button(root, "Send"), "click");
   await tick(60);
   out.rateLimited = {
-    status: byClass(root, "status")[0].textContent,
+    status: byClass(root, "msg")[0].textContent,
     kept: box.value,
     bubbles: bubbles(root).length,
     sendEnabled: button(root, "Send").disabled === false,
@@ -338,7 +338,7 @@ const out = {};
   await fire(button(root, "Send"), "click");
   await tick(80);
   out.conflict = {
-    status: byClass(root, "status")[0].textContent,
+    status: byClass(root, "msg")[0].textContent,
     text: root.textContent,
     kept: box.value,
   };
@@ -360,14 +360,8 @@ const out = {};
   };
   await fire(button(root, "Put 10 USDC to work in Aave"), "click");
   out.chipFilled = box.value;
-  await fire(button(root, "Withdraw 5 USDC to my wallet"), "click");
-  const hint = byClass(root, "withdraw-hint")[0];
-  out.withdrawHint = {
-    text: hint.textContent,
-    link: find(hint, (n) => n.tagName === "A").map((n) => n.attrs.href),
-    posts: srv.calls.filter((c) => c.method === "POST").length,
-    boxUnchanged: box.value === "Put 10 USDC to work in Aave",
-  };
+  out.prompts = byClass(root, "prompt-chip").map((n) => n.textContent);
+  out.postsAfterChip = srv.calls.filter((c) => c.method === "POST").length;
   out.maxLength = box.maxLength;
 }
 

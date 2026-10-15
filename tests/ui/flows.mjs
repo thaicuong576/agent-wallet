@@ -85,11 +85,12 @@ const imp = (rel) => import(pathToFileURL(path.join(COPY, rel)).href);
 const { createApi, ROUTES } = await imp("api.js");
 const { makeCtx, describeError, pollDelay } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
-const onboard = await imp("views/onboard.js");
-const dashboard = await imp("views/dashboard.js");
-const feed = await imp("views/feed.js");
+const setup = await imp("views/setup.js");
+const portfolio = await imp("views/portfolio.js");
+const activity = await imp("views/activity.js");
 const approvals = await imp("views/approvals.js");
 const activate = await imp("views/activate.js");
+const side = await imp("views/side.js");
 const gauges = await imp("gauges.js");
 
 const OWNER = "0x1111111111111111111111111111111111111111";
@@ -303,8 +304,9 @@ const out = {};
 // 1. sign-in: nonce, personal_sign of the exact message, verify, agent address shown
 {
   const { srv, ctx, wallet } = make();
-  const o = onboard.render(ctx);
+  const o = setup.render(ctx);
   await tick();
+  out.connectCard = o.textContent;
   await click(button(o, "Connect wallet"));
   const verify = srv.calls.find((c) => c.url === "/auth/verify");
   out.signIn = {
@@ -326,10 +328,10 @@ const out = {};
 {
   const { srv, ctx, wallet } = make({ state: { signedIn: true, eth: 0 } });
   await ctx.refreshSession();
-  const o = onboard.render(ctx);
+  const o = setup.render(ctx);
   await tick();
   out.fundShows = o.textContent;
-  await click(button(o, "Send gas ETH"));
+  await click(button(o, "Send gas from my wallet"));
   out.topup = {
     sent: wallet.sent,
     calls: srv.calls
@@ -342,7 +344,7 @@ const out = {};
 {
   const { srv, ctx, sleeps } = make({ state: { signedIn: true } });
   await ctx.refreshSession();
-  const d = dashboard.render(ctx);
+  const d = portfolio.render(ctx);
   await tick(60);
   out.dashboardText = d.textContent;
   srv.state.jobPolls = 0;
@@ -414,12 +416,12 @@ const out = {};
   });
   srv.state.jobPolls = 5;
   await ctx.refreshSession();
-  const f = feed.render(ctx);
+  const f = activity.render(ctx);
   await tick(60);
   out.feedText = f.textContent;
   await click(button(f, "Verify audit chain"));
   out.verify = f.textContent;
-  const a = approvals.render(ctx);
+  const a = approvals.approvalsCard(ctx);
   await tick(60);
   out.approvalsText = a.textContent;
   await click(button(a, "Approve"));
@@ -460,7 +462,7 @@ const out = {};
 // 7. a wallet rejection during sign-in is not a failure and nothing reaches the server
 {
   const { srv, ctx } = make({}, { reject: true });
-  const o = onboard.render(ctx);
+  const o = setup.render(ctx);
   await tick();
   await click(button(o, "Connect wallet"));
   out.rejected = { text: o.textContent, posts: srv.calls.filter((c) => c.method === "POST").length };
@@ -470,7 +472,7 @@ const out = {};
 {
   const { srv, ctx, wallet } = make({ state: { signedIn: true } });
   await ctx.refreshSession();
-  const d = dashboard.render(ctx);
+  const d = setup.render(ctx);
   await tick(60);
   out.t0Dashboard = d.textContent;
   const before = srv.calls.length;
@@ -486,15 +488,22 @@ const out = {};
     tierState: ctx.state.tier,
     serverTier: srv.state.tier,
     text: d.textContent,
+    landedOn: globalThis.location.hash,
   };
   const chip = document.createElement("span");
-  const parts = { chip, stopBtn: document.createElement("button"), stopMsg: document.createElement("p"), masthead: document.createElement("header") };
-  gauges.applyTopbar(parts, await ctx.api.tier());
+  const parts = {
+    pill: chip,
+    addrChip: document.createElement("span"),
+    stopBtn: document.createElement("button"),
+    stopMsg: document.createElement("p"),
+    masthead: document.createElement("header"),
+  };
+  gauges.applyTopbar(parts, await ctx.api.tier(), ctx.state.me);
   out.activateChip = chip.textContent;
   const after = await ctx.refreshSession();
   out.afterActivateMe = after && after.tier;
-  // activated: the callout is gone, and lowering needs no signature
-  const d2 = dashboard.render(ctx);
+  // activated: lowering needs no signature
+  const d2 = portfolio.render(ctx);
   await tick(60);
   out.activatedDashboard = d2.textContent;
   const n = srv.calls.length;
@@ -512,7 +521,7 @@ const out = {};
 {
   const { ctx } = make({ state: { signedIn: true } });
   await ctx.refreshSession();
-  const o = onboard.render(ctx);
+  const o = setup.render(ctx);
   await tick(60);
   out.onboardActivate = o.textContent;
 }
@@ -522,19 +531,33 @@ const out = {};
   const { ctx, api } = make({ state: { signedIn: true, tier: "T2" } });
   await ctx.refreshSession();
   const mk = (tag) => document.createElement(tag);
-  const parts = { chip: mk("span"), stopBtn: mk("button"), stopMsg: mk("p"), masthead: mk("header") };
-  gauges.applyTopbar(parts, await api.tier());
-  const calm = { cls: parts.masthead.className, btn: parts.stopBtn.textContent, msg: parts.stopMsg.textContent };
+  const parts = {
+    pill: mk("span"),
+    addrChip: mk("span"),
+    stopBtn: mk("button"),
+    stopMsg: mk("p"),
+    masthead: mk("header"),
+  };
+  const me = ctx.state.me;
+  gauges.applyTopbar(parts, await api.tier(), me);
+  const calm = {
+    cls: parts.masthead.className,
+    pill: parts.pill.textContent,
+    btn: parts.stopBtn.textContent,
+    msg: parts.stopMsg.textContent,
+  };
   await api.stop();
-  gauges.applyTopbar(parts, await api.tier());
+  gauges.applyTopbar(parts, await api.tier(), me);
   const frozen = {
     cls: parts.masthead.className,
-    chip: parts.chip.textContent,
+    pill: parts.pill.textContent,
+    pillCls: parts.pill.className,
+    title: parts.pill.attrs.title,
     btn: parts.stopBtn.textContent,
     msg: parts.stopMsg.textContent,
   };
   await api.release(await ctx.stepUp("release_stop", {}));
-  gauges.applyTopbar(parts, await api.tier());
+  gauges.applyTopbar(parts, await api.tier(), me);
   const released = { cls: parts.masthead.className, btn: parts.stopBtn.textContent, msg: parts.stopMsg.textContent };
   out.freeze = { calm, frozen, released };
   // the dashboard hides the activate callout while stopped
@@ -551,7 +574,7 @@ const out = {};
   };
   const { srv, ctx } = make({ state: { signedIn: true, tier: "T2" } });
   await ctx.refreshSession();
-  const d = dashboard.render(ctx);
+  const d = side.sidePanel(ctx).node;
   await tick(60);
   const bar = find(d, (n) => n.attrs.role === "progressbar")[0];
   out.spendCard = {

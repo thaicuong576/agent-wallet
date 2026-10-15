@@ -1,4 +1,5 @@
-// Mint, Run, "Try a hostile note" and Withdraw. Each one starts a job and follows it to its records.
+// Mint, Run, "Try a hostile note" and Withdraw (Portfolio). Each one starts a job and follows it
+// to its records.
 import { formatUnits, parseUnits } from "../explain.js";
 import { jobPanel, runJob } from "./jobs.js";
 
@@ -8,8 +9,8 @@ const DECIMALS = { USDC: 6, ETH: 18 };
 
 export function actionsCard(ctx) {
   const { el, api } = ctx;
-  const card = el("div", "card");
-  card.append(el("h2", "", "Actions"));
+  const card = el("div", "card tools");
+  card.append(el("h2", "", "Mint, run and withdraw"));
   const panel = jobPanel(ctx);
   const buttons = [];
 
@@ -24,14 +25,14 @@ export function actionsCard(ctx) {
     buttons.push(btn);
     btn.addEventListener("click", async () => {
       busy(true);
-      msgNode.className = "status";
+      msgNode.className = "msg";
       msgNode.textContent = "Working…";
       try {
         await fn();
         msgNode.textContent = "";
         ctx.changed();
       } catch (e) {
-        msgNode.className = "status error";
+        msgNode.className = "msg error";
         msgNode.textContent = ctx.describeError(e);
         const active = e && e.problem && e.problem.job_id;
         if (e && e.status === 409 && typeof active === "string" && /^[0-9a-f]{32}$/.test(active)) {
@@ -59,15 +60,15 @@ export function actionsCard(ctx) {
   }
 
   // ---- mint
-  const mintMsg = el("p", "status", "");
-  mintMsg.setAttribute("role", "status");
+  const mintMsg = el("p", "msg", "");
+  mintMsg.setAttribute("role", "msg");
   const mintAmt = field("act-mint", "Whole test USDC to mint", "1000");
   mintAmt.input.inputMode = "numeric";
   const mint = action("Mint test USDC", "primary", mintMsg, () =>
     runJob(ctx, panel, "Starting the mint…", () => api.mint(mintAmt.input.value.trim())),
   );
   card.append(
-    el("h3", "", "Mint"),
+    el("h3", "", "Mint test USDC"),
     el("p", "note", "No wallet prompt. The faucet allows one mint per hour."),
     mintAmt.label,
     mintAmt.input,
@@ -76,8 +77,8 @@ export function actionsCard(ctx) {
   );
 
   // ---- run and hostile note
-  const runMsg = el("p", "status", "");
-  runMsg.setAttribute("role", "status");
+  const runMsg = el("p", "msg", "");
+  runMsg.setAttribute("role", "msg");
   const note = el("textarea");
   note.id = "act-note";
   note.rows = 2;
@@ -91,7 +92,7 @@ export function actionsCard(ctx) {
       return api.run(body);
     }),
   );
-  const hostile = action("Try a hostile note", "secondary", runMsg, () =>
+  const hostile = action("Try a hostile note", "", runMsg, () =>
     runJob(ctx, panel, "Starting the scripted hostile run…", () =>
       api.run({ planner: "scripted_hostile", note: HOSTILE_NOTE }),
     ),
@@ -111,8 +112,8 @@ export function actionsCard(ctx) {
   );
 
   // ---- withdraw
-  const wMsg = el("p", "status", "");
-  wMsg.setAttribute("role", "status");
+  const wMsg = el("p", "msg", "");
+  wMsg.setAttribute("role", "msg");
   const token = el("select");
   token.id = "act-token";
   for (const t of ["USDC", "ETH"]) {
@@ -124,7 +125,7 @@ export function actionsCard(ctx) {
   tokenLabel.setAttribute("for", "act-token");
   const wAmt = field("act-withdraw", "Amount", "1");
   wAmt.input.inputMode = "decimal";
-  const withdraw = action("Withdraw to my wallet", "secondary", wMsg, () => {
+  const withdraw = action("Withdraw to my wallet", "", wMsg, () => {
     const sym = token.value === "ETH" ? "ETH" : "USDC";
     const units = parseUnits(wAmt.input.value, DECIMALS[sym]);
     if (units === null || units === 0n) throw new Error("Enter an amount such as 1 or 0.5.");
@@ -147,5 +148,11 @@ export function actionsCard(ctx) {
     wMsg,
     panel.node,
   );
-  return card;
+  // The Withdraw button in the Holdings table points here.
+  const focusWithdraw = () => {
+    token.value = "USDC";
+    if (wAmt.input.focus) wAmt.input.focus();
+    if (wAmt.input.scrollIntoView) wAmt.input.scrollIntoView({ block: "center" });
+  };
+  return { node: card, focusWithdraw };
 }

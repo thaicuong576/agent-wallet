@@ -2,61 +2,19 @@
 // engine decides, and what happened is shown as step cards rebuilt from the audit log.
 // Every API string is written with textContent. "Agent says" text is the model's own words and
 // is labelled as such; the step cards, not the prose, are the record of what happened.
-import { explainRule, formatAmount, OUTCOMES } from "../explain.js";
-import { cta } from "../gauges.js";
-import { txLink } from "./feed.js";
+import { cta, frozenCard } from "../gauges.js";
+import { stepCard } from "./cards.js";
+import { sidePanel } from "./side.js";
 
 export const MESSAGE_MAX = 500;
 const AGENT_SAYS = "Agent says: ";
 const NEEDS_ACTIVATION = new Set(["TIER.READ_ONLY", "TIER.PROPOSE_ONLY"]);
 const STOPPED = new Set(["TIER.EMERGENCY_STOP", "TIER.GLOBAL_STOP"]);
 
-export const PROMPTS = ["Put 10 USDC to work in Aave", "What is my balance?"];
-// Not a chat action: shown as a hint that points at the Withdraw control.
-export const WITHDRAW_HINT_CHIP = "Withdraw 5 USDC to my wallet";
-
-const STEP_OUTCOMES = {
-  ...OUTCOMES,
-  skipped: { icon: "↷", label: "Skipped", tone: "neutral" },
-};
-const FUNCTION_WORDS = {
-  approve: "Approve",
-  supply: "Supply to Aave",
-  withdraw: "Withdraw from Aave",
-  exactInputSingle: "Swap",
-};
-
-// One step card. `step` is {order_id, function, token, amount, outcome, reason, rule_codes,
-// tx_hash, explanation} from GET /chat.
-export function stepCard(ctx, step) {
-  const { el } = ctx;
-  const o = STEP_OUTCOMES[step.outcome] || STEP_OUTCOMES.no_action;
-  const li = el("li", "decision step-card " + o.tone);
-  const amount = formatAmount(step.amount, 6);
-  const title =
-    (FUNCTION_WORDS[step.function] || String(step.function || "Step")) +
-    (amount ? " " + amount + " " + (step.token || "") : "");
-  const head = el("div", "decision-head");
-  head.append(el("strong", "", title), el("span", "badge " + o.tone, o.icon + " " + o.label));
-  li.append(head);
-  if (step.explanation) li.append(el("p", "headline", step.explanation));
-  const codes = Array.isArray(step.rule_codes) ? step.rule_codes : [];
-  if (step.outcome === "denied" || step.outcome === "pending_approval") {
-    for (const code of codes) li.append(el("p", "sentence", explainRule(code, {}).sentence));
-  }
-  if (codes.length) {
-    const chips = el("p", "chips");
-    for (const code of codes) chips.append(el("span", "chip neutral code", code));
-    li.append(chips);
-  }
-  const link = txLink(el, step.tx_hash);
-  if (link) {
-    const p = el("p");
-    p.append(link);
-    li.append(p);
-  }
-  return li;
-}
+export const PROMPTS = ["What is my balance?", "Put 10 USDC to work in Aave", "Pull 5 USDC back out"];
+const PLACEHOLDER = "Tell your agent what to do…";
+// Transaction hashes are shown only as BaseScan links on the step cards, not in the prose.
+const TX_LIST = /\s*Transactions?: 0x[0-9a-f]{64}(?:, 0x[0-9a-f]{64})*\.?/g;
 
 // One message bubble, with its step cards under an agent message.
 export function bubble(ctx, message) {
@@ -64,30 +22,32 @@ export function bubble(ctx, message) {
   const mine = message.role === "user";
   const li = el("li", "bubble " + (mine ? "user" : "agent"));
   li.append(el("span", "who", mine ? "You" : "Agent"));
-  const text = typeof message.text === "string" ? message.text : "";
-  for (const part of text.split("\n\n")) {
+  const text = el("div", "text");
+  const raw = typeof message.text === "string" ? message.text : "";
+  for (const chunk of raw.split("\n\n")) {
+    const part = chunk.replace(TX_LIST, "");
     if (!part) continue;
     if (!mine && part.startsWith(AGENT_SAYS)) {
       const p = el("p", "says");
-      p.append(el("span", "chip neutral", "Agent says"), " " + part.slice(AGENT_SAYS.length));
-      li.append(p);
+      p.append(el("span", "chip", "Agent says"), " " + part.slice(AGENT_SAYS.length));
+      text.append(p);
     } else {
-      li.append(el("p", "", part));
+      text.append(el("p", "", part));
     }
   }
+  li.append(text);
   const steps = Array.isArray(message.steps) ? message.steps : [];
   if (steps.length) {
-    const list = el("ol", "cards steps");
+    const list = el("ol", "steps");
     for (const s of steps) list.append(stepCard(ctx, s));
     li.append(list);
     const codes = new Set(steps.flatMap((s) => (Array.isArray(s.rule_codes) ? s.rule_codes : [])));
     if ([...codes].some((c) => NEEDS_ACTIVATION.has(c))) {
-      li.append(
-        el("p", "note", "Your agent is not allowed to act yet."),
-        cta(el, "Activate your agent", "#/dashboard"),
-      );
+      const hint = el("p", "hint", "Your agent is not allowed to act yet.");
+      hint.append(cta(el, "Activate your agent", "#/setup", "primary"));
+      li.append(hint);
     } else if ([...codes].some((c) => STOPPED.has(c))) {
-      li.append(el("p", "note", "The agent is frozen. Release the emergency stop from the top bar."));
+      li.append(el("p", "hint", "The agent is frozen. Use Resume in the top bar."));
     }
   }
   return li;
@@ -95,16 +55,12 @@ export function bubble(ctx, message) {
 
 export function render(ctx) {
   const { el, api } = ctx;
-  const root = el("section", "view chat");
-  root.append(el("h1", "", "Chat with your agent"));
-  root.append(
-    el(
-      "p",
-      "note",
-      "Ask a question or hand the agent a task. The agent proposes, the policy engine decides, and every step below comes from the audit log.",
-    ),
-  );
+  const root = el("section", "chat-layout");
+  const h1 = el("h1", "sr-only", "Chat with your agent");
 
+  // ---- conversation card
+  const card = el("div", "card chat-card");
+  const head = el("header", "", "Your agent");
   const notice = el("div");
   const log = el("ol", "chat-log");
   log.setAttribute("aria-live", "polite");
@@ -112,32 +68,31 @@ export function render(ctx) {
   const typing = el("p", "typing", "");
   typing.setAttribute("role", "status");
   typing.hidden = true;
-  const status = el("p", "status", "");
+  const scroll = el("div", "chat-scroll");
+  scroll.append(notice, log, typing);
+  const status = el("p", "msg", "");
   status.setAttribute("role", "status");
 
-  // ---- composer
-  const form = el("div", "composer");
-  const label = el("label", "", "Message to your agent");
-  label.setAttribute("for", "chat-input");
-  const input = el("textarea");
-  input.id = "chat-input";
-  input.rows = 2;
-  input.maxLength = MESSAGE_MAX;
-  input.setAttribute("placeholder", "Put 10 USDC to work in Aave");
-  const counter = el("span", "counter", "0 / " + MESSAGE_MAX);
-  const send = el("button", "primary", "Send");
-  send.type = "button";
-  const row = el("div", "row");
-  row.append(send, counter, el("span", "note", "Enter sends, Shift+Enter adds a line."));
-  form.append(label, input, row);
-
+  const box = el("div", "composer-box");
   const prompts = el("div", "suggest");
   prompts.setAttribute("role", "group");
   prompts.setAttribute("aria-label", "Suggested prompts");
-  const hint = el("p", "note withdraw-hint", "");
-  hint.hidden = true;
+  const label = el("label", "sr-only", "Message to your agent");
+  label.setAttribute("for", "chat-input");
+  const input = el("textarea");
+  input.id = "chat-input";
+  input.rows = 1;
+  input.maxLength = MESSAGE_MAX;
+  input.setAttribute("placeholder", PLACEHOLDER);
+  const send = el("button", "primary", "Send");
+  send.type = "button";
+  const counter = el("span", "counter", "0 / " + MESSAGE_MAX);
+  const composer = el("div", "composer");
+  composer.append(input, send);
+  const meta = el("div", "composer-meta");
+  meta.append(el("span", "", "Enter sends, Shift+Enter adds a line."), counter);
   for (const text of PROMPTS) {
-    const chip = el("button", "chip prompt-chip", text);
+    const chip = el("button", "prompt-chip", text);
     chip.type = "button";
     chip.addEventListener("click", () => {
       input.value = text;
@@ -146,18 +101,11 @@ export function render(ctx) {
     });
     prompts.append(chip);
   }
-  const withdrawChip = el("button", "chip prompt-chip hint-chip", WITHDRAW_HINT_CHIP);
-  withdrawChip.type = "button";
-  withdrawChip.addEventListener("click", () => {
-    hint.hidden = false;
-    hint.replaceChildren(
-      "Withdrawing needs a signature from your wallet, so it is not a chat action. Use the Withdraw control on the Dashboard. ",
-      cta(el, "Open the Withdraw control", "#/dashboard", "secondary"),
-    );
-  });
-  prompts.append(withdrawChip);
+  box.append(prompts, label, composer, meta, status);
+  card.append(head, scroll, box);
 
-  root.append(notice, log, typing, status, form, prompts, hint);
+  const side = sidePanel(ctx);
+  root.append(h1, card, side.node);
 
   let busy = false;
   let frozen = false;
@@ -177,9 +125,9 @@ export function render(ctx) {
   send.addEventListener("click", () => submit());
 
   function lock() {
-    const off = busy || frozen;
-    send.disabled = off;
+    send.disabled = busy || frozen;
     input.disabled = frozen;
+    input.setAttribute("placeholder", frozen ? "Frozen. Resume the agent to chat." : PLACEHOLDER);
   }
 
   function showHistory(items) {
@@ -190,7 +138,7 @@ export function render(ctx) {
         el(
           "p",
           "note",
-          "Try “Put 10 USDC to work in Aave” or “What is my balance?”. The agent only acts inside your policy.",
+          "Try “Put 10 USDC to work in Aave” or “What is my balance?”. The agent only acts inside your rules.",
         ),
       );
       log.replaceChildren(li);
@@ -206,12 +154,12 @@ export function render(ctx) {
       const page = await api.chat(50);
       showHistory(Array.isArray(page.items) ? page.items : []);
     } catch (e) {
-      status.className = "status error";
+      status.className = "msg error";
       status.textContent = ctx.describeError(e);
     }
   }
 
-  // Tier and stop state: T0 and T1 say why orders are blocked, a stop freezes the composer.
+  // Tier and stop state: T1 says why orders are blocked, a stop freezes the composer.
   async function loadState() {
     let tier = null;
     try {
@@ -222,30 +170,20 @@ export function render(ctx) {
     notice.replaceChildren();
     frozen = Boolean(tier && tier.emergency_stop);
     if (frozen) {
-      const card = el("div", "card frozen-note");
-      card.setAttribute("role", "status");
-      card.append(
-        el("strong", "", "! Your agent is frozen"),
-        el(
-          "p",
-          "",
-          "The emergency stop is on, so the agent will not answer or act. Release it from the top bar to continue.",
-        ),
-      );
-      notice.append(card);
+      notice.append(frozenCard(el));
     } else if (tier && (tier.tier === "T0" || tier.tier === "T1")) {
-      const card = el("div", "card activate");
-      card.append(
+      const n = el("div", "notice-card");
+      n.append(
         el(
           "p",
           "",
           tier.tier === "T0"
-            ? "Your agent is read only (tier T0). It can answer questions, but every order is blocked until you activate it."
-            : "Your agent may only propose (tier T1). Nothing runs until you raise its tier.",
+            ? "Your agent is read only. It can answer questions, but every order is blocked until you activate it."
+            : "Your agent may only propose. Nothing runs until you activate it again.",
         ),
-        cta(el, "Activate your agent", "#/dashboard"),
+        cta(el, "Activate your agent", "#/setup"),
       );
-      notice.append(card);
+      notice.append(n);
     }
     lock();
   }
@@ -270,7 +208,7 @@ export function render(ctx) {
     typingOff();
     await loadHistory();
     if (job && (job.status === "failed" || job.status === "interrupted")) {
-      status.className = "status error";
+      status.className = "msg error";
       status.textContent = "The request did not finish. See the agent's message above.";
     }
     ctx.changed();
@@ -281,13 +219,13 @@ export function render(ctx) {
     const text = input.value.trim();
     if (!text) return;
     if (text.length > MESSAGE_MAX) {
-      status.className = "status error";
+      status.className = "msg error";
       status.textContent = "Messages are limited to " + MESSAGE_MAX + " characters.";
       return;
     }
     busy = true;
     lock();
-    status.className = "status";
+    status.className = "msg";
     status.textContent = "";
     // Show the owner's message at once; history is reloaded from the server afterwards.
     const mine = bubble(ctx, { role: "user", text, steps: [] });
@@ -302,7 +240,7 @@ export function render(ctx) {
       await follow(accepted.job_id);
     } catch (e) {
       typingOff();
-      status.className = "status error";
+      status.className = "msg error";
       status.textContent = ctx.describeError(e);
       const active = e && e.problem && e.problem.job_id;
       if (e && e.status === 409 && typeof active === "string" && /^[0-9a-f]{32}$/.test(active)) {
@@ -326,9 +264,9 @@ export function render(ctx) {
   async function start() {
     const me = await ctx.refreshSession();
     if (!me) {
-      const box = el("div", "empty");
-      box.append(el("p", "", "Connect a wallet to talk to your agent."), cta(el, "Set up your agent", "#/onboard"));
-      root.replaceChildren(el("h1", "", "Chat with your agent"), box);
+      const empty = el("div", "empty");
+      empty.append(el("p", "", "Connect a wallet to talk to your agent."), cta(el, "Set up your agent", "#/setup"));
+      root.replaceChildren(el("h1", "", "Chat with your agent"), empty);
       return;
     }
     await loadState();

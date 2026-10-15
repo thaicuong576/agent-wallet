@@ -9,33 +9,28 @@
 <body>
 <a class="skip" href="#view">Skip to content</a>
 <header id="masthead" class="masthead">
-  <div class="bar">
-    <span class="wordmark">agent-wallet</span>
-    <nav aria-label="Main">
+  <div class="hdr">
+    <a class="brand" href="#/chat"><span class="logo" aria-hidden="true"></span>agent-wallet</a>
+    <nav id="tabs" class="tabs" aria-label="Main">
       <a href="#/chat">Chat</a>
-      <a href="#/dashboard">Dashboard</a>
-      <a href="#/feed">Feed</a>
-      <a href="#/approvals">Approvals</a>
-      <a href="#/onboard">Set up</a>
+      <a href="#/portfolio">Portfolio</a>
+      <a href="#/activity">Activity</a>
+      <a href="#/rules">Rules</a>
     </nav>
-    <div class="controls">
-      <span id="tier-chip" class="chip" role="status">Not connected</span>
-      <button id="btn-stop" type="button" class="danger" disabled>Emergency stop</button>
+    <div class="hdr-right">
+      <span id="mode-chip" class="pill net" hidden></span>
+      <span id="net-chip" class="pill net">Base Sepolia testnet</span>
+      <span id="addr-chip" class="pill addr" hidden></span>
+      <span id="status-pill" class="pill status" role="status" hidden></span>
+      <button id="btn-stop" type="button" class="btn-stop" disabled>Emergency stop</button>
     </div>
   </div>
-  <p id="stop-msg" class="note bar" role="status"></p>
 </header>
-<aside id="banner" class="banner" aria-label="Testnet notice">
-  <strong>Testnet only (Base Sepolia) · Custodial server key · Mainnet reference prices.</strong>
-  Custodial: the server holds this agent key. Do not send real funds.
-  Prices are mainnet reference values.
-  The agent cannot top up its own ETH: gas ETH has to come from your wallet.
-  <span id="mode-chip" class="chip neutral" hidden></span>
-</aside>
+<p id="stop-msg" class="toast" role="status"></p>
 <main id="view" tabindex="-1">
   <noscript>This page needs JavaScript.</noscript>
 </main>
-<footer class="foot">Not financial advice. Every decision the agent makes is written to a hash-chained audit log.</footer>
+<footer class="foot">Testnet only. The server holds this agent's key. Not financial advice.</footer>
 <script src="chain.js"></script>
 <script type="module" src="main.js"></script>
 </body>
