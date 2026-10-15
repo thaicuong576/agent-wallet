@@ -569,6 +569,33 @@ paths:
           description: Job.
           content: { application/json: { schema: { $ref: "#/components/schemas/Job" } } }
         "404": { $ref: "#/components/responses/Problem" }
+  /jobs/{job_id}/cancel:
+    post:
+      tags: [jobs]
+      operationId: cancelJob
+      summary: Stop a queued or running job before its next order.
+      description: >-
+        Accepted while the job is `queued` or `rules_check`. The job then ends `denied` with error
+        code `OWNER_CANCELLED`; orders not yet proposed are recorded as skipped steps with reason
+        `owner-cancelled`. An order already submitted is never undone, and cancel never calls the
+        signer. `409 not-cancellable` once the job is `sent` or later, or finished.
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: job_id, in: path, required: true, schema: { type: string, pattern: "^[0-9a-f]{32}$" } }
+      responses:
+        "202":
+          description: Cancel accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job_id, status]
+                properties:
+                  job_id: { type: string }
+                  status: { type: string, enum: [cancelling] }
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
   /audit/verify:
     get:
       tags: [audit]
@@ -679,6 +706,7 @@ components:
         planner_client: { type: string, enum: [openai, scripted, fallback, none] }
         order_ids: { type: array, items: { type: string }, description: "Ids only; fetch records from /decisions." }
         error_code: { type: [string, "null"] }
+        phase: { type: string, description: "queued, rules_check, sent, confirming or done. Clients must tolerate unknown values." }
         created_at: { $ref: "#/components/schemas/UtcTimestamp" }
         finished_at: { type: [string, "null"] }
         records:
@@ -721,6 +749,7 @@ components:
         job_id: { type: [string, "null"] }
         created_at: { $ref: "#/components/schemas/UtcTimestamp" }
         steps: { type: array, items: { $ref: "#/components/schemas/ChatStep" } }
+        phase: { type: string, description: "Phase of the message's job (see Job). `done` for user messages." }
     Problem:
       type: object
       required: [type, title, status]

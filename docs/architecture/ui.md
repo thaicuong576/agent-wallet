@@ -88,6 +88,9 @@ sequenceDiagram
   end
 ```
 
+## Phases and Stop (contract C1, C2; backend ticket 122)
+`GET /jobs/{id}` and each agent message in `GET /chat` carry `phase`: `queued`, `rules_check`, `sent`, `confirming`, `done`. Treat unknown values as "working"; `confirming` is not emitted yet. `POST /jobs/{id}/cancel` (CSRF header) answers `202 {job_id, status: "cancelling"}`, or `409 not-cancellable` once the phase is `sent` or later. After a cancel the job ends `status: "denied"`, `error_code: "OWNER_CANCELLED"` (already a terminal status for the poller), and the steps not attempted are `outcome: "skipped"` with a `reason` ending `owner-cancelled`. The Stop button is F1's work; see [`api.md`](api.md#job-phases-and-cancel-ticket-122-contract-c1-and-c2).
+
 ## Known gaps
 - **No policy route** (ticket A4): the preset step of the old stepper is gone from Setup; the default preset applies. `api.js` keeps `setPreset` for fixtures only.
 - **No rate route:** the Portfolio "Earning" card shows the aUSDC amount and says the rate is not exposed, instead of the mockup's "3.1% APY".

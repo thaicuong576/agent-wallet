@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import re
+import threading
 import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Executor, ThreadPoolExecutor
@@ -43,7 +44,7 @@ from core.agent.planner import FallbackPlanner
 from core.gateway.exceptions import GatewayBusy, GatewayError, InvalidOrder, ReconcileRequired
 from core.gateway.tenant import Tenant
 from core.runner.portfolio import PortfolioReader
-from core.runner.runner import Runner
+from core.runner.runner import SKIP_PREFIX, Runner
 from core.storage.interfaces import JobInProgress, JobStore, RateLimited
 from core.storage.sqlite.webapp import SqliteJobs, mark_jobs_interrupted
 
@@ -59,6 +60,11 @@ CHAT_MESSAGE_MAX_CHARS = 500
 ACTIVE = ("queued", "running")
 STOP_CODES = frozenset({"TIER.EMERGENCY_STOP", "TIER.GLOBAL_STOP"})
 OWNER_STOP_CODE = "TIER.EMERGENCY_STOP"
+# Cancel (contract C2): the job ends `denied` with this code; steps carry CANCEL_REASON.
+CANCEL_CODE = "OWNER_CANCELLED"
+CANCEL_REASON = "owner-cancelled"
+TERMINAL_PHASE = "done"
+_SKIP_TAIL = re.compile(rf"^({re.escape(SKIP_PREFIX)} [^:]*): .*$", re.DOTALL)
 GLOBAL_STOP_CODE = "TIER.GLOBAL_STOP"
 # Execution error codes of the record schema, reported under the job table's names (design 10).
 ERROR_CODE_MAP = {"SIGNER_UNAVAILABLE": "RPC_UNAVAILABLE"}
@@ -206,6 +212,72 @@ def classify(records: list[dict[str, Any]], kind: str) -> tuple[str, str | None]
     return "succeeded", None
 
 
+# ---------------------------------------------------------------- cancel (contract C2)
+
+
+def _order_label(order: Mapping[str, Any]) -> str:
+    """'supply (10 USDC)': the same shape the runner uses for a skipped step."""
+    amount = order.get("amount") or {}
+    try:
+        units, decimals = int(amount["value"]), int(amount["decimals"])
+        whole, frac = divmod(units, 10**decimals)
+        text = f"{whole}.{frac:0{decimals}d}".rstrip("0").rstrip(".") if decimals else str(whole)
+    except (KeyError, TypeError, ValueError):
+        text = "?"
+    token = str(order.get("token") or "")
+    return f"{order.get('function', 'step')} ({f'{text} {token}'.strip()})"
+
+
+class _CancelGate:
+    """The tenant's gateway as the job's runner sees it, with the owner's cancel applied.
+
+    Cancellation points are exactly the calls to `propose`: once the owner has cancelled, no
+    further order reaches the real gateway (so nothing is checked, simulated or signed), and each
+    one is recorded as a skipped step with reason `owner-cancelled`. An order already inside
+    `propose` is never interrupted. Everything else is delegated untouched.
+    """
+
+    def __init__(
+        self,
+        gateway: Any,
+        cancelled: Callable[[], bool],
+        on_order: Callable[[Any], None],
+        on_skip: Callable[[], None],
+        clock: Callable[[], datetime],
+    ) -> None:
+        self._gateway = gateway
+        self._cancelled = cancelled
+        self._on_order = on_order
+        self._on_skip = on_skip
+        self._clock = clock
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._gateway, name)
+
+    def propose(self, order: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        if self._cancelled():
+            self._on_skip()
+            reason = f"{SKIP_PREFIX} {_order_label(order)}: {CANCEL_REASON}"
+            return self._gateway.record_no_action(reason, _now_iso(self._clock()))
+        self._on_order(order.get("order_id"))
+        return self._gateway.propose(order, **kwargs)
+
+    def record_no_action(self, reason: str, now: str) -> dict[str, Any]:
+        # The runner words the steps after a blocked one itself; after a cancel they say why.
+        if self._cancelled():
+            reason = _SKIP_TAIL.sub(lambda m: m.group(1) + ": " + CANCEL_REASON, reason)
+        return self._gateway.record_no_action(reason, now)
+
+
+@dataclass
+class _Live:
+    """In-process state of one job that is queued or running (never stored, never an order body)."""
+
+    cancel: bool = False
+    skipped_by_cancel: bool = False
+    order_id: str | None = None
+
+
 # ---------------------------------------------------------------- service
 
 
@@ -228,6 +300,8 @@ class JobService:
         self._clock = clock
         self._executor = executor or ThreadPoolExecutor(max_workers=4, thread_name_prefix="job")
         self._llm_factory = llm_factory or _llm_from_env
+        self._live: dict[str, _Live] = {}
+        self._live_lock = threading.Lock()
 
     # -- storage
 
@@ -279,6 +353,8 @@ class JobService:
             raise job_in_progress(exc.job_id) from None
         except RateLimited as exc:
             raise rate_limited(exc.retry_after_s) from None
+        with self._live_lock:
+            self._live[job_id] = _Live()
         if kind == "chat":
             try:
                 tenant.stores.chat.append("user", args["message"], job_id, self._clock())
@@ -289,6 +365,7 @@ class JobService:
                     error_code="INTERNAL_ERROR",
                     finished_at=_ts(self._clock()),
                 )
+                self._forget(job_id)
                 raise
         self._executor.submit(self._execute, tenant, job_id, kind, args)
         return job_id
@@ -296,6 +373,81 @@ class JobService:
     def get(self, tenant: Tenant, job_id: str) -> dict[str, Any] | None:
         row = self.store(tenant).get(job_id)
         return None if row is None else self._view(tenant, row)
+
+    def phase(self, tenant: Tenant, row: Mapping[str, Any]) -> str:
+        """Where a job is, from its status and the gateway's intent record (contract C1).
+
+        `queued` until the worker takes it; `rules_check` while it plans and the gateway checks
+        the rules; `sent` from the moment the gateway has written its signing intent for the
+        order in flight until the record is appended; `done` for every terminal status. The
+        gateway signs and waits for the receipt in one call, so `confirming` is not observable
+        from outside it and is not emitted today.
+        """
+        status = row["status"]
+        if status == "queued":
+            return "queued"
+        if status != "running":
+            return TERMINAL_PHASE
+        with self._live_lock:
+            live = self._live.get(row["job_id"])
+            order_id = live.order_id if live else None
+        if order_id is not None:
+            try:
+                if tenant.gateway.intent_store.unfinished(order_id):
+                    return "sent"
+            except Exception:  # noqa: BLE001 - a phase must never break the job view
+                pass
+        return "rules_check"
+
+    def cancel(self, tenant: Tenant, job_id: str) -> bool:
+        """Ask a job to stop before its next order. False when it is not cancellable (409).
+
+        Owner-scoped: the job is read from the owner's own store. Never touches the signer; the
+        worker applies the flag at its cancellation points (`_CancelGate`, `_execute`).
+        """
+        row = self.store(tenant).get(job_id)
+        if row is None or row["status"] not in ACTIVE:
+            return False
+        if self.phase(tenant, row) not in ("queued", "rules_check"):
+            return False
+        with self._live_lock:
+            live = self._live.get(job_id)
+            if live is None:
+                return False
+            live.cancel = True
+        return True
+
+    def _cancelled(self, job_id: str) -> bool:
+        with self._live_lock:
+            live = self._live.get(job_id)
+            return live is not None and live.cancel
+
+    def _was_cancelled(self, job_id: str) -> bool:
+        """True when the cancel took effect: at least one order was skipped because of it."""
+        with self._live_lock:
+            live = self._live.get(job_id)
+            return live is not None and live.skipped_by_cancel
+
+    def _gate(self, tenant: Tenant, job_id: str) -> _CancelGate:
+        def on_order(order_id: Any) -> None:
+            with self._live_lock:
+                live = self._live.get(job_id)
+                if live is not None:
+                    live.order_id = str(order_id) if order_id else None
+
+        def on_skip() -> None:
+            with self._live_lock:
+                live = self._live.get(job_id)
+                if live is not None:
+                    live.skipped_by_cancel = True
+
+        return _CancelGate(
+            tenant.gateway, lambda: self._cancelled(job_id), on_order, on_skip, self._clock
+        )
+
+    def _forget(self, job_id: str) -> None:
+        with self._live_lock:
+            self._live.pop(job_id, None)
 
     def list(self, tenant: Tenant, limit: int = 20) -> list[dict[str, Any]]:
         return [
@@ -314,6 +466,7 @@ class JobService:
             "planner_client": row["planner_client"],
             "order_ids": row["order_ids"],
             "error_code": row["error_code"],
+            "phase": self.phase(tenant, row),
             "created_at": _iso(row["created_at"]),
             "finished_at": _iso(row["finished_at"]) if row["finished_at"] else None,
         }
@@ -384,7 +537,10 @@ class JobService:
         outcome = Outcome("failed", "INTERNAL_ERROR")
         try:
             store.update(job_id, status="running", started_at=_ts(self._clock()))
-            outcome = self._dispatch(tenant, store, job_id, kind, args)
+            if self._cancelled(job_id):  # cancellation point 1: before the worker does anything
+                outcome = self._cancelled_before_start(tenant)
+            else:
+                outcome = self._dispatch(tenant, store, job_id, kind, args)
         except GatewayBusy:
             outcome = Outcome("failed", "GATEWAY_BUSY")
         except ReconcileRequired:
@@ -409,6 +565,14 @@ class JobService:
             if outcome.planner_client != "none":
                 fields["planner_client"] = outcome.planner_client
             store.update(job_id, **fields)
+            self._forget(job_id)
+
+    def _cancelled_before_start(self, tenant: Tenant) -> Outcome:
+        record = tenant.gateway.record_no_action(
+            "Cancelled by the owner before the agent acted.", _now_iso(self._clock())
+        )
+        text = "You cancelled this request before I acted. Nothing was sent."
+        return Outcome("denied", CANCEL_CODE, [], [int(record["seq"])], chat_text=text)
 
     def _append_agent_message(self, tenant: Tenant, job_id: str, outcome: Outcome) -> None:
         """The agent's chat message, written before the job turns terminal so a poller that sees
@@ -426,7 +590,7 @@ class JobService:
             return self._run(tenant, store, job_id, args)
         if kind == "chat":
             return self._chat(tenant, store, job_id, args)
-        return self._owner_job(tenant, kind, args["order"])
+        return self._owner_job(tenant, job_id, kind, args["order"])
 
     def _gas_gate(self, tenant: Tenant) -> Outcome | None:
         """Below the gas floor nothing is proposed (design 8.1)."""
@@ -453,7 +617,7 @@ class JobService:
                 return OWNER_STOP_CODE
         return None
 
-    def _owner_job(self, tenant: Tenant, kind: str, order: dict[str, Any]) -> Outcome:
+    def _owner_job(self, tenant: Tenant, job_id: str, kind: str, order: dict[str, Any]) -> Outcome:
         # `transfer` must work under the owner's stop (design 7.3); the gateway still decides.
         code = self._stopped(tenant, owner_stop_counts=False)
         if code is not None:
@@ -461,6 +625,8 @@ class JobService:
         gas_error = self._gas_gate(tenant)
         if gas_error is not None:
             return gas_error
+        if self._cancelled(job_id):  # cancellation point 2: before the single order is proposed
+            return self._cancelled_before_start(tenant)
         record = propose_as_owner(tenant.gateway, order)
         status, error = classify([record], kind)
         return Outcome(status, error, [order["order_id"]], [int(record["seq"])])
@@ -489,14 +655,18 @@ class JobService:
         portfolio = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
         ips = tenant.gateway.policy.ips
         try:
-            records = self._runner(tenant, portfolio, ips, label, planner).run_once(note, now)
+            records = self._runner(tenant, job_id, portfolio, ips, label, planner).run_once(
+                note, now
+            )
         except LLMError:
             # Nothing is proposed before the LLM answers, so retrying with the rule-based
             # planner cannot duplicate an order.
             label, planner = "fallback", FallbackPlanner()
             store.update(job_id, planner_client=label)
-            records = self._runner(tenant, portfolio, ips, label, planner).run_once(note, now)
-        status, error = classify(records, "run")
+            records = self._runner(tenant, job_id, portfolio, ips, label, planner).run_once(
+                note, now
+            )
+        status, error = self._apply_cancel(job_id, *classify(records, "run"))
         return Outcome(
             status,
             error,
@@ -540,7 +710,7 @@ class JobService:
         ips = tenant.gateway.policy.ips
         message = args["message"]
         try:
-            result = self._runner(tenant, portfolio, ips, label, planner).run_instruction(
+            result = self._runner(tenant, job_id, portfolio, ips, label, planner).run_instruction(
                 message, now
             )
         except LLMError:
@@ -548,11 +718,11 @@ class JobService:
             label, planner = "fallback", FallbackPlanner()
             fallback = FALLBACK_LLM_ERROR
             store.update(job_id, planner_client=label)
-            result = self._runner(tenant, portfolio, ips, label, planner).run_instruction(
+            result = self._runner(tenant, job_id, portfolio, ips, label, planner).run_instruction(
                 message, now
             )
         records = result.records
-        status, error = classify(records, "chat")
+        status, error = self._apply_cancel(job_id, *classify(records, "chat"))
         text = compose_agent_text(
             records,
             reply=result.reply,
@@ -569,11 +739,25 @@ class JobService:
             chat_text=text,
         )
 
+    def _apply_cancel(self, job_id: str, status: str, error: str | None) -> tuple[str, str | None]:
+        """A cancel that skipped orders ends the job `denied` (code OWNER_CANCELLED), unless an
+        order already failed, which stays the truth."""
+        if status != "failed" and self._was_cancelled(job_id):
+            return "denied", CANCEL_CODE
+        return status, error
+
     def _runner(
-        self, tenant: Tenant, portfolio: PortfolioReader, ips: Any, label: str, planner: Any
+        self,
+        tenant: Tenant,
+        job_id: str,
+        portfolio: PortfolioReader,
+        ips: Any,
+        label: str,
+        planner: Any,
     ) -> Runner:
         reader_client = planner.client if label == "openai" else None
-        return Runner(Reader(reader_client), planner, portfolio, tenant.gateway, ips, self._clock)
+        gateway = self._gate(tenant, job_id)  # cancellation point 3: before every order
+        return Runner(Reader(reader_client), planner, portfolio, gateway, ips, self._clock)
 
     def _select_planner(self, choice: str) -> tuple[str, Any]:
         if choice == "scripted_hostile":
@@ -664,6 +848,27 @@ def get_job(
     if job is None:
         raise AuthProblem(404, "not-found", "Not found", "unknown job")
     return job
+
+
+@router.post("/jobs/{job_id}/cancel", status_code=202, tags=["jobs"])
+def cancel_job(
+    job_id: str, request: Request, tenant: Annotated[Tenant, Depends(current_tenant)]
+) -> dict[str, str]:
+    jobs = get_webapp(request).jobs
+    job = None
+    if len(job_id) == 32 and all(c in "0123456789abcdef" for c in job_id):
+        job = jobs.store(tenant).get(job_id)
+    if job is None:
+        raise AuthProblem(404, "not-found", "Not found", "unknown job")
+    if not jobs.cancel(tenant, job_id):
+        raise AuthProblem(
+            409,
+            "not-cancellable",
+            "Job cannot be cancelled",
+            "the job has already sent a transaction or finished",
+            extra={"job_id": job_id, "error": "not-cancellable"},
+        )
+    return {"job_id": job_id, "status": "cancelling"}
 
 
 @router.get("/jobs", tags=["jobs"])

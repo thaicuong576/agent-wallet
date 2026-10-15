@@ -94,6 +94,7 @@ The wallet-session routes of design 12.2 are mounted by `create_app` on every st
 | `/agent/mint`, `/runs` | `POST` | session | `api/jobs.py` |
 | `/agent/withdraw` | `POST` | session plus step-up `withdraw` | `api/jobs.py` |
 | `/jobs`, `/jobs/{job_id}` | `GET` | session | `api/jobs.py` |
+| `/jobs/{job_id}/cancel` | `POST` | session (CSRF header as every write) | `api/jobs.py` (ticket 122) |
 | `/chat` | `POST` | session (CSRF header as every write) | `api/chat.py` (starts a job of kind `chat` in `api/jobs.py`) |
 | `/chat?limit=50` | `GET` | session | `api/chat.py` |
 
@@ -114,6 +115,24 @@ Rules enforced here: the owner address comes only from `require_session` (no rou
 | App routes and methods equal `contracts/openapi.yaml` | `pytest tests/api/test_routes.py -q` (reads the app's generated schema, since included routers hide their routes from `app.routes`) |
 | Session routes reject anonymous callers; withdraw needs a bound step-up | `pytest tests/webapp/test_routes.py -q` |
 | A session for A cannot read or act on B | `pytest tests/webapp/test_routes.py -k "session_a or foreign or owner_query or chain_verifies" -q` |
+
+### Job phases and cancel (ticket 122, contract C1 and C2)
+
+`GET /jobs`, `GET /jobs/{job_id}` and each message of `GET /chat` carry `phase`: `queued` (accepted, worker not started), `rules_check` (the worker is planning and the gateway is checking the rules), `sent` (the gateway holds its signing intent for the order in flight and has not yet appended the record) and `done` (every terminal `status`; also the phase of a user message). `confirming` is part of the contract but is not emitted today: the gateway signs and waits for the receipt inside one call, so nothing outside it can see a receipt pending. Clients must tolerate unknown values. The phase is derived from the stored job `status` and the gateway's intent record (`JobService.phase`); it adds no signer path and stores nothing.
+
+`POST /jobs/{job_id}/cancel` answers `202 {job_id, status: "cancelling"}` while the job is `queued` or `rules_check`, `404` for an unknown or foreign job, and `409 not-cancellable` (problem slug, plus `error: "not-cancellable"`) once the job is `sent` or later or already finished. The flag lives in the process that runs the job and is applied at exactly these cancellation points, all before an order reaches the gateway:
+
+| Point | Where | Effect |
+| :--- | :--- | :--- |
+| 1 | worker start (`JobService._execute`), before gas gate, planner or any read | job ends without a plan; one `no_action` record; chat text "You cancelled this request before I acted." |
+| 2 | before the single order of a `mint` or `withdraw` job | same as point 1 |
+| 3 | before every `propose` of a run or chat plan (`_CancelGate`), so between the orders of a multi-order plan | the order and each later one are recorded as `no_action` steps `Skipped <function> (<amount>): owner-cancelled`; the gateway is not called |
+
+An order already inside `propose` is never interrupted or undone, and cancel never calls the signer: the gate only withholds the next `propose`. A job on which the cancel took effect ends `status: "denied"`, `error_code: "OWNER_CANCELLED"` (no new status value, so clients that know the existing terminal statuses keep working); a job whose last order was already past the gateway when the cancel arrived finishes under its normal status. Cancelled steps appear in `GET /chat` as `outcome: "skipped"` with `reason` ending `owner-cancelled`.
+
+| Claim | Proving check |
+| :--- | :--- |
+| Phase per status and per intent, on jobs and chat; cancel queued, between two and three orders, `409` after `sent` and when finished, `404`, CSRF, cross-tenant, signer never named in `api/jobs.py` | `pytest tests/webapp/test_job_phases.py -q` |
 
 ## Owner routes in multi mode
 
