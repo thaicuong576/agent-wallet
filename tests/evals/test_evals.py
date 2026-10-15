@@ -126,6 +126,11 @@ def test_eval_reports_are_byte_identical_across_runs(tmp_path: Path):
 # TIER.POLICY_CHANGED belongs to Ticket A4 (PUT /policy and presets) and remains pending.
 PENDING_WEBAPP_CODES = {
     "TIER.POLICY_CHANGED",
+    # Registry codes (D0): covered by tests/protocols/test_registry.py until a protocol adapter
+    # ships an eval scenario for them.
+    "ACCESS.PROTOCOL_NOT_ENABLED",
+    "ACCESS.MARKET_NOT_ALLOWED",
+    "RISK.PRICE_UNAVAILABLE",
 }
 
 

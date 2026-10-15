@@ -1,41 +1,35 @@
 """Reference prices for runner portfolio valuation.
 
 Labels all values as mainnet_reference (not testnet market prices).
-Unknown tokens or missing prices raise PriceUnavailable.
+Valuation lives in the token registry (`core.protocols.tokens.usd_value`); this module keeps the
+historic `price_usd` entry point on top of it. Unknown tokens or missing prices raise
+PriceUnavailable.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from decimal import Decimal
 from typing import Final
 
+from core.protocols.tokens import PriceUnavailable, all_tokens, unit_price_usd
+
+__all__ = ["MAINNET_REFERENCE_PRICES", "PRICE_SOURCE", "PriceUnavailable", "price_usd"]
+
 PRICE_SOURCE: Final[str] = "mainnet_reference"
 
-# Mainnet reference prices in USD string format.
-# Omit WETH in v1 until a swap ticket exists (positions with WETH are omitted,
-# causing the policy engine to deny fail-closed on LIMIT.PER_TX).
-MAINNET_REFERENCE_PRICES: Final[Mapping[str, str]] = {
-    "USDC": "1.00",
+# Tokens that resolve without a live reader: enabled, stable-pegged tokens (USDC in v1).
+MAINNET_REFERENCE_PRICES: Final[dict[str, str]] = {
+    t.symbol: t.peg_usd for t in all_tokens() if t.enabled and t.usd_source == "stable"
 }
 
 
-class PriceUnavailable(Exception):
-    """Raised when a reference price is unavailable for a given token."""
-
-
 def price_usd(token: str) -> Decimal:
-    """Return the mainnet reference price in USD for the given token.
+    """Return the reference price in USD for one whole token (registry-backed).
 
-    Args:
-        token: Token symbol (e.g., 'USDC').
-
-    Returns:
-        Decimal representation of the USD price.
+    Only `stable` tokens resolve without a live reader; oracle-priced tokens raise
+    PriceUnavailable here and are valued where an RPC reader is available.
 
     Raises:
-        PriceUnavailable: If the token has no price in MAINNET_REFERENCE_PRICES.
+        PriceUnavailable: If no price can be established for the token.
     """
-    if token not in MAINNET_REFERENCE_PRICES:
-        raise PriceUnavailable(f"No reference price available for token '{token}'")
-    return Decimal(MAINNET_REFERENCE_PRICES[token])
+    return unit_price_usd(token)

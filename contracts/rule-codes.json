@@ -166,6 +166,23 @@
     "family": "TIER",
     "description": "The IPS was updated to a new preset. It is a status, not a violation.",
     "source": "design section 7.1, 9"
+  },
+  {
+    "code": "ACCESS.PROTOCOL_NOT_ENABLED",
+    "family": "ACCESS",
+    "description": "The order targets a protocol that has no registered adapter in the protocol registry, so no call can be built for it.",
+    "source": "protocol registry (D0)"
+  },
+  {
+    "code": "ACCESS.MARKET_NOT_ALLOWED",
+    "family": "ACCESS",
+    "description": "The order names a market that the protocol's registry entry does not list.",
+    "source": "protocol registry (D0)"
+  },
+  {
+    "code": "RISK.PRICE_UNAVAILABLE",
+    "family": "RISK",
+    "description": "A USD price for the order's token could not be established (token not priceable or the oracle read failed), so the order is not valued and not executed.",
+    "source": "token registry (D0)"
   }
 ]
-
