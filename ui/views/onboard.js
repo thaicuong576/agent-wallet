@@ -1,13 +1,16 @@
 // Onboarding stepper: Connect, Fund, Mint, Policy, Run. Each step says what it will ask the wallet.
 import { explainError, formatAmount, formatWei, parseUnits, shortHash } from "../explain.js";
 import { txLink } from "./feed.js";
+import { activateCard } from "./activate.js";
 
+// `prompt` is the short disclosure shown before the step is clicked (A-1): what the wallet will show.
 const STEPS = [
-  { id: "connect", title: "Connect", asks: "Your wallet will ask you to connect and to sign a login message. Signing is free and sends no transaction." },
-  { id: "fund", title: "Fund", asks: "Your wallet will ask you to send a small amount of test ETH to the agent address, to pay for gas. The agent cannot top up its own ETH." },
-  { id: "mint", title: "Mint", asks: "No wallet prompt. The agent mints test USDC to itself through the gateway." },
-  { id: "policy", title: "Policy", asks: "Your wallet will ask you to sign once to confirm the preset you pick." },
-  { id: "run", title: "Run", asks: "No wallet prompt. The agent proposes, the policy engine decides, and you see the result in the feed." },
+  { id: "connect", title: "Connect", prompt: "Wallet prompt: connect and sign a free login message", asks: "Your wallet will ask you to connect and to sign a login message. Signing is free and sends no transaction." },
+  { id: "fund", title: "Fund", prompt: "Wallet prompt: send test ETH (pays gas)", asks: "Your wallet will ask you to send a small amount of test ETH to the agent address, to pay for gas. The agent cannot top up its own ETH." },
+  { id: "mint", title: "Mint", prompt: "No wallet prompt: the server mints test USDC", asks: "No wallet prompt. The agent mints test USDC to itself through the gateway." },
+  { id: "policy", title: "Policy", prompt: "Wallet prompt: one free signature to confirm the preset", asks: "Your wallet will ask you to sign once to confirm the preset you pick." },
+  { id: "activate", title: "Activate agent", prompt: "Wallet prompt: one free signature to raise the tier", asks: "A new agent starts read only, so every order is blocked. Activating lets it act inside your limits; you can stop it at any time. Your wallet will ask you to sign once." },
+  { id: "run", title: "Run", prompt: "No wallet prompt: the policy engine decides", asks: "No wallet prompt. The agent proposes, the policy engine decides, and you see the result in the feed." },
 ];
 
 export function render(ctx) {
@@ -22,11 +25,13 @@ export function render(ctx) {
     const me = await ctx.refreshSession();
     const data = { me, agent: null, policy: null, jobs: [] };
     if (me) {
-      const [a, p, j] = await Promise.allSettled([
+      const [a, p, j, t] = await Promise.allSettled([
         api.agent(),
         api.fixtures ? api.policy() : Promise.resolve(null),
         api.jobs(),
+        api.tier(),
       ]);
+      data.tier = t.status === "fulfilled" ? t.value.tier : null;
       data.agent = a.status === "fulfilled" ? a.value : null;
       data.policy = p.status === "fulfilled" ? p.value : null;
       data.jobs = j.status === "fulfilled" && Array.isArray(j.value.items) ? j.value.items : [];
@@ -45,6 +50,7 @@ export function render(ctx) {
       mint: Boolean(a) && (a.usdc.value !== "0" || a.ausdc.value !== "0"),
       // There is no policy route yet, so outside the demo the default preset applies.
       policy: api.fixtures ? Boolean(data.policy && data.policy.preset_id) : Boolean(data.me),
+      activate: data.tier === "T2",
       run: data.jobs.some((j) => j.kind === "run"),
     };
   }
@@ -63,7 +69,9 @@ export function render(ctx) {
         el("span", "step-state", state === "done" ? "Done" : state === "current" ? "Current step" : "Locked"),
       );
       li.append(head);
-      li.append(el("p", "note", s.asks));
+      const disclosure = el("p", "prompt");
+      disclosure.append(el("span", "chip neutral", s.prompt));
+      li.append(disclosure, el("p", "note", s.asks));
       if (state === "current" || (s.id === "run" && state === "done")) {
         li.append(actions[s.id](data));
       } else if (state === "done") {
@@ -86,6 +94,7 @@ export function render(ctx) {
         ? "Policy preset: " + data.policy.preset_id + "."
         : "The default conservative preset applies. Choosing another preset arrives with a later release.";
     }
+    if (id === "activate") return "Agent is active: tier " + data.tier + ". You can lower it or stop it at any time.";
     return "";
   }
 
@@ -272,6 +281,10 @@ export function render(ctx) {
         }),
       );
       return box;
+    },
+    activate(data) {
+      if (!data.tier) return el("p", "status error", "The tier could not be read. Reload to try again.");
+      return activateCard(ctx, data.tier, load);
     },
     run() {
       const box = el("div");

@@ -1,4 +1,4 @@
-# Webapp UI (Stage 0 views)
+# Webapp UI (Stage 0 views, F1c additions)
 
 > Visual language: [`DESIGN.md`](../../DESIGN.md). Behaviour and architecture: [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md) (sections 12, 14). Tickets F1 and F1b (live API).
 
@@ -45,9 +45,43 @@ sequenceDiagram
 - **Chain status** comes from `GET /audit/verify`.
 - **Tier chip** reads `GET /me` in live mode (it carries the owner's tier and stop flag); `GET /tier` is the single-owner global state.
 
+## Activate agent and the UX adoption list (F1c)
+A new owner is at tier T0 and every order is denied `TIER.READ_ONLY`, so the page now has an explicit **Activate agent** control: a step in the Set up stepper and a callout on the dashboard while the tier is T0 or T1. It explains in one sentence what activating means, then runs the step-up flow.
+
+```mermaid
+sequenceDiagram
+  participant P as Page (views/activate.js)
+  participant W as Wallet
+  participant A as API
+  P->>A: POST /auth/step-up {action: tier_raise, params: {tier: T2}}
+  A-->>P: challenge_id, message
+  P->>W: personal_sign(message)
+  P->>A: PUT /tier {schema_version: 1, tier: T2} + X-Step-Up
+  A-->>P: tier state
+  P->>P: refresh tier chip (GET /me), keep the result card
+```
+
+Lowering the tier (`PUT /tier` without a header) and the emergency stop need the session only.
+
+| Item | Where |
+| :--- | :--- |
+| A-1 prompt disclosures | each stepper step shows a "Wallet prompt: ..." chip before the button (`views/onboard.js`) |
+| A-2 plain-language headline | blocked and waiting cards lead with the rule's sentence; rule codes are small mono chips (`views/feed.js`) |
+| A-3 FROZEN state | `applyTopbar` in `gauges.js` turns the masthead red, the chip reads "FROZEN" and the bar says "EMERGENCY STOP ACTIVE"; clears on release |
+| A-4 spend bar | `spendGauge` (BigInt maths) with `role="progressbar"`; the window is a rolling 24 hours, so there is no fixed reset time and the card says so |
+| A-5 gas floor | chip with a "Fund the agent" link to Set up when below the floor |
+| A-6 planner provenance | chips `OpenAI Planner`, `Offline Fallback`, `Scripted Demo` |
+| A-7 approvals card | amount, action, protocol, holding rule, Approve (signature) and Reject |
+| A-8 audit verdict | structured card: "Hash chain intact (N records verified)" or the first broken `seq` |
+| A-9 empty states | each says what to do and links there |
+| A-10 testnet and custody notice | static, first line "Testnet only (Base Sepolia) · Custodial server key · Mainnet reference prices" |
+
+A 429 shows when to try again from `Retry-After` (`retryText`). The dashboard now reads `/portfolio` and `/ips`, which are per owner in multi mode, and falls back to the owner's own balances if they fail.
+
+Tests: `tests/ui/flows.mjs` and `tests/ui/test_ui.py` (`test_activate_agent_sends_step_up_then_tier_raise_and_updates_chip`, `test_frozen_state_appears_on_stop_and_clears_on_release`, `test_spend_bar_maths_and_card`, and others). Previews: `docs/previews/f1c-*.png` (API in `AGENT_WALLET_MODE=multi`, fake chain RPC, throwaway keys).
+
 ### Known gaps in the API (UI is ready, backend is not)
-- `POST /emergency-stop`, `/emergency-stop/release` and `/orders/{id}/approve|reject` still use the single-owner token in `api/app.py`, so in multi mode they answer 503 until the backend wires the session. The page shows the plain message.
-- `GET /portfolio`, `/ips` and `/decisions` are not per owner, so the live dashboard builds its allocation from `GET /agent` and hides spend; the in-browser chain check is hidden outside fixtures mode.
+- Stop, release, approve and reject are per session in multi mode since #104; `GET /portfolio` and `/ips` are per owner too. `GET /decisions` is read through the owner's jobs, and the in-browser chain check stays hidden outside fixtures mode.
 - There is no policy route yet (ticket A4): the Policy step shows the default preset.
 
 ## Files
@@ -57,6 +91,8 @@ sequenceDiagram
 | `style.css` | `DESIGN.md` tokens as CSS custom properties, dark mode, focus ring, reduced motion |
 | `main.js` | Hash router, top bar, shared context (`makeCtx`), `describeError` |
 | `api.js` | The only module that calls the network; `ROUTES` lists every path; `?fixtures=1` switch |
+| `gauges.js` | Pure helpers: spend and gas gauges, retry text, empty-state button, top bar state (FROZEN) |
+| `views/activate.js` | Activate agent (step-up then `PUT /tier`), lower tier, result card |
 | `explain.js` | Rule code (all 25 plus `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, `TIER.POLICY_CHANGED`) and error code to plain language; unit helpers |
 | `wallet/adapter.js`, `injected.js`, `test.js` | Adapter interface, EIP-1193 implementation (EIP-6963 first), `TestWallet` stub |
 | `views/onboard.js`, `dashboard.js`, `feed.js`, `approvals.js` | The views, each with empty, loading and error states |

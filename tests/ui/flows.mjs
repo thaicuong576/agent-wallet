@@ -89,6 +89,8 @@ const onboard = await imp("views/onboard.js");
 const dashboard = await imp("views/dashboard.js");
 const feed = await imp("views/feed.js");
 const approvals = await imp("views/approvals.js");
+const activate = await imp("views/activate.js");
+const gauges = await imp("gauges.js");
 
 const OWNER = "0x1111111111111111111111111111111111111111";
 const AGENT = "0x2222222222222222222222222222222222222222";
@@ -141,7 +143,7 @@ function server(script = {}) {
         agent_address: AGENT,
         mode: "multi",
         chain_id: 84532,
-        tier: "T0",
+        tier: state.tier ?? "T0",
         emergency_stop: state.stopped,
       });
     }
@@ -181,6 +183,42 @@ function server(script = {}) {
         challenge_id: "f".repeat(32),
         message: "agent-wallet asks you to authorise one action.\nAction: " + body.action,
         expires_at: "2026-10-15T12:02:00Z",
+      });
+    }
+    if (key === "PUT /tier") {
+      const raise = { T0: 0, T1: 1, T2: 2 }[body.tier] > { T0: 0, T1: 1, T2: 2 }[state.tier ?? "T0"];
+      if (raise && !(init.headers || {})["X-Step-Up"]) {
+        const p = problem("step-up-required", "Step-up required", 401);
+        return reply(p.status, p.body);
+      }
+      state.tier = body.tier;
+      return reply(200, {
+        schema_version: 1,
+        tier: body.tier,
+        emergency_stop: state.stopped,
+        updated_at: "2026-10-15T12:00:00Z",
+        changed_by: "owner",
+      });
+    }
+    if (key === "GET /portfolio") {
+      return reply(200, {
+        schema_version: 1,
+        as_of: "2026-10-15T12:00:00Z",
+        price_source: "mainnet_reference",
+        positions: [
+          { token: "USDC", location: "wallet", balance: amt("900000000"), price_usd: "1.00", value_usd: "900.00", weight_bps: 9000 },
+          { token: "USDC", location: "aave-v3", balance: amt("100000000"), price_usd: "1.00", value_usd: "100.00", weight_bps: 1000 },
+        ],
+        total_value_usd: "1000.00",
+        spent_24h_usd: state.spent ?? "40.00",
+        tx_count_1h: 0,
+      });
+    }
+    if (key === "GET /ips") {
+      return reply(200, {
+        schema_version: 1,
+        ips_hash: "0x" + "ab".repeat(32),
+        ips: { limits: { per_tx_usd: "100.00", per_day_usd: "200.00" }, approval: { escalate_above_usd: "50.00" } },
       });
     }
     if (key === "POST /emergency-stop") {
@@ -426,6 +464,133 @@ const out = {};
   await tick();
   await click(button(o, "Connect wallet"));
   out.rejected = { text: o.textContent, posts: srv.calls.filter((c) => c.method === "POST").length };
+}
+
+// 8. activate agent: step-up first, then PUT /tier with X-Step-Up; the tier chip follows
+{
+  const { srv, ctx, wallet } = make({ state: { signedIn: true } });
+  await ctx.refreshSession();
+  const d = dashboard.render(ctx);
+  await tick(60);
+  out.t0Dashboard = d.textContent;
+  const before = srv.calls.length;
+  await click(button(d, "Activate agent"));
+  const sent = srv.calls.slice(before).filter((c) => c.url === "/auth/step-up" || c.url === "/tier");
+  const put = sent.find((c) => c.method === "PUT");
+  out.activate = {
+    order: sent.map((c) => c.method + " " + c.url),
+    stepUpBody: sent[0] && sent[0].body,
+    putBody: put && put.body,
+    header: put && put.headers["X-Step-Up"],
+    signedMessage: wallet.signed[wallet.signed.length - 1],
+    tierState: ctx.state.tier,
+    serverTier: srv.state.tier,
+    text: d.textContent,
+  };
+  const chip = document.createElement("span");
+  const parts = { chip, stopBtn: document.createElement("button"), stopMsg: document.createElement("p"), masthead: document.createElement("header") };
+  gauges.applyTopbar(parts, await ctx.api.tier());
+  out.activateChip = chip.textContent;
+  const after = await ctx.refreshSession();
+  out.afterActivateMe = after && after.tier;
+  // activated: the callout is gone, and lowering needs no signature
+  const d2 = dashboard.render(ctx);
+  await tick(60);
+  out.activatedDashboard = d2.textContent;
+  const n = srv.calls.length;
+  await click(button(d2, "Lower to read only"));
+  const low = srv.calls.slice(n).find((c) => c.method === "PUT");
+  out.lower = {
+    body: low && low.body,
+    stepUpHeader: (low && low.headers["X-Step-Up"]) ?? null,
+    stepUpCalls: srv.calls.slice(n).filter((c) => c.url === "/auth/step-up").length,
+    serverTier: srv.state.tier,
+  };
+}
+
+// 9. onboarding shows the Activate step and the prompt disclosures
+{
+  const { ctx } = make({ state: { signedIn: true } });
+  await ctx.refreshSession();
+  const o = onboard.render(ctx);
+  await tick(60);
+  out.onboardActivate = o.textContent;
+}
+
+// 10. FROZEN state appears when the stop is engaged and clears on release
+{
+  const { ctx, api } = make({ state: { signedIn: true, tier: "T2" } });
+  await ctx.refreshSession();
+  const mk = (tag) => document.createElement(tag);
+  const parts = { chip: mk("span"), stopBtn: mk("button"), stopMsg: mk("p"), masthead: mk("header") };
+  gauges.applyTopbar(parts, await api.tier());
+  const calm = { cls: parts.masthead.className, btn: parts.stopBtn.textContent, msg: parts.stopMsg.textContent };
+  await api.stop();
+  gauges.applyTopbar(parts, await api.tier());
+  const frozen = {
+    cls: parts.masthead.className,
+    chip: parts.chip.textContent,
+    btn: parts.stopBtn.textContent,
+    msg: parts.stopMsg.textContent,
+  };
+  await api.release(await ctx.stepUp("release_stop", {}));
+  gauges.applyTopbar(parts, await api.tier());
+  const released = { cls: parts.masthead.className, btn: parts.stopBtn.textContent, msg: parts.stopMsg.textContent };
+  out.freeze = { calm, frozen, released };
+  // the dashboard hides the activate callout while stopped
+}
+
+// 11. spend bar maths, live portfolio and limit
+{
+  out.spendMath = {
+    low: gauges.spendGauge("40.00", "200.00"),
+    warn: gauges.spendGauge("170.00", "200.00"),
+    full: gauges.spendGauge("250.00", "200.00"),
+    bad: gauges.spendGauge("x", "200.00"),
+    zero: gauges.spendGauge("1.00", "0"),
+  };
+  const { srv, ctx } = make({ state: { signedIn: true, tier: "T2" } });
+  await ctx.refreshSession();
+  const d = dashboard.render(ctx);
+  await tick(60);
+  const bar = find(d, (n) => n.attrs.role === "progressbar")[0];
+  out.spendCard = {
+    now: bar && bar.attrs["aria-valuenow"],
+    width: bar && bar.children[0].style.width,
+    text: d.textContent,
+  };
+  out.gas = [gauges.gasGauge("0", "1000"), gauges.gasGauge("2000", "1000"), gauges.gasGauge("500", "1000")];
+}
+
+// 12. 429 shows when to try again
+{
+  out.retry = {
+    seconds: gauges.retryText("30"),
+    minutes: gauges.retryText("300"),
+    date: gauges.retryText("Thu, 15 Oct 2026 12:00:45 GMT", Date.parse("Thu, 15 Oct 2026 12:00:00 GMT")),
+    none: gauges.retryText(null),
+    shown: describeError(
+      Object.assign(new (await imp("api.js")).ApiError(429, "rate-limited", "Too many", "", { retryAfter: "30" }), {}),
+    ),
+  };
+}
+
+// 13. fixtures mode: activating at T0 raises the tier in the demo, with the test wallet
+{
+  const api = createApi({
+    fixtures: true,
+    demo: true,
+    scenario: "t0",
+    fetchImpl: async (u) => {
+      const name = String(u).replace(/^fixtures\//, "").replace(/\.json$/, "");
+      return { ok: true, status: 200, json: async () => JSON.parse(fs.readFileSync(path.join(UI, "fixtures", name + ".json"), "utf8")) };
+    },
+  });
+  const ctx = makeCtx({ api, wallet: new TestWallet(), sleep: async () => {} });
+  await ctx.refreshSession();
+  const t0 = (await api.tier()).tier;
+  await activate.activateAgent(ctx);
+  out.fixturesActivate = { before: t0, after: (await api.tier()).tier };
 }
 
 out.routes = Object.values(ROUTES);

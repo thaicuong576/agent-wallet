@@ -3,6 +3,8 @@ import { formatAmount, formatWei } from "../explain.js";
 import { copyButton } from "./onboard.js";
 import { actionsCard } from "./actions.js";
 import { chainChip } from "./jobs.js";
+import { activateCard, activatedCard, lowerControls } from "./activate.js";
+import { cta, gasGauge, spendGauge } from "../gauges.js";
 
 export function render(ctx) {
   const { el, api } = ctx;
@@ -18,24 +20,32 @@ export function render(ctx) {
     body.replaceChildren(el("p", "note", "Loading balances…"));
     const me = await ctx.refreshSession();
     if (!me) {
-      body.replaceChildren(el("p", "empty", "Connect a wallet to see your agent."));
+      const box = el("div", "empty");
+      box.append(el("p", "", "Connect a wallet to see your agent."), cta(el, "Set up your agent", "#/onboard"));
+      body.replaceChildren(box);
       return;
     }
-    // GET /portfolio and /ips are not per owner yet, so outside the demo only the owner's own
-    // balances (GET /agent) feed the cards: nothing is shown rather than another owner's numbers.
-    const none = Promise.reject(new Error("not per owner"));
-    none.catch(() => {});
+    // In multi mode /portfolio and /ips answer for the signed-in owner. If they fail the
+    // allocation falls back to the owner's own balances and the spend card says it is unavailable.
     const [a, p, i, t] = await Promise.allSettled([
       api.agent(),
-      api.fixtures ? api.portfolio() : none,
-      api.fixtures ? api.ips() : none,
+      api.portfolio(),
+      api.ips(),
       api.tier(),
     ]);
     body.replaceChildren();
     const chain = chainChip(ctx);
+    const tier = t.status === "fulfilled" ? t.value : null;
+    if (tier && !tier.emergency_stop && (tier.tier === "T0" || tier.tier === "T1")) {
+      body.append(activateCard(ctx, tier.tier));
+    } else if (tier && tier.tier === "T2" && ctx.state.justActivated) {
+      body.append(activatedCard(ctx, tier.tier));
+    }
     body.append(identity(a, t, chain.node), balances(a));
-    if (api.fixtures) body.append(allocation(p), spend(p, i));
+    if (p.status === "fulfilled") body.append(allocation(p));
+    else if (api.fixtures) body.append(allocation(p));
     else body.append(walletSplit(a));
+    body.append(spend(p, i));
     body.append(actions);
     chain.check();
   }
@@ -55,12 +65,19 @@ export function render(ctx) {
     if (t.status === "fulfilled") {
       tier.append(
         el("span", "chip", "Tier " + t.value.tier),
-        el("span", "chip " + (t.value.emergency_stop ? "bad" : "ok"), t.value.emergency_stop ? "✕ Emergency stop on" : "✓ Running inside policy"),
+        ...(t.value.emergency_stop
+          ? [el("span", "chip bad", "✕ Emergency stop on")]
+          : t.value.tier === "T2"
+            ? [el("span", "chip ok", "✓ Running inside policy")]
+            : [el("span", "chip bad", "! " + (t.value.tier === "T0" ? "Read only: every order is blocked" : "Propose only: nothing runs"))]),
       );
     } else {
       tier.append(el("span", "status error", "Tier unavailable."));
     }
     card.append(tier, chainNode);
+    if (t.status === "fulfilled" && !t.value.emergency_stop) {
+      card.append(...lowerControls(ctx, t.value.tier));
+    }
     return card;
   }
 
@@ -73,9 +90,12 @@ export function render(ctx) {
     }
     const v = a.value;
     const eth = BigInt(v.eth_wei);
-    const floor = BigInt(v.gas_floor_wei);
     const empty = eth === 0n && v.usdc.value === "0" && v.ausdc.value === "0";
-    if (empty) card.append(el("p", "empty", "No funds yet. Fund the agent."));
+    if (empty) {
+      const e = el("div", "empty");
+      e.append(el("p", "", "No funds yet. Fund the agent."), cta(el, "Fund the agent", "#/onboard"));
+      card.append(e);
+    }
     const grid = el("dl", "stats");
     const add = (k, val, extra) => {
       const d = el("div", "stat");
@@ -83,12 +103,14 @@ export function render(ctx) {
       if (extra) d.append(extra);
       grid.append(d);
     };
-    const low = eth < floor;
-    add(
-      "ETH (gas)",
-      formatWei(v.eth_wei) + " ETH",
+    const gas = gasGauge(v.eth_wei, v.gas_floor_wei);
+    const low = !gas.above;
+    const gasBox = el("span", "gas");
+    gasBox.append(
       el("span", "chip " + (low ? "bad" : "ok"), (low ? "! Below" : "✓ Above") + " gas floor " + formatWei(v.gas_floor_wei) + " ETH"),
     );
+    if (low) gasBox.append(cta(el, "Fund the agent", "#/onboard", "secondary"));
+    add("ETH (gas)", formatWei(v.eth_wei) + " ETH", gasBox);
     add("USDC", formatAmount(v.usdc) + " USDC");
     add("aUSDC (lent on Aave)", formatAmount(v.ausdc) + " aUSDC");
     card.append(grid);
@@ -131,7 +153,7 @@ export function render(ctx) {
       bar.append(seg);
       list.append(el("li", "", name + ": " + pct.toFixed(1) + "%, " + formatAmount({ value: v.toString(), decimals: 6 }) + " USDC"));
     });
-    card.append(bar, list, el("p", "note", "Split by token amount. Spend limits and prices arrive per owner in a later release."));
+    card.append(bar, list, el("p", "note", "Split by token amount, built from this agent's balances because the portfolio could not be read."));
     return card;
   }
 
@@ -168,19 +190,34 @@ export function render(ctx) {
     const card = el("div", "card");
     card.append(el("h2", "", "Today's spend"));
     if (p.status !== "fulfilled" || i.status !== "fulfilled") {
-      card.append(el("p", "status error", "Spend unavailable."));
+      card.append(el("p", "status error", "Spend unavailable. Nothing is shown rather than a guess."));
       return card;
     }
-    const spent = parseFloat(p.value.spent_24h_usd);
     const lim = i.value.ips.limits;
-    const day = parseFloat(lim.per_day_usd);
-    const meter = el("progress");
-    meter.max = day > 0 ? day : 1;
-    meter.value = Math.min(spent, meter.max);
-    meter.setAttribute("aria-label", "Spent in the last 24 hours against the daily limit");
+    const g = spendGauge(p.value.spent_24h_usd, lim.per_day_usd);
+    if (g.level === "unknown") {
+      card.append(el("p", "status error", "Spend unavailable: the limit or the amount could not be read."));
+      return card;
+    }
+    const bar = el("div", "spend-bar " + g.level);
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", "100");
+    bar.setAttribute("aria-valuenow", String(Math.round(g.pct)));
+    bar.setAttribute("aria-label", "Spent in the last 24 hours against the daily limit");
+    const fill = el("span", "spend-fill");
+    fill.style.width = g.pct + "%";
+    bar.append(fill);
+    const word = g.level === "full" ? "Daily limit reached" : g.level === "warn" ? "Close to the daily limit" : "Inside the daily limit";
     card.append(
-      meter,
-      el("p", "", p.value.spent_24h_usd + " USD of " + lim.per_day_usd + " USD daily limit (last 24 hours)."),
+      bar,
+      el("p", "", g.spent + " / " + g.limit + " USD spent in the last 24 hours (" + Math.round(g.pct) + "%). " + g.remaining + " USD left."),
+      el("span", "chip " + (g.level === "ok" ? "ok" : "bad"), (g.level === "ok" ? "✓ " : "! ") + word),
+      el(
+        "p",
+        "note",
+        "Rolling 24-hour window, not a calendar day: each spend counts for 24 hours after it was made, then drops off. There is no fixed reset time.",
+      ),
       el("p", "note", "Per transaction limit: " + lim.per_tx_usd + " USD. Orders above " + i.value.ips.approval.escalate_above_usd + " USD wait for your approval."),
     );
     return card;
