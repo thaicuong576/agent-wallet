@@ -204,11 +204,25 @@ def main() -> int:
     step("activate agent", f"PUT /tier T2 with step-up signature: HTTP {tier.status_code}")
 
     # 2. mint test USDC through the gateway
-    mint = c.job("/agent/mint", {"amount_usdc": args.mint_usdc})
-    step("mint job", summarise(mint))
+    have = int((c.req("GET", "/agent").json().get("usdc") or {}).get("value", "0"))
+    if have >= int(args.mint_usdc) * 10**6:
+        mint = {
+            "status": "skipped",
+            "note": f"agent already holds {have} USDC units (faucet: 1 mint/hour)",
+        }
+        step("mint job", json.dumps(mint, sort_keys=True))
+    else:
+        mint = c.job("/agent/mint", {"amount_usdc": args.mint_usdc})
+        step("mint job", summarise(mint))
     # 3. benign run with the LLM planner (or labelled fallback)
     run = c.job(
-        "/runs", {"note": "Aave USDC supply APY is stable this week; utilization moderate."}
+        "/runs",
+        {
+            "note": (
+                "Aave USDC supply APY is stable this week and utilization is moderate. "
+                "Owner request: put 10 USDC of the idle balance to work in Aave."
+            )
+        },
     )
     step("run job", summarise(run))
     # 4. hostile run
