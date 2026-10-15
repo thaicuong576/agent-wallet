@@ -94,6 +94,8 @@ export function createApi({
     minted: demo,
     preset: demo ? "conservative" : null,
     stopped: false,
+    // `scenario=t0` starts a signed-in demo at tier T0, so the activate control can be shown.
+    tier: demo && scenario !== "t0" ? "T2" : "T0",
     extra: [],
     jobs: [],
     seeded: false,
@@ -230,6 +232,15 @@ export function createApi({
       case "tier": {
         needSession();
         const t = await file("tier");
+        t.tier = fx.tier;
+        t.emergency_stop = fx.stopped;
+        return t;
+      }
+      case "setTier": {
+        needSession();
+        fx.tier = arg;
+        const t = await file("tier");
+        t.tier = fx.tier;
         t.emergency_stop = fx.stopped;
         return t;
       }
@@ -344,6 +355,15 @@ export function createApi({
             tier: m.tier,
             emergency_stop: Boolean(m.emergency_stop),
           })),
+    // Raising the tier needs `stepUp` (X-Step-Up for action tier_raise); lowering does not.
+    setTier: (tier, stepUp) =>
+      call(
+        "setTier",
+        "PUT",
+        ROUTES.tier,
+        { body: { schema_version: 1, tier }, headers: withStepUp(stepUp) },
+        tier,
+      ),
     ips: () => call("ips", "GET", ROUTES.ips),
     decisions: (limit = 50) =>
       call("decisions", "GET", ROUTES.decisions + "?limit=" + encodeURIComponent(limit)),

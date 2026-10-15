@@ -30,6 +30,7 @@ UI_FILES = [
     "main.js",
     "api.js",
     "explain.js",
+    "gauges.js",
     "chain.js",
     "wallet/adapter.js",
     "wallet/injected.js",
@@ -40,6 +41,7 @@ UI_FILES = [
     "views/jobs.js",
     "views/actions.js",
     "views/approvals.js",
+    "views/activate.js",
 ]
 JS_FILES = [f for f in UI_FILES if f.endswith(".js")]
 FIXTURES = sorted(p.name for p in (UI / "fixtures").glob("*.json"))
@@ -374,8 +376,8 @@ def test_stop_is_session_only_and_release_needs_the_step_up_signature() -> None:
 @needs_node
 def test_verify_result_and_pending_approvals_with_step_up() -> None:
     f = flows()
-    assert "Audit chain verified by the server: 3 records" in f["verify"]
-    assert "Planner: OpenAI model" in f["feedText"]
+    assert "Hash chain intact (3 records verified)" in f["verify"]
+    assert "OpenAI Planner" in f["feedText"]
     assert "Approve (needs signature)" in f["approvalsText"] and "Reject" in f["approvalsText"]
     assert f["approve"]["header"].startswith("f" * 32 + ".0x")
     assert "Nothing waiting for you" in f["approve"]["listAfter"]
@@ -397,6 +399,90 @@ def test_real_mode_wallet_rejection_sends_nothing() -> None:
     assert "You declined in your wallet" in r["text"] and r["posts"] == 0
 
 
+@needs_node
+def test_activate_agent_sends_step_up_then_tier_raise_and_updates_chip() -> None:
+    f = flows()
+    assert "Activate your agent" in f["t0Dashboard"]
+    assert "you can stop it at any time" in f["t0Dashboard"]
+    a = f["activate"]
+    assert a["order"] == ["POST /auth/step-up", "PUT /tier"]
+    assert a["stepUpBody"] == {"action": "tier_raise", "params": {"tier": "T2"}}
+    assert a["putBody"] == {"schema_version": 1, "tier": "T2"}
+    assert a["header"].startswith("f" * 32 + ".0x")
+    assert "Action: tier_raise" in a["signedMessage"]
+    assert a["tierState"]["tier"] == "T2" and a["serverTier"] == "T2"
+    assert "Agent activated: tier T2" in a["text"]
+    assert f["activateChip"] == "Tier T2"
+    assert f["afterActivateMe"] == "T2"
+    assert "Activate your agent" not in f["activatedDashboard"]
+
+
+@needs_node
+def test_lowering_the_tier_needs_no_signature() -> None:
+    low = flows()["lower"]
+    assert low["body"] == {"schema_version": 1, "tier": "T0"}
+    assert low["stepUpHeader"] is None and low["stepUpCalls"] == 0
+    assert low["serverTier"] == "T0"
+
+
+@needs_node
+def test_stepper_has_activate_step_and_prompt_disclosures() -> None:
+    text = flows()["onboardActivate"]
+    assert "Activate agent" in text
+    for phrase in (
+        "Wallet prompt: connect and sign a free login message",
+        "Wallet prompt: send test ETH (pays gas)",
+        "No wallet prompt: the server mints test USDC",
+        "Wallet prompt: one free signature to confirm the preset",
+        "Wallet prompt: one free signature to raise the tier",
+    ):
+        assert phrase in text, phrase
+
+
+@needs_node
+def test_frozen_state_appears_on_stop_and_clears_on_release() -> None:
+    fz = flows()["freeze"]
+    assert fz["calm"]["cls"] == "masthead" and fz["calm"]["msg"] == ""
+    assert fz["frozen"]["cls"] == "masthead frozen"
+    assert "FROZEN" in fz["frozen"]["chip"]
+    assert "EMERGENCY STOP ACTIVE" in fz["frozen"]["msg"]
+    assert "All orders blocked" in fz["frozen"]["msg"]
+    assert fz["frozen"]["btn"].startswith("Release stop")
+    assert fz["released"] == {"cls": "masthead", "btn": "Emergency stop", "msg": ""}
+
+
+@needs_node
+def test_spend_bar_maths_and_card() -> None:
+    f = flows()
+    m = f["spendMath"]
+    assert (m["low"]["level"], m["low"]["pct"], m["low"]["spent"], m["low"]["remaining"]) == (
+        "ok", 20, "40.00", "160.00",
+    )  # fmt: skip
+    assert m["warn"]["level"] == "warn" and m["warn"]["pct"] == 85
+    assert m["full"]["level"] == "full" and m["full"]["pct"] == 100
+    assert m["full"]["remaining"] == "0.00"
+    assert m["bad"]["level"] == "unknown" and m["zero"]["level"] == "unknown"
+    assert f["spendCard"]["now"] == "20" and f["spendCard"]["width"] == "20%"
+    assert "40.00 / 200.00 USD spent in the last 24 hours" in f["spendCard"]["text"]
+    assert "Rolling 24-hour window" in f["spendCard"]["text"]
+    assert [g["level"] for g in f["gas"]] == ["low", "ok", "low"]
+
+
+@needs_node
+def test_rate_limited_answer_says_when_to_try_again() -> None:
+    r = flows()["retry"]
+    assert r["seconds"] == "You can try again in 30 seconds."
+    assert r["minutes"] == "You can try again in about 5 minutes."
+    assert r["date"] == "You can try again in 45 seconds."
+    assert r["none"] == "Wait a little and try again."
+    assert r["shown"] == "Too many requests. You can try again in 30 seconds."
+
+
+@needs_node
+def test_fixtures_mode_can_activate_the_agent() -> None:
+    assert flows()["fixturesActivate"] == {"before": "T0", "after": "T2"}
+
+
 def test_every_route_the_js_calls_exists_in_openapi() -> None:
     spec = yaml.safe_load((ROOT / "contracts" / "openapi.yaml").read_text(encoding="utf-8"))
     js = (UI / "api.js").read_text(encoding="utf-8")
@@ -411,7 +497,8 @@ def test_every_route_the_js_calls_exists_in_openapi() -> None:
         ("get", "/jobs"), ("get", "/jobs/{job_id}"), ("get", "/audit/verify"),
         ("post", "/emergency-stop"), ("post", "/emergency-stop/release"),
         ("post", "/orders/{order_id}/approve"), ("post", "/orders/{order_id}/reject"),
-        ("get", "/presets"),
+        ("get", "/presets"), ("put", "/tier"), ("get", "/portfolio"), ("get", "/ips"),
+        ("get", "/decisions"),
     }  # fmt: skip
     for method, path in methods:
         assert method in spec["paths"][path], (method, path)

@@ -3,6 +3,7 @@
 // index.html and is never touched from here.
 import { createApi, ApiError } from "./api.js";
 import { explainError } from "./explain.js";
+import { applyTopbar, retryText } from "./gauges.js";
 import { discoverInjected } from "./wallet/injected.js";
 import { isUserRejection } from "./wallet/adapter.js";
 import { TestWallet } from "./wallet/test.js";
@@ -22,10 +23,11 @@ export function el(tag, cls, text) {
 export function describeError(err) {
   if (isUserRejection(err)) return "You declined in your wallet. Nothing was sent.";
   if (err instanceof ApiError) {
+    if (err.slug === "rate-limited") return "Too many requests. " + retryText(err.retryAfter);
     if (err.slug) return explainError(err.slug);
     if (err.status === 401) return explainError("unauthenticated");
     if (err.status === 409) return explainError("job-in-progress");
-    if (err.status === 429) return explainError("rate-limited");
+    if (err.status === 429) return "Too many requests. " + retryText(err.retryAfter);
     if (err.status === 503) return explainError("custody-unavailable");
     return err.message + (err.detail ? ": " + err.detail : "");
   }
@@ -113,44 +115,41 @@ function boot() {
     modeChip.hidden = false;
   }
 
+  const bar = { chip, stopBtn, stopMsg, masthead: document.getElementById("masthead") };
   async function topbar() {
     const me = await ctx.refreshSession();
     if (!me) {
-      chip.textContent = "Not connected";
-      stopBtn.disabled = true;
-      stopBtn.textContent = "Emergency stop";
+      applyTopbar(bar, null);
       return;
     }
     try {
       ctx.state.tier = await api.tier();
     } catch (e) {
       ctx.state.tier = null;
-      chip.textContent = "Tier unavailable";
-      stopBtn.disabled = false;
+      applyTopbar(bar, "unavailable");
       return;
     }
-    const t = ctx.state.tier;
-    chip.textContent = "Tier " + t.tier + (t.emergency_stop ? " · stopped" : "");
-    stopBtn.disabled = false;
-    stopBtn.textContent = t.emergency_stop ? "Release stop (needs signature)" : "Emergency stop";
-    stopBtn.dataset.stopped = t.emergency_stop ? "1" : "0";
+    applyTopbar(bar, ctx.state.tier);
   }
 
   stopBtn.addEventListener("click", async () => {
     stopBtn.disabled = true;
     stopMsg.textContent = "Working…";
+    let after = "";
     try {
       if (stopBtn.dataset.stopped === "1") {
         await api.release(await ctx.stepUp("release_stop", {}));
-        stopMsg.textContent = "Stop released.";
+        after = "Stop released.";
       } else {
         await api.stop();
-        stopMsg.textContent = "Stopped. Every order is denied until you release.";
       }
     } catch (e) {
-      stopMsg.textContent = describeError(e);
+      after = describeError(e);
     }
     await topbar();
+    // While frozen the top bar keeps its own FROZEN text; otherwise show the outcome.
+    if (after && stopMsg.dataset.frozen !== "1") stopMsg.textContent = after;
+    else if (after) stopMsg.textContent = after + " " + stopMsg.textContent;
     ctx.changed();
   });
 

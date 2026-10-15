@@ -1,6 +1,8 @@
 // Orders waiting for the owner. Approve needs a fresh signature, reject does not (design 6.2).
 import { recordCard } from "./feed.js";
 import { loadRecords } from "./jobs.js";
+import { emptyState } from "../gauges.js";
+import { explainRecord, formatAmount } from "../explain.js";
 
 // Orders decided in this tab. The audit log is append-only, so the list also drops any order
 // that has a later, non-pending record.
@@ -15,6 +17,25 @@ export function pendingOf(records) {
       !decided.has(r.order_id) &&
       !(r.approval && r.approval.status && r.approval.status !== "pending"),
   );
+}
+
+// The parameters of a waiting order as a list: amount, protocol, and which rule holds it (A-7).
+function facts(el, r) {
+  const x = explainRecord(r);
+  const o = r.order || {};
+  const dl = el("dl", "facts");
+  const add = (k, v) => {
+    if (v === null || v === undefined || v === "") return;
+    const d = el("div", "fact");
+    d.append(el("dt", "", k), el("dd", "", v));
+    dl.append(d);
+  };
+  const amt = formatAmount(o.amount, 6);
+  add("Amount", amt ? amt + " " + (o.token || "") : null);
+  add("Action", o.function);
+  add("Protocol", o.protocol);
+  add("Held by", x.rules.length ? x.rules.map((q) => q.code).join(", ") : null);
+  return dl;
 }
 
 export function render(ctx) {
@@ -56,18 +77,28 @@ export function render(ctx) {
     list.replaceChildren(el("li", "decision placeholder", "Loading…"));
     const me = await ctx.refreshSession();
     if (!me) {
-      list.replaceChildren(el("li", "empty", "Connect a wallet to see what is waiting."));
+      list.replaceChildren(
+        emptyState(el, "Connect a wallet to see what is waiting.", null, { label: "Set up your agent", hash: "#/onboard" }),
+      );
       return;
     }
     try {
       const pending = pendingOf(await loadRecords(ctx, 200));
       list.replaceChildren();
       if (!pending.length) {
-        list.append(el("li", "empty", "Nothing waiting for you."));
+        list.append(
+          emptyState(
+            el,
+            "Nothing waiting for you.",
+            "Orders above your approval threshold stop here until you approve or reject them.",
+            { label: "Run the agent", hash: "#/dashboard" },
+          ),
+        );
         return;
       }
       for (const r of pending.reverse()) {
         const li = recordCard(ctx, r);
+        li.append(facts(el, r));
         const row = el("div", "row");
         const approve = el("button", "primary", "Approve (needs signature)");
         const reject = el("button", "secondary", "Reject");
