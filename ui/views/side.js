@@ -1,7 +1,7 @@
 // The right column of Chat: wallet value, today's limit, gas, audit log line. Each card reads its
 // own routes and says "unavailable" rather than showing a guess.
 import { formatAmount, formatWei } from "../explain.js";
-import { gasGauge, spendGauge } from "../gauges.js";
+import { gasGauge, relTime, spendGauge } from "../gauges.js";
 import { topUpButton } from "./topup.js";
 
 export function sidePanel(ctx) {
@@ -135,4 +135,115 @@ export function sidePanel(ctx) {
   });
   load();
   return { node, load };
+}
+
+// ---- history rail (contract C3) ----------------------------------------------------------
+const THREAD_STATUS = { running: "Running", done: "Done", blocked: "Blocked", pending: "Waiting" };
+const GROUPS = ["Today", "Yesterday", "Earlier"];
+
+// Which group a thread falls in, by the owner's local calendar day.
+export function threadGroup(iso, now = new Date()) {
+  const t = new Date(String(iso || ""));
+  if (Number.isNaN(t.getTime())) return "Earlier";
+  const day = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const age = Math.round((day(now) - day(t)) / 86400000);
+  return age <= 0 ? "Today" : age === 1 ? "Yesterday" : "Earlier";
+}
+
+// The left rail of Chat: "+ New chat" and the conversations grouped Today, Yesterday, Earlier.
+// Under 900 px the stylesheet turns it into a drawer that `open()` and `close()` show and hide.
+// `onSelect(id)` gets the thread id, or null for the implicit default conversation.
+export function historyRail(ctx, { onSelect, onNew }) {
+  const { el } = ctx;
+  const node = el("nav", "rail");
+  node.setAttribute("aria-label", "Conversations");
+  node.id = "chat-history";
+  const top = el("div", "rail-top");
+  const add = el("button", "primary rail-new", "+ New chat");
+  add.type = "button";
+  const shut = el("button", "rail-close", "Close");
+  shut.type = "button";
+  top.append(add, shut);
+  const list = el("div", "rail-list");
+  node.append(top, list);
+  const backdrop = el("div", "rail-backdrop");
+  backdrop.hidden = true;
+
+  let items = [];
+  let active = null;
+  let busy = false;
+  let failed = false;
+
+  function paint() {
+    list.replaceChildren();
+    if (failed && !items.length) {
+      list.append(el("p", "note", "Conversations are not available right now."));
+    }
+    const rows = items.map((t) => ({ id: t.id, title: t.title, at: t.last_message_at, status: t.status }));
+    // The implicit default conversation is reachable again once another one is open.
+    if (active !== null) rows.push({ id: null, title: "Earlier chat", at: "", status: "" });
+    for (const group of GROUPS) {
+      const inGroup = rows.filter((r) => (r.at ? threadGroup(r.at) : "Earlier") === group);
+      if (!inGroup.length) continue;
+      list.append(el("div", "rail-group", group));
+      for (const r of inGroup) {
+        const on = r.id === active;
+        const row = el("button", "rail-row" + (on ? " active" : ""));
+        row.type = "button";
+        row.append(el("span", "rail-title", r.title || "New chat"));
+        const word = Object.prototype.hasOwnProperty.call(THREAD_STATUS, r.status) ? THREAD_STATUS[r.status] : "";
+        const when = relTime(r.at);
+        const line = [word, when].filter(Boolean).join(" · ");
+        if (line) row.append(el("span", "rail-meta " + (r.status === "blocked" ? "bad" : ""), line));
+        if (on) row.setAttribute("aria-current", "true");
+        if (busy && !on) row.disabled = true;
+        row.addEventListener("click", () => {
+          if (busy || on) return;
+          close();
+          onSelect(r.id);
+        });
+        list.append(row);
+      }
+    }
+    add.disabled = busy;
+  }
+
+  function open() {
+    node.className = "rail open";
+    backdrop.hidden = false;
+  }
+  function close() {
+    node.className = "rail";
+    backdrop.hidden = true;
+  }
+  add.addEventListener("click", () => {
+    if (busy) return;
+    close();
+    onNew();
+  });
+  shut.addEventListener("click", close);
+  backdrop.addEventListener("click", close);
+
+  paint();
+  return {
+    node,
+    backdrop,
+    open,
+    close,
+    isOpen: () => node.className === "rail open",
+    setThreads(next, ok = true) {
+      items = Array.isArray(next) ? next : [];
+      failed = !ok;
+      paint();
+    },
+    setActive(id) {
+      active = id;
+      paint();
+    },
+    setBusy(b) {
+      busy = Boolean(b);
+      paint();
+    },
+    title: (id) => (items.find((t) => t.id === id) || {}).title || "",
+  };
 }

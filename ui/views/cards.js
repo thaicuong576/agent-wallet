@@ -81,9 +81,118 @@ function addRuleChips(el, side, codes) {
   for (const code of codes) side.append(el("span", "chip code", code));
 }
 
+// ---- live job: phase strip and the cards around it ---------------------------------------
+// `phase` comes from GET /jobs/{id} and each agent message (contract C1). Unknown values are
+// tolerated: they show a plain "Working" line and no chips.
+export const PHASE_CHIPS = [
+  { phase: "rules_check", label: "Rules checked" },
+  { phase: "sent", label: "Sent" },
+  { phase: "confirming", label: "Confirming" },
+  { phase: "done", label: "Done" },
+];
+const PHASE_WORDS = {
+  queued: { title: "Getting ready", sub: "Waiting to start" },
+  rules_check: { title: "Checking your rules", sub: "Running · nothing has been sent yet" },
+  sent: { title: "Sent to Base Sepolia", sub: "Running · waiting for the network" },
+  confirming: { title: "Confirming on Base Sepolia", sub: "Running · waiting for the receipt" },
+  done: { title: "Done", sub: "Finished" },
+};
+export const ACTIVE_PHASES = new Set(["queued", "rules_check", "sent", "confirming"]);
+
+// Chips Rules checked, Sent, Confirming, Done: green once passed, gold for the current one.
+export function phaseStrip(el, phase) {
+  const at = PHASE_CHIPS.findIndex((c) => c.phase === phase);
+  const strip = el("div", "phase-strip");
+  strip.setAttribute("role", "list");
+  strip.setAttribute("aria-label", "Progress of this order");
+  PHASE_CHIPS.forEach((c, i) => {
+    const state = phase === "done" || i < at ? "passed" : i === at ? "current" : "ahead";
+    const chip = el("span", "phase-chip " + state, (state === "passed" ? "✓ " : "") + c.label);
+    chip.setAttribute("role", "listitem");
+    if (state === "current") chip.setAttribute("aria-current", "step");
+    strip.append(chip);
+  });
+  return strip;
+}
+
+// The live card of a running job. `limit` is an optional node (the limit line).
+export function runningCard(ctx, phase, limit) {
+  const { el } = ctx;
+  const known = Object.prototype.hasOwnProperty.call(PHASE_WORDS, phase);
+  const words = known ? PHASE_WORDS[phase] : { title: "Working", sub: "" };
+  const li = el("li", "step-card running");
+  const icon = el("span", "step-icon", "…");
+  icon.setAttribute("aria-hidden", "true");
+  const body = el("div", "step-body");
+  body.append(el("p", "step-title", words.title));
+  if (words.sub) body.append(el("p", "step-sub", words.sub));
+  if (known && phase !== "queued") body.append(phaseStrip(el, phase));
+  if (limit) body.append(limit);
+  li.append(icon, body);
+  li.setAttribute("aria-label", "Agent progress: " + words.title);
+  return li;
+}
+
+// A job that failed after the order was sent: the outcome is not known, so say so.
+export function uncertainCard(ctx) {
+  const { el } = ctx;
+  const li = el("li", "step-card uncertain");
+  const icon = el("span", "step-icon", "!");
+  icon.setAttribute("aria-hidden", "true");
+  const body = el("div", "step-body");
+  body.append(
+    el("p", "step-title", "Still confirming"),
+    el("p", "step-sub", "It may still land. Check Activity before trying again."),
+  );
+  const link = el("a", "", "Open Activity");
+  link.setAttribute("href", "#/activity");
+  const side = el("div", "step-side");
+  side.append(link);
+  li.append(icon, body, side);
+  return li;
+}
+
+// ---- limit line --------------------------------------------------------------------------
+const money = (s) => (typeof s === "string" && /^\d+(\.\d+)?$/.test(s) ? "$" + s : null);
+
+// USD value of a USDC step amount, two decimals; null for any other token.
+function orderUsd(step) {
+  const a = step && step.amount;
+  if (!a || step.token !== "USDC" || !/^\d+$/.test(String(a.value)) || !Number.isInteger(a.decimals)) {
+    return null;
+  }
+  const cents = (BigInt(a.value) * 100n) / 10n ** BigInt(a.decimals);
+  return (cents / 100n).toString() + "." + String(cents % 100n).padStart(2, "0");
+}
+
+// "This order $X, per-order limit $Y, today $A of $B" from GET /limits (strings, two decimals).
+// Parts that are not known are left out; null when nothing is known.
+export function limitLine(step, limits) {
+  if (!limits) return null;
+  const parts = [];
+  const order = orderUsd(step);
+  if (order) parts.push("This order $" + order);
+  const per = money(limits.per_order_usd);
+  if (per) parts.push((parts.length ? "per-order" : "Per-order") + " limit " + per);
+  const used = money(limits.used_today_usd);
+  const day = money(limits.per_day_usd);
+  if (used && day) parts.push("today " + used + " of " + day);
+  return parts.length ? parts.join(", ") : null;
+}
+
+const PER_ORDER_CODE = "LIMIT.PER_TX";
+const TRY_TEXT = {
+  supply: (cap) => "Put " + cap + " USDC to work in Aave",
+  withdraw: (cap) => "Pull " + cap + " USDC back out",
+};
+const SKIP_WORDS = { "owner-cancelled": "You stopped the run, so this step was not sent." };
+
 // One step of an agent message. `step` is {order_id, function, token, amount, outcome, reason,
-// rule_codes, tx_hash, explanation} from GET /chat.
-export function stepCard(ctx, step) {
+// rule_codes, tx_hash, explanation} from GET /chat. `opts` is optional:
+//   limits: the GET /limits body, for the limit line on pending and blocked steps;
+//   onTry(text): put text in the composer (never sends); onAsk(text): send that question.
+// The two callbacks are given only for the newest agent message, so old cards stay quiet.
+export function stepCard(ctx, step, opts = {}) {
   const { el } = ctx;
   const info = KINDS[step.outcome] || KINDS.no_action;
   const { li, body, side } = shell(el, info);
@@ -95,6 +204,34 @@ export function stepCard(ctx, step) {
     for (const code of codes) body.append(el("p", "step-sub", explainRule(code, {}).sentence));
   } else if (info.kind === "done") {
     body.append(el("p", "step-sub", "Inside every limit of your rules"));
+  } else if (info.kind === "skipped" && typeof step.reason === "string") {
+    const key = Object.keys(SKIP_WORDS).find((k) => step.reason.endsWith(k));
+    if (key) body.append(el("p", "step-sub", SKIP_WORDS[key]));
+  }
+  if (info.kind === "blocked" || info.kind === "pending") {
+    const line = limitLine(step, opts.limits);
+    if (line) body.append(el("p", "limit-line", line));
+  }
+  if (info.kind === "blocked" && (opts.onTry || opts.onAsk)) {
+    const actions = el("div", "step-actions");
+    const per = opts.limits && money(opts.limits.per_order_usd);
+    if (opts.onTry && codes.includes(PER_ORDER_CODE) && per) {
+      const cap = per.slice(1).replace(/\.00$/, "");
+      const make = Object.prototype.hasOwnProperty.call(TRY_TEXT, step.function)
+        ? TRY_TEXT[step.function]
+        : (c) => "Try " + c + " USDC";
+      const chip = el("button", "prompt-chip", "Try " + cap + " USDC");
+      chip.type = "button";
+      chip.addEventListener("click", () => opts.onTry(make(cap)));
+      actions.append(chip);
+    }
+    if (opts.onAsk) {
+      const chip = el("button", "prompt-chip", "Why is this blocked?");
+      chip.type = "button";
+      chip.addEventListener("click", () => opts.onAsk("Why is this blocked?"));
+      actions.append(chip);
+    }
+    if (actions.children.length) body.append(actions);
   }
   addRuleChips(el, side, codes);
   const link = txLink(el, step.tx_hash);

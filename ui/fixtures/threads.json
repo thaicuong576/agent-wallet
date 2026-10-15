@@ -1,0 +1,218 @@
+{
+  "items": [
+    {
+      "id": "t1",
+      "title": "Put 10 USDC to work",
+      "minutes_ago": 1,
+      "status": "running"
+    },
+    {
+      "id": "t2",
+      "title": "What is my balance?",
+      "minutes_ago": 130,
+      "status": "done"
+    },
+    {
+      "id": "t3",
+      "title": "Withdraw 5 USDC",
+      "minutes_ago": 1600,
+      "status": "done"
+    },
+    {
+      "id": "t4",
+      "title": "Move 5000 USDC out",
+      "minutes_ago": 1700,
+      "status": "blocked"
+    },
+    {
+      "id": "t5",
+      "title": "Supply 150 USDC to Aave",
+      "minutes_ago": 4200,
+      "status": "pending"
+    }
+  ],
+  "messages": [
+    {
+      "id": "t1m1u",
+      "role": "user",
+      "text": "Put 10 USDC to work in Aave",
+      "job_id": null,
+      "created_at": "",
+      "steps": [],
+      "thread_id": "t1"
+    },
+    {
+      "id": "t1m1a",
+      "role": "agent",
+      "text": "I approved 10 USDC for the Aave pool and supplied 10 USDC to Aave.",
+      "job_id": null,
+      "created_at": "",
+      "steps": [
+        {
+          "order_id": null,
+          "function": "approve",
+          "token": "USDC",
+          "amount": {
+            "value": "10000000",
+            "decimals": 6
+          },
+          "outcome": "executed",
+          "reason": null,
+          "rule_codes": [],
+          "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "explanation": "Approved 10 USDC for the Aave pool."
+        },
+        {
+          "order_id": null,
+          "function": "supply",
+          "token": "USDC",
+          "amount": {
+            "value": "10000000",
+            "decimals": 6
+          },
+          "outcome": "executed",
+          "reason": null,
+          "rule_codes": [],
+          "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "explanation": "Supplied 10 USDC to Aave."
+        }
+      ],
+      "thread_id": "t1"
+    },
+    {
+      "id": "t2m1u",
+      "role": "user",
+      "text": "What is my balance?",
+      "job_id": null,
+      "created_at": "",
+      "steps": [],
+      "thread_id": "t2"
+    },
+    {
+      "id": "t2m1a",
+      "role": "agent",
+      "text": "No transaction was made.\n\nAgent says: Wallet: 90 USDC idle, 10 USDC in Aave.",
+      "job_id": null,
+      "created_at": "",
+      "steps": [],
+      "thread_id": "t2"
+    },
+    {
+      "id": "t3m1u",
+      "role": "user",
+      "text": "Withdraw 5 USDC",
+      "job_id": null,
+      "created_at": "",
+      "steps": [],
+      "thread_id": "t3"
+    },
+    {
+      "id": "t3m1a",
+      "role": "agent",
+      "text": "I withdrew 5 USDC from Aave.",
+      "job_id": null,
+      "created_at": "",
+      "steps": [
+        {
+          "order_id": null,
+          "function": "withdraw",
+          "token": "USDC",
+          "amount": {
+            "value": "5000000",
+            "decimals": 6
+          },
+          "outcome": "executed",
+          "reason": null,
+          "rule_codes": [],
+          "tx_hash": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "explanation": "Withdrew 5 USDC from Aave."
+        }
+      ],
+      "thread_id": "t3"
+    },
+    {
+      "id": "t4m1u",
+      "role": "user",
+      "text": "Move 5000 USDC out",
+      "job_id": null,
+      "created_at": "",
+      "steps": [],
+      "thread_id": "t4"
+    },
+    {
+      "id": "t4m1a",
+      "role": "agent",
+      "text": "I did not act: this order is larger than the most you allow for one transaction.",
+      "job_id": null,
+      "created_at": "",
+      "steps": [
+        {
+          "order_id": null,
+          "function": "supply",
+          "token": "USDC",
+          "amount": {
+            "value": "5000000000",
+            "decimals": 6
+          },
+          "outcome": "denied",
+          "reason": "Order of 5000 USD exceeds per-tx limit of 100 USD.",
+          "rule_codes": [
+            "LIMIT.PER_TX"
+          ],
+          "tx_hash": null,
+          "explanation": "The agent could not supply 5000 USDC to Aave: this order is larger than the most you allow for one transaction. Nothing was sent."
+        },
+        {
+          "order_id": null,
+          "function": "supply",
+          "token": "USDC",
+          "amount": {
+            "value": "5000000000",
+            "decimals": 6
+          },
+          "outcome": "skipped",
+          "reason": "skipped supply (5000 USDC): blocked",
+          "rule_codes": [],
+          "tx_hash": null,
+          "explanation": "Not attempted: the previous step was blocked."
+        }
+      ],
+      "thread_id": "t4"
+    },
+    {
+      "id": "t5m1u",
+      "role": "user",
+      "text": "Supply 150 USDC to Aave",
+      "job_id": null,
+      "created_at": "",
+      "steps": [],
+      "thread_id": "t5"
+    },
+    {
+      "id": "t5m1a",
+      "role": "agent",
+      "text": "To supply 150 USDC to Aave I need your approval: it is waiting in Approvals.",
+      "job_id": null,
+      "created_at": "",
+      "steps": [
+        {
+          "order_id": "00000000-0000-4000-8000-000000000150",
+          "function": "supply",
+          "token": "USDC",
+          "amount": {
+            "value": "150000000",
+            "decimals": 6
+          },
+          "outcome": "pending_approval",
+          "reason": null,
+          "rule_codes": [
+            "TIER.APPROVAL_REQUIRED"
+          ],
+          "tx_hash": null,
+          "explanation": "Waiting for your approval in Approvals before the agent can supply 150 USDC to Aave."
+        }
+      ],
+      "thread_id": "t5"
+    }
+  ]
+}

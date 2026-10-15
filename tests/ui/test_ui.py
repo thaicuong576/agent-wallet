@@ -60,6 +60,11 @@ DESIGN_ROUTES = {
     "/emergency-stop/release",
     "/orders/{order_id}/approve",
     "/orders/{order_id}/reject",
+    # Webapp v2 (docs/design/webapp/v2-contract.md C1 to C5)
+    "/chat/threads",
+    "/chat/suggestions",
+    "/limits",
+    "/jobs/{job_id}/cancel",
 }
 # Links that open in a new tab or are handed to the wallet; the page never fetches them.
 ALLOWED_URLS = {
@@ -719,11 +724,8 @@ def test_chat_send_with_enter_shows_typing_then_step_cards() -> None:
     assert f["postsAfterShiftEnter"] == 0  # Shift+Enter is a newline
     s = f["send"]
     assert s["body"] == {"message": "Put 10 USDC to work in Aave"} and s["csrf"] == "1"
-    assert s["typing"] == [
-        "Agent is getting ready…",
-        "Agent is getting ready…",
-        "Agent is thinking…",
-    ]
+    # The live step card replaces the old typing line; a phase the page does not know is "Working".
+    assert s["live"] == ["…Getting readyWaiting to start"] * 2 + ["…Working"]
     assert s["typingHiddenAfter"] is True and s["composerCleared"] is True
     assert s["sleeps"] == [2000, 3000]  # the poll cadence of the other jobs
     assert s["bubbles"] == ["bubble user", "bubble agent"]
@@ -790,3 +792,79 @@ def test_chat_hostile_strings_stay_text_and_fixtures_flow_works() -> None:
 
 
 TX_CHAT = "0x" + "cd" * 32
+
+
+# ---- webapp v2: chat wired to phases, cancel, threads, limits and suggestions (F1, F2) ------
+
+
+@needs_node
+def test_chat_phase_strip_and_stop_button() -> None:
+    p = chat_flows()["phases"]
+    titles = [x["title"] for x in p["seen"]]
+    assert titles == [
+        "Getting ready",
+        "Getting ready",
+        "Checking your rules",
+        "Sent to Base Sepolia",
+        "Confirming on Base Sepolia",
+    ]
+    assert all(x["stop"] for x in p["seen"])  # Send is Stop while the job is queued or running
+    assert p["seen"][2]["chips"][0].startswith("current:")
+    assert [c.split(":")[0] for c in p["seen"][4]["chips"]] == [
+        "passed",
+        "passed",
+        "current",
+        "ahead",
+    ]
+    assert p["cancelPosts"] == 1 and p["csrf"] == "1"
+    assert p["sendLabelAfter"] == ["Send"]  # back to Send once the job ended
+    assert p["skipped"] == 1 and p["skipText"] is True
+
+
+@needs_node
+def test_chat_stop_too_late_says_the_order_is_sent() -> None:
+    assert "Too late to stop: this order is already sent." in chat_flows()["tooLate"]
+
+
+@needs_node
+def test_chat_limit_line_and_quick_fixes_never_send_on_their_own() -> None:
+    q = chat_flows()["quick"]
+    assert q["limitLine"] == [
+        "This order $5000.00, per-order limit $50.00, today $10.00 of $1000.00"
+    ]
+    assert q["chips"] == ["Try 50 USDCWhy is this blocked?"]
+    assert q["limitsCalls"] == 1  # read once per render, not once per card
+    assert q["composer"] == "Put 50 USDC to work in Aave" and q["postsAfterTry"] == 0
+    assert q["asked"] == {"message": "Why is this blocked?"}
+    assert q["composerAfter"] == q["composer"]  # the question did not touch the composer
+    assert q["unknownPhase"][-1].endswith("Working")
+
+
+@needs_node
+def test_chat_history_rail_threads_and_suggestions() -> None:
+    r = chat_flows()["rail"]
+    assert r["groups"] == ["Today", "Earlier"]
+    assert r["rows"][0].startswith("Put 10 USDC to workRunning")
+    assert r["rows"][1].startswith("Withdraw 5 USDCBlocked")
+    assert r["chips"] == ["What did you do today?", "Supply 10 USDC to Aave"]
+    assert r["loaded"] == 1 and "Blocked thread reply." in r["text"][1]
+    assert r["active"] == [r["rows"][1]]
+    assert r["newPosts"] == 1 and r["sendBody"] == {"message": "hello", "thread_id": "tnew"}
+    assert chat_flows()["fallback"] == [
+        "What is my balance?",
+        "Put 10 USDC to work in Aave",
+        "Pull 5 USDC back out",
+    ]
+
+
+@needs_node
+def test_chat_failed_after_sent_says_it_may_still_land() -> None:
+    u = chat_flows()["uncertain"]
+    assert u["text"] is True and u["link"] == ["#/activity"]
+
+
+def test_chat_ui_has_no_new_storage_or_external_urls() -> None:
+    for name in ("views/chat.js", "views/cards.js", "views/side.js"):
+        text = (UI / name).read_text(encoding="utf-8")
+        assert "localStorage" not in text and "sessionStorage" not in text, name
+        assert not re.findall(r"https?://(?!sepolia\.basescan\.org)", text), name
