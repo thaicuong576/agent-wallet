@@ -110,6 +110,9 @@ class WalletService:
         self._clock = clock
         self._chain_id = chain_id
 
+    def now(self) -> datetime:
+        return self._clock()
+
     @staticmethod
     def topups(tenant: Tenant) -> TopupStore:
         return tenant.stores.topups

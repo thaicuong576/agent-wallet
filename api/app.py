@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api import chat as webapp_chat
 from api import jobs as webapp_jobs
+from api import limits as webapp_limits
 from api import wallet as webapp_wallet
 from api.auth import (
     Session,
@@ -376,6 +377,7 @@ def create_app(
     app.include_router(webapp_wallet.router)
     app.include_router(webapp_jobs.router)
     app.include_router(webapp_chat.router)
+    app.include_router(webapp_limits.router)
 
     def _single_scope() -> _Scope:
         return _Scope(tier_view, owner_controls, gateway, audit_sink, active_ips, active_ips_hash)

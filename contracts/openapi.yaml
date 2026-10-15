@@ -596,6 +596,53 @@ paths:
         "401": { $ref: "#/components/responses/Problem" }
         "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
+  /chat/suggestions:
+    get:
+      tags: [chat]
+      operationId: chatSuggestions
+      summary: Suggested prompts chosen by code from the owner's state (no model call).
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200":
+          description: Suggestions.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [text, kind]
+                      properties:
+                        text: { type: string }
+                        kind: { type: string, enum: [question, action] }
+        "401": { $ref: "#/components/responses/Problem" }
+  /limits:
+    get:
+      tags: [state]
+      operationId: getLimits
+      summary: The owner's active limits, today's spend and the stop flag. Read-only.
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200":
+          description: Limits.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [per_order_usd, per_day_usd, used_today_usd, approval_threshold_usd, protocols, emergency_stop, as_of]
+                properties:
+                  per_order_usd: { type: string }
+                  per_day_usd: { type: string }
+                  used_today_usd: { type: string }
+                  approval_threshold_usd: { type: string }
+                  protocols: { type: array, items: { type: string } }
+                  emergency_stop: { type: string, enum: [ready, stopped] }
+                  as_of: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Problem" }
   /audit/verify:
     get:
       tags: [audit]
