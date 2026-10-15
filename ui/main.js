@@ -12,6 +12,8 @@ import * as setup from "./views/setup.js";
 import * as portfolio from "./views/portfolio.js";
 import * as activity from "./views/activity.js";
 import * as rules from "./views/rules.js";
+import { renderAccountControl } from "./views/account.js";
+import { confirmDialog } from "./views/confirm.js";
 
 export function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -75,6 +77,24 @@ export function makeCtx({ api, wallet, sleep }) {
       state.tier = null;
       ctx.changed();
     },
+    // Log out: end the server session, drop every piece of client state and show the connect
+    // screen. Until a new sign-in no protected route is called again (state.loggedOut).
+    async logout() {
+      try {
+        await api.logout();
+      } catch (e) {
+        // The cookie may already be gone; the client is signed out either way.
+      }
+      state.me = null;
+      state.tier = null;
+      state.loggedOut = true;
+      ctx.go("#/chat");
+      ctx.changed();
+    },
+    // A fresh sign-in succeeded: protected routes may be called again.
+    sessionStarted() {
+      state.loggedOut = false;
+    },
     // Fresh signature for one named action (design 6.2). Returns the X-Step-Up header value.
     async stepUp(action, params) {
       if (!wallet || !state.me) throw new Error("Connect your wallet first.");
@@ -83,6 +103,10 @@ export function makeCtx({ api, wallet, sleep }) {
       return ch.challenge_id + "." + sig;
     },
     async refreshSession() {
+      if (state.loggedOut) {
+        state.me = null;
+        return null;
+      }
       try {
         state.me = await api.me();
       } catch (e) {
@@ -127,6 +151,7 @@ function boot() {
     modeChip.hidden = false;
   }
 
+  const accountSlot = document.getElementById("account-slot");
   const bar = {
     pill: document.getElementById("status-pill"),
     addrChip: document.getElementById("addr-chip"),
@@ -135,8 +160,13 @@ function boot() {
     masthead: document.getElementById("masthead"),
   };
   let current = "";
+  function mountAccount(me) {
+    if (!accountSlot) return;
+    accountSlot.replaceChildren(...(me ? [renderAccountControl(ctx)] : []));
+  }
   async function topbar() {
     const me = await ctx.refreshSession();
+    mountAccount(me);
     if (!me) {
       applyTopbar(bar, null, null);
       refreshRoute();
@@ -162,6 +192,16 @@ function boot() {
   }
 
   stopBtn.addEventListener("click", async () => {
+    // Engaging the stop asks first; resuming goes straight to its signature.
+    if (stopBtn.dataset.stopped !== "1") {
+      const ok = await confirmDialog(ctx, {
+        title: "Stop the agent now?",
+        body: "It will not move any funds until you resume. Orders already confirmed on-chain are not undone. Resuming needs one signature from your wallet.",
+        cancelLabel: "Keep running",
+        confirmLabel: "Stop agent",
+      });
+      if (!ok) return;
+    }
     stopBtn.disabled = true;
     toast("Working…");
     let after = "";

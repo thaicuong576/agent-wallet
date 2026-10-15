@@ -123,6 +123,7 @@ export function render(ctx) {
         const n = await api.nonce(address);
         const sig = await ctx.wallet.signMessage(address, n.message);
         await api.verify(address, n.nonce, sig);
+        ctx.sessionStarted();
       }),
     );
     return card;

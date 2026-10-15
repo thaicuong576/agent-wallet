@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 ## Shell
-Header (64 px, wraps to two rows below 900 px): logo mark and name, tabs **Chat · Portfolio · Activity · Rules**, then the network chip "Base Sepolia testnet", the owner address chip, the status pill and **Emergency stop**. There is **no warning banner** anywhere. Testnet and custody are stated three times, all static markup:
+Header (64 px, wraps to two rows below 900 px): logo mark and name, tabs **Chat · Portfolio · Activity · Rules**, then the network chip "Base Sepolia testnet", the owner address chip, the status pill, **Emergency stop** and **Log out** (`views/account.js`, `renderAccountControl()`; it calls `POST /auth/logout`, clears the client state and shows the connect screen, and no protected route is called again until the next sign-in). The Setup header keeps the address chip and Log out. There is **no warning banner** anywhere. Testnet and custody are stated three times, all static markup:
 
 | Where | Text |
 | :--- | :--- |
@@ -28,7 +28,7 @@ Header (64 px, wraps to two rows below 900 px): logo mark and name, tabs **Chat 
 | Footer, one grey line | "Testnet only. The server holds this agent's key. Not financial advice." |
 | Setup (first run) | "This is a testnet demo: the server holds the agent's key and no real funds are involved." |
 
-Status pill: "Agent active" (green, tier T2), "Read only" (amber, T0), "Propose only" (amber, T1), "Stopped" (red). **Frozen is unmistakable without a strip:** the pill turns solid red, the header gets a red rule and tint, the button becomes "Resume (needs signature)", and Chat, Portfolio, Activity and Rules show a red frozen card; the composer is disabled. Engaging the stop needs the session only; resuming asks for a fresh signature.
+Status pill: "Agent active" (green, tier T2), "Read only" (amber, T0), "Propose only" (amber, T1), "Stopped" (red). **Frozen is unmistakable without a strip:** the pill turns solid red, the header gets a red rule and tint, the button becomes "Resume (needs signature)", and Chat, Portfolio, Activity and Rules show a red frozen card; the composer is disabled. Engaging the stop needs the session only but asks first in a modal ("Stop the agent now?", `views/confirm.js`: focus trapped, Escape closes, focus returns to the button); resuming asks for a fresh signature.
 
 Fixtures mode adds a second chip, "Demo data (fixtures), not live".
 
@@ -51,7 +51,7 @@ After Activate succeeds the view calls `ctx.go("#/chat")` and the header re-rout
 | Portfolio | `views/portfolio.js`, `views/actions.js`, `views/approvals.js` | Total value with allocation bar and legend, earning card, holdings (USDC with Withdraw, aUSDC, ETH gas with Top up), recent activity, the waiting-for-approval card (Approve needs a signature, Reject does not), Mint test USDC, Run the agent, "Try a hostile note", Withdraw, job panel, lower-the-tier control |
 | Setup | `views/setup.js`, `views/activate.js` | Three steps (Connected, Add gas, Activate). Agent address with Copy, gas amount and send, Activate with its one-sentence explanation and one free signature |
 | Activity | `views/activity.js` | Every decision, newest first, as step cards; Verify audit chain with a verdict card; planner and reference-price chips |
-| Rules | `views/rules.js` | Read-only per transaction, per day, approval threshold, transactions per hour, allowed protocols, tokens and actions, from `GET /ips` (per owner in multi mode) |
+| Rules | `views/rules.js` | Read-only rows from `GET /limits` (`ui/limits.js`): per order, per day with "Used today", ask me first above, where money may go, emergency stop state. A failed read shows an error line, never numbers |
 
 ### Step cards (`views/cards.js`)
 One vocabulary for Chat, Activity, Portfolio and the job panel:
@@ -116,7 +116,8 @@ sequenceDiagram
 | `explain.js` | Rule code (all 25 plus `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, `TIER.POLICY_CHANGED`) and error code to plain language; unit helpers |
 | `views/cards.js` | Step cards, record cards, BaseScan link, planner labels |
 | `views/topup.js` | Gas top-up flow shared by Setup, Portfolio and the Chat side panel |
-| `views/chat.js`, `portfolio.js`, `activity.js`, `rules.js`, `setup.js` | The five screens, each with empty, loading and error states |
+| `views/chat.js`, `portfolio.js`, `activity.js`, `rules.js`, `setup.js` | The five screens, each with empty, loading and error states; Portfolio and Activity load with shimmer skeletons (`skeleton.js`, static under `prefers-reduced-motion`) |
+| `limits.js`, `views/account.js`, `views/confirm.js` | The `/limits` read and money formatting, the Log out control, the modal confirm |
 | `views/side.js`, `actions.js`, `approvals.js`, `activate.js`, `jobs.js` | Chat side panel; Mint, Run, Withdraw; approvals card; activate and lower tier; job polling |
 | `wallet/adapter.js`, `injected.js`, `test.js` | Adapter interface, EIP-1193 implementation (EIP-6963 first), `TestWallet` stub |
 | `chain.js` | In-browser audit hash check, used by Activity's "Check in browser" (fixtures) |
@@ -143,7 +144,7 @@ sequenceDiagram
 | Step card kinds | `test_step_card_kinds_done_blocked_pending_skipped_and_failed` |
 | Frozen state | `test_frozen_state_appears_on_stop_and_clears_on_release`, `test_chat_frozen_state_disables_the_composer` |
 | No horizontal overflow guards | `test_layout_guards_for_375px_are_in_the_stylesheet` (the real check is in the browser: `scrollWidth <= innerWidth` on every screen at 1280 and 375 px) |
-| Every JS-called route is in `openapi.yaml` | `test_every_route_the_js_calls_exists_in_openapi`, `test_rules_tab_reads_the_existing_ips_route` |
+| Every JS-called route is in `openapi.yaml` | `test_every_route_the_js_calls_exists_in_openapi`, `test_rules_tab_reads_the_limits_route` |
 | API strings stay inert text | `test_hostile_api_string_does_not_become_html`, `test_chat_hostile_strings_stay_text_and_fixtures_flow_works` |
 
 ## Previews

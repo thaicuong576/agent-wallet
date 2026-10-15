@@ -1,33 +1,47 @@
-// Rules: a read-only summary of the owner's limits, from GET /ips (per owner in multi mode).
+// Rules: a read-only summary of the owner's limits, from GET /limits (contract C4, board D).
 // Nothing here changes a limit: the policy engine checks every order against these values.
-import { cta, emptyState, frozenCard } from "../gauges.js";
-import { shortHash } from "../explain.js";
+import { emptyState, frozenCard } from "../gauges.js";
+import { getLimits, limitRows } from "../limits.js";
 
-const usd = (v) => (typeof v === "string" || typeof v === "number" ? "$" + v : "not set");
+function skeletonRows(el) {
+  const box = el("div", "rules-table skeleton-block");
+  box.setAttribute("aria-busy", "true");
+  box.setAttribute("aria-label", "Loading your rules");
+  for (let i = 0; i < 5; i++) {
+    const row = el("div", "rule-row");
+    const left = el("div", "rule-main");
+    left.append(el("span", "sk sk-line"), el("span", "sk sk-line short"));
+    row.append(left, el("span", "sk sk-value"));
+    box.append(row);
+  }
+  return box;
+}
 
 export function render(ctx) {
   const { el, api } = ctx;
-  const root = el("section", "stack");
+  const root = el("section", "stack rules-page");
   const head = el("div");
   head.append(
-    el("h1", "", "Rules"),
-    el(
-      "p",
-      "lead",
-      "The limits your agent works inside. They are read-only here: the agent cannot change them, and the policy engine checks every order against them.",
-    ),
+    el("h1", "", "What your agent may and may not do"),
+    el("p", "lead", "Code enforces these rules before anything is signed. The assistant can only propose."),
   );
   const body = el("div", "stack");
   root.append(head, body);
 
-  function rule(term, value, small) {
-    const box = el("div", "rule");
-    box.append(el("dt", "", term), el("dd", small ? "small" : "", value));
-    return box;
+  function row(r) {
+    const li = el("div", "rule-row");
+    li.dataset.rule = r.id;
+    const main = el("div", "rule-main");
+    main.append(el("div", "rule-name", r.name), el("div", "rule-text", r.text));
+    if (r.used) main.append(el("div", "rule-used", r.used));
+    li.append(main);
+    if (r.value !== null) li.append(el("div", "rule-value", r.value));
+    li.append(el("span", "chip " + r.chip.tone, r.chip.text));
+    return li;
   }
 
   async function load() {
-    body.replaceChildren(el("div", "skeleton", "Loading your rules…"));
+    body.replaceChildren(skeletonRows(el));
     const me = await ctx.refreshSession();
     if (!me) {
       body.replaceChildren(
@@ -35,36 +49,25 @@ export function render(ctx) {
       );
       return;
     }
-    const [i, t] = await Promise.allSettled([api.ips(), api.tier()]);
-    const parts = [];
-    if (t.status === "fulfilled" && t.value.emergency_stop) parts.push(frozenCard(el));
-    if (i.status !== "fulfilled") {
-      parts.push(el("p", "msg error", ctx.describeError(i.reason) + " Nothing is shown rather than a guess."));
-      body.replaceChildren(...parts);
+    let limits;
+    try {
+      limits = await getLimits(api);
+    } catch (e) {
+      body.replaceChildren(
+        el("p", "msg error", "Your limits could not be loaded: " + ctx.describeError(e) + " Nothing is shown rather than a guess."),
+      );
       return;
     }
-    const ips = i.value.ips || {};
-    const lim = ips.limits || {};
-    const list = el("dl", "rules-list");
-    list.append(
-      rule("Per transaction", usd(lim.per_tx_usd)),
-      rule("Per day (rolling 24 hours)", usd(lim.per_day_usd)),
-      rule("Approval threshold", ips.approval ? "Above " + usd(ips.approval.escalate_above_usd) : "not set"),
-      rule("Transactions per hour", lim.max_tx_per_hour === undefined ? "not set" : String(lim.max_tx_per_hour)),
-    );
-    const u = ips.universe || {};
-    const names = (v) => (Array.isArray(v) && v.length ? v.join(", ") : "none");
-    list.append(
-      rule("Allowed protocols", names(u.protocols), true),
-      rule("Allowed tokens", names(u.tokens), true),
-      rule("Allowed actions", names(u.functions), true),
-    );
-    parts.push(list);
-    if (ips.objective) parts.push(el("p", "note", "Objective: " + ips.objective));
-    const foot = el("p", "note");
-    foot.append("Orders above the approval threshold wait for you on ", cta(el, "Portfolio", "#/portfolio", "link"));
-    if (i.value.ips_hash) foot.append(" Policy hash " + shortHash("0x" + String(i.value.ips_hash).replace(/^0x/, "")) + ".");
-    parts.push(foot);
+    const parts = [];
+    if (limits.emergency_stop === "stopped") parts.push(frozenCard(el));
+    const table = el("div", "rules-table");
+    table.setAttribute("role", "list");
+    for (const r of limitRows(limits)) {
+      const li = row(r);
+      li.setAttribute("role", "listitem");
+      table.append(li);
+    }
+    parts.push(table, el("p", "note", "Read-only here. Changing limits will be a separate, signed step."));
     body.replaceChildren(...parts);
   }
 
