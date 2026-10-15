@@ -12,6 +12,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import re
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -55,6 +56,8 @@ def _get_strict_order_validator(schema_path_str: str) -> jsonschema.protocols.Va
     )
     return strict_cls(schema)
 
+
+_UUID4_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
 PLANNER_SYSTEM_PROMPT = """You are the Planner in an autonomous AI wallet agent.
 Your role is to propose asset management actions strictly as JSON candidate orders.
@@ -339,6 +342,11 @@ class Planner:
         warnings: list[str] = []
 
         for candidate in raw_orders:
+            # The order id is bookkeeping, not an instruction: models often invent ids that are not
+            # lowercase hex. Code assigns a fresh one; financial fields stay strictly validated.
+            oid = candidate.get("order_id")
+            if isinstance(oid, str) and not _UUID4_RE.match(oid):
+                candidate["order_id"] = str(uuid.uuid4())
             # Validate strictly against order.schema.json (No repair guessing!)
             schema_errors = self.validate_order(candidate)
             if schema_errors:

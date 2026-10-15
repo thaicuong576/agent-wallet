@@ -402,3 +402,42 @@ def test_planner_rejects_owner_function_order_end_to_end():
     assert len(result.orders) == 0
     assert len(result.validation_errors) > 0
     assert any("not permitted for planner" in e for e in result.validation_errors)
+
+
+def test_planner_replaces_a_malformed_order_id_but_keeps_financial_fields_strict():
+    """Models invent ids that are not hex; code assigns the id, amounts stay strict."""
+    base = {
+        "schema_version": 1,
+        "order_id": "e1b2c3d4-e5f6-7a8b-9c0d-e1f2g3h4i5j6",
+        "created_at": "2026-10-14T12:30:00Z",
+        "proposed_by": "planner",
+        "protocol": "aave-v3",
+        "function": "supply",
+        "token": "USDC",
+        "amount": {"value": "10000000", "decimals": 6},
+        "recipient": "aave_pool",
+    }
+    facts = ReaderFacts(
+        source_type="pool_description",
+        summary="x",
+        tokens_mentioned=("USDC",),
+        protocols_mentioned=("aave-v3",),
+        metrics={},
+        sentiment="neutral",
+        instruction_detected=False,
+        flags=(),
+    )
+
+    def run(order):
+        client = ScriptedClient(json.dumps({"action": "propose", "order": order}))
+        return Planner(client=client).plan(
+            portfolio_state=SAMPLE_PORTFOLIO_STATE, ips=SAMPLE_IPS_DATA, facts=facts
+        )
+
+    ok = run(dict(base))
+    assert len(ok.orders) == 1
+    assert ok.orders[0]["order_id"] != base["order_id"]
+    assert str(uuid.UUID(ok.orders[0]["order_id"])) == ok.orders[0]["order_id"]
+
+    bad = run({**base, "amount": {"value": "-5", "decimals": 6}})
+    assert bad.is_no_action
