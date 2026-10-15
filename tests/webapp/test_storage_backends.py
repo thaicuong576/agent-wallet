@@ -398,3 +398,21 @@ def test_gateway_reads_the_operator_stop_from_the_backend(stack: Stack, monkeypa
     else:
         (stack.tmp_path / "GLOBAL_STOP").write_text("1")
         assert tenant.gateway.global_stop() is True
+
+
+def test_health_deep_reads_the_database_and_returns_no_data(tmp_path, monkeypatch):
+    """/health/deep is the keep-warm target: ok with a reachable backend, 503 otherwise."""
+    from fastapi.testclient import TestClient
+
+    import api.main as main
+
+    monkeypatch.setenv("AGENT_WALLET_MODE", "multi")
+    monkeypatch.setenv("AGENT_WALLET_DATA_DIR", str(tmp_path))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("AGENT_WALLET_SESSION_SECRET", "s" * 40)
+    monkeypatch.setenv("AGENT_WALLET_PUBLIC_ORIGIN", "http://localhost:8000")
+    app = main.create_configured_app()
+    client = TestClient(app)
+    r = client.get("/health/deep")
+    assert r.status_code == 200
+    assert r.json() == {"status": "ok", "db": "ok"}

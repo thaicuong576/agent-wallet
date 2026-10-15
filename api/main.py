@@ -174,7 +174,29 @@ def build_webapp(
 
 def create_configured_app() -> Any:
     multi = os.environ.get("AGENT_WALLET_MODE", "single") == "multi"
-    return create_app(webapp=build_webapp() if multi else None)
+    if not multi:
+        return create_app(webapp=None)
+    env = os.environ
+    data_dir = pathlib.Path(env.get("AGENT_WALLET_DATA_DIR") or ".data")
+    backend = build_backend(env, data_dir)
+    app_ = create_app(webapp=build_webapp(env, backend=backend))
+
+    @app_.get("/health/deep", include_in_schema=False)
+    def health_deep() -> Any:
+        """Liveness plus one cheap database read, for an external keep-warm ping.
+
+        The ping keeps the free web service awake and the free database project active. It returns
+        no data from the database and needs no credential.
+        """
+        from fastapi.responses import JSONResponse
+
+        try:
+            backend.settings().global_stop()
+        except Exception:  # noqa: BLE001 - never echo driver text
+            return JSONResponse({"status": "degraded", "db": "unreachable"}, status_code=503)
+        return {"status": "ok", "db": "ok"}
+
+    return app_
 
 
 app = create_configured_app()
