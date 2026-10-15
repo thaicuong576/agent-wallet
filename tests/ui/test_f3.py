@@ -40,7 +40,7 @@ def test_rules_page_has_one_row_per_limit_in_board_order() -> None:
     for phrase in (
         "Per order",
         "Per day",
-        "Used today $2",
+        "Used today $10",
         "Ask me first above",
         "Where money may go",
         "Aave v3",
