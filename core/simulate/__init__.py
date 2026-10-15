@@ -25,6 +25,23 @@ class Simulator(Protocol):
         ...
 
 
+def _post_json(url: str, payload: dict[str, Any], timeout: float = 30.0) -> dict[str, Any]:
+    """JSON-RPC over HTTPS with the standard library (httpx is a dev-only dependency).
+
+    A User-Agent is required: the public Base Sepolia endpoint answers 403 without one.
+    """
+    import json as _json
+    import urllib.request
+
+    req = urllib.request.Request(
+        url,
+        data=_json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", "User-Agent": "agent-wallet/0.1"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - configured URL
+        return _json.loads(resp.read())
+
+
 class RpcSimulator:
     """RPC-backed transaction simulator implementing simulate-before-sign.
 
@@ -45,10 +62,7 @@ class RpcSimulator:
             "id": req_id,
         }
         if self.transport is None:
-            import httpx
-
-            resp = httpx.post(self.rpc_url, json=payload, timeout=30.0)
-            return resp.json()
+            return _post_json(self.rpc_url, payload)
 
         if callable(self.transport):
             try:
