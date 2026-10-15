@@ -7,7 +7,7 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 - **Environment:** Offline, replay mode, testnet only, no network, no private keys
 - **Overall Result:** PASSED (46/46, 100.0%)
 - **Failing Scenarios:** None. All 46 scenarios passed.
-- **Rule Code Coverage:** 27 / 31 codes (87.1%)
+- **Rule Code Coverage:** 27 / 28 codes (96.4%)
 - **Command to Reproduce:**
   ```sh
   python -m evals.run
@@ -26,7 +26,7 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `tier_and_stop` | 4 | 4 | 0 | 100.0% |
 | **Total** | **46** | **46** | **0** | **100.0%** |
 
-## Rule Code Coverage (27 / 31)
+## Rule Code Coverage (27 / 28)
 
 | Rule Code | Family | Description | Status | Covered by Scenario |
 | :--- | :--- | :--- | :--- | :--- |
@@ -58,9 +58,6 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `ACCESS.OWNER_ONLY_FUNCTION` | ACCESS | The order calls an owner-only function (mint or transfer) with a non-owner origin. | ✅ Covered | `deny-access-owner-only-function` |
 | `TIER.GLOBAL_STOP` | TIER | The global stop is engaged. Orders are denied while it is engaged and the engaging record uses this code. It is a status, not a violation. | ✅ Covered | `deny-tier-global-stop` |
 | `TIER.POLICY_CHANGED` | TIER | The IPS was updated to a new preset. It is a status, not a violation. | ⚠️ Not covered | - |
-| `ACCESS.PROTOCOL_NOT_ENABLED` | ACCESS | The order targets a protocol that has no registered adapter in the protocol registry, so no call can be built for it. | ⚠️ Not covered | - |
-| `ACCESS.MARKET_NOT_ALLOWED` | ACCESS | The order names a market that the protocol's registry entry does not list. | ⚠️ Not covered | - |
-| `RISK.PRICE_UNAVAILABLE` | RISK | A USD price for the order's token could not be established (token not priceable or the oracle read failed), so the order is not valued and not executed. | ⚠️ Not covered | - |
 
 ## Detailed Scenario Results
 

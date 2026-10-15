@@ -105,11 +105,8 @@
       "TIER.PROPOSE_ONLY": "tier_and_stop-02-t1-propose-only",
       "TIER.READ_ONLY": "tier_and_stop-01-t0-read-only"
     },
-    "total_catalog": 31,
+    "total_catalog": 28,
     "uncovered": [
-      "ACCESS.MARKET_NOT_ALLOWED",
-      "ACCESS.PROTOCOL_NOT_ENABLED",
-      "RISK.PRICE_UNAVAILABLE",
       "TIER.POLICY_CHANGED"
     ]
   },
@@ -789,13 +786,13 @@
   ],
   "schema_version": 1,
   "summary": {
-    "coverage_rate": 0.871,
+    "coverage_rate": 0.9643,
     "failed": 0,
     "failing_scenarios": [],
     "pass_rate": 1.0,
     "passed": 46,
     "rule_codes_covered": 27,
-    "rule_codes_total": 31,
+    "rule_codes_total": 28,
     "total": 46
   }
 }
