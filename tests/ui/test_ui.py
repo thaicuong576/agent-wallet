@@ -625,14 +625,25 @@ def test_design_tokens_come_from_design_md() -> None:
     assert "prefers-color-scheme: dark" in css
     assert "prefers-reduced-motion" in css
     assert ":focus-visible" in css
-    # Tokens of the approved mockups (docs/design/webapp/ui-contract.md).
+    # The full DESIGN.md palette and the radii of the re-skin (ticket 127).
     for token, value in (
-        ("--ground", "#fafaf6"),
-        ("--tab-active", "#fff3bf"),
-        ("--owner-bubble", "#ffe680"),
-        ("--green", "#1f7a44"),
-        ("--red", "#c0392b"),
-        ("--r-card", "16px"),
+        ("--canvas", "#ffffff"),
+        ("--canvas-soft", "#fbf9f8"),
+        ("--canvas-tint", "#f5f4f2"),
+        ("--canvas-warm", "#f1efed"),
+        ("--ink", "#161513"),
+        ("--hairline", "#e4e1dd"),
+        ("--divider", "#e9e7e4"),
+        ("--field-border", "#d4cfca"),
+        ("--accent-gold-soft", "#fff1b8"),
+        ("--link", "#006b8f"),
+        ("--error", "#d63b25"),
+        ("--brand-mark", "#8a6700"),
+        ("--band-teal", "#d6e5e5"),
+        ("--band-forest", "#33553c"),
+        ("--r-ctl", "4px"),
+        ("--r-card", "8px"),
+        ("--r-stat", "15px"),
     ):
         assert re.search(rf"{re.escape(token)}:\s*{value}", css), token
 
