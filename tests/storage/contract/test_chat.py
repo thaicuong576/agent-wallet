@@ -78,3 +78,65 @@ def test_one_hourly_limit_can_count_several_kinds(stores) -> None:
     # Without count_kinds only the job's own kind is counted, as before.
     jobs.create("e" * 32, "mint", NOW + timedelta(minutes=5), limit=3)
     jobs.update("e" * 32, status="succeeded")
+
+
+# ---------------------------------------------------------------- threads (ticket 123)
+
+
+def test_thread_starts_empty_and_titled_new_chat(stores) -> None:
+    thread = stores.chat.create_thread(NOW)
+    assert thread["title"] == "New chat"
+    assert stores.chat.thread_exists(thread["id"])
+    assert stores.chat.thread_exists("default")
+    assert not stores.chat.thread_exists("nope")
+    assert stores.chat.list(thread_id=thread["id"]) == []
+    assert stores.chat.list_threads() == [
+        {
+            "id": thread["id"],
+            "title": "New chat",
+            "last_message_at": "2026-10-14T12:00:00Z",
+            "status": "done",
+        }
+    ]
+
+
+def test_attach_job_moves_both_messages_and_titles_the_thread(stores) -> None:
+    thread = stores.chat.create_thread(NOW)
+    stores.chat.append("user", "x" * 60, "j" * 32, NOW)
+    stores.chat.attach_job(thread["id"], "j" * 32)
+    agent = stores.chat.append("agent", "done", "j" * 32, NOW + timedelta(seconds=1))
+    assert [m["text"] for m in stores.chat.list(thread_id=thread["id"])][-1] == "done"
+    assert stores.chat.list() == []  # nothing left in the default thread
+    assert agent["job_id"] == "j" * 32
+    item = stores.chat.list_threads()[0]
+    assert item["title"] == "x" * 40
+    assert item["last_message_at"] == "2026-10-14T12:00:01Z"
+    # A later message does not rename the thread.
+    stores.chat.append("user", "second", "k" * 32, NOW + timedelta(seconds=5))
+    stores.chat.attach_job(thread["id"], "k" * 32)
+    assert stores.chat.list_threads()[0]["title"] == "x" * 40
+
+
+def test_default_thread_lists_only_when_it_has_messages(stores) -> None:
+    assert stores.chat.list_threads() == []
+    stores.chat.append("user", "hello there", None, NOW)
+    item = stores.chat.list_threads()[0]
+    assert item["id"] == "default" and item["title"] == "hello there"
+
+
+def test_threads_are_newest_first_and_limited(stores) -> None:
+    ids = [stores.chat.create_thread(NOW + timedelta(seconds=i))["id"] for i in range(3)]
+    assert [t["id"] for t in stores.chat.list_threads()] == ids[::-1]
+    assert len(stores.chat.list_threads(limit=2)) == 2
+
+
+def test_owners_never_see_each_others_threads(backend) -> None:
+    a, b = backend.open(OWNER_A), backend.open(OWNER_B)
+    thread = a.chat.create_thread(NOW)
+    a.chat.append("user", "secret", "a" * 32, NOW)
+    a.chat.attach_job(thread["id"], "a" * 32)
+    assert b.chat.list_threads() == []
+    assert not b.chat.thread_exists(thread["id"])
+    assert b.chat.list(thread_id=thread["id"]) == []
+    b.chat.attach_job(thread["id"], "a" * 32)  # a foreign id changes nothing
+    assert [m["text"] for m in a.chat.list(thread_id=thread["id"])] == ["secret"]

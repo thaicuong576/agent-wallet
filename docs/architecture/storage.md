@@ -106,6 +106,28 @@ takes `count_kinds` so one hourly limit can count several kinds (chat and run sh
 Tests: `tests/storage/contract/test_chat.py` (both backends) and `tests/storage/test_migration_0004.py`
 (static SQL checks always).
 
+### Conversation threads and migration 0005 (ticket 123)
+
+`ChatStore` also holds the owner's threads: `create_thread`, `thread_exists`, `list_threads`,
+`attach_job`, and `append` / `list` take an optional `thread_id`. A thread is an id and a title;
+messages point to it by the nullable `chat_messages.thread_id`, and a NULL id is the implicit
+default thread (id `default`, listed only when it has messages), so no existing row moves. The
+title is the first 40 characters of the first owner message, set by code in `attach_job`. A
+thread's `status` is read from the latest job of its last message (`queued`/`running` is
+`running`, `pending_approval` is `pending`, `denied`/`failed`/`interrupted` is `blocked`,
+otherwise `done`). An agent message appended with a job id joins the thread of that job's user
+message, so `api/jobs.py` is unchanged.
+
+SQLite: table `chat_threads` and the added column are created in place by `SqliteChat` (an
+existing `webapp.sqlite` gains `thread_id` on open). Postgres: `0005_chat_threads.sql` creates
+`chat_threads (owner, id, title, created_at)` with the same owner-bound row level security as
+`chat_messages`, adds `chat_messages.thread_id` (nullable) with indexes on `(owner, thread_id,
+seq)` and `(owner, job_id)`, and grants `aw_app` `SELECT, INSERT` plus `UPDATE (title)` on threads
+and `UPDATE (thread_id)` on messages only (message text stays immutable). Nothing goes to `anon` or
+`authenticated`. The migration is applied to the hosted database by the orchestrator before the
+change is merged. Tests: `tests/storage/contract/test_chat.py` (both backends, including the
+cross-tenant case) and `tests/storage/test_migration_0005.py`.
+
 ## Contract suite
 
 `tests/storage/contract/` runs against the `backend` fixture in `conftest.py`, parametrised over

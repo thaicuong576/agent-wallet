@@ -21,7 +21,14 @@ import psycopg
 
 from core.gateway.audit import canonical, record_hash
 from core.gateway.exceptions import GatewayBusy
-from core.storage.interfaces import JobInProgress, RateLimited
+from core.storage.interfaces import (
+    DEFAULT_THREAD,
+    NEW_THREAD_TITLE,
+    JobInProgress,
+    RateLimited,
+    thread_status,
+    thread_title,
+)
 from core.storage.postgres.pool import PgPool
 from core.tiers.errors import (
     EmergencyStopActiveError,
@@ -797,14 +804,29 @@ class PgChatStore:
         }
 
     def append(
-        self, role: str, text: str, job_id: str | None, created_at: datetime
+        self,
+        role: str,
+        text: str,
+        job_id: str | None,
+        created_at: datetime,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         message_id = uuid.uuid4().hex
+        thread = None if thread_id == DEFAULT_THREAD else thread_id
         with self._pool.tenant(self._owner) as cur:
+            if thread is None and job_id is not None:
+                # An agent message joins the thread of the user message of its job.
+                cur.execute(
+                    "SELECT thread_id FROM chat_messages WHERE owner = %s AND job_id = %s "
+                    "AND role = 'user' ORDER BY seq LIMIT 1",
+                    (self._owner, job_id),
+                )
+                row = cur.fetchone()
+                thread = None if row is None else row[0]
             cur.execute(
-                "INSERT INTO chat_messages (owner, id, role, text, job_id, created_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (self._owner, message_id, role, text, job_id, _utc(created_at)),
+                "INSERT INTO chat_messages (owner, id, role, text, job_id, created_at, thread_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (self._owner, message_id, role, text, job_id, _utc(created_at), thread),
             )
         return {
             "id": message_id,
@@ -814,15 +836,101 @@ class PgChatStore:
             "created_at": _iso(created_at),
         }
 
-    def list(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list(self, limit: int = 50, thread_id: str | None = None) -> list[dict[str, Any]]:
+        thread = None if thread_id in (None, DEFAULT_THREAD) else thread_id
         with self._pool.tenant(self._owner) as cur:
             cur.execute(
                 "SELECT id, role, text, job_id, created_at FROM ("
                 "SELECT id, role, text, job_id, created_at, seq FROM chat_messages "
-                "WHERE owner = %s ORDER BY seq DESC LIMIT %s) recent ORDER BY seq",
-                (self._owner, max(int(limit), 0)),
+                "WHERE owner = %s AND thread_id IS NOT DISTINCT FROM %s "
+                "ORDER BY seq DESC LIMIT %s) recent ORDER BY seq",
+                (self._owner, thread, max(int(limit), 0)),
             )
             return [self._row(r) for r in cur.fetchall()]
+
+    def create_thread(self, created_at: datetime) -> dict[str, Any]:
+        thread_id = uuid.uuid4().hex
+        with self._pool.tenant(self._owner) as cur:
+            cur.execute(
+                "INSERT INTO chat_threads (owner, id, title, created_at) VALUES (%s, %s, %s, %s)",
+                (self._owner, thread_id, NEW_THREAD_TITLE, _utc(created_at)),
+            )
+        return {"id": thread_id, "title": NEW_THREAD_TITLE}
+
+    def thread_exists(self, thread_id: str) -> bool:
+        if thread_id == DEFAULT_THREAD:
+            return True
+        with self._pool.tenant(self._owner) as cur:
+            cur.execute(
+                "SELECT 1 FROM chat_threads WHERE owner = %s AND id = %s",
+                (self._owner, thread_id),
+            )
+            return cur.fetchone() is not None
+
+    def list_threads(self, limit: int = 30) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        with self._pool.tenant(self._owner) as cur:
+            cur.execute(
+                "SELECT t.id, t.title, COALESCE(l.created_at, t.created_at), j.status "
+                "FROM chat_threads t "
+                "LEFT JOIN LATERAL (SELECT m.created_at, m.job_id FROM chat_messages m "
+                "WHERE m.owner = t.owner AND m.thread_id = t.id "
+                "ORDER BY m.seq DESC LIMIT 1) l ON true "
+                "LEFT JOIN jobs j ON j.owner = t.owner AND j.job_id = l.job_id "
+                "WHERE t.owner = %s",
+                (self._owner,),
+            )
+            for row in cur.fetchall():
+                items.append(
+                    {
+                        "id": str(row[0]),
+                        "title": str(row[1]),
+                        "last_message_at": _iso(row[2]),
+                        "status": thread_status(row[3]),
+                    }
+                )
+            cur.execute(
+                "SELECT m.created_at, j.status, "
+                "(SELECT f.text FROM chat_messages f WHERE f.owner = m.owner "
+                "AND f.thread_id IS NULL AND f.role = 'user' ORDER BY f.seq LIMIT 1) "
+                "FROM chat_messages m LEFT JOIN jobs j "
+                "ON j.owner = m.owner AND j.job_id = m.job_id "
+                "WHERE m.owner = %s AND m.thread_id IS NULL ORDER BY m.seq DESC LIMIT 1",
+                (self._owner,),
+            )
+            row = cur.fetchone()
+            if row is not None:
+                items.append(
+                    {
+                        "id": DEFAULT_THREAD,
+                        "title": thread_title(str(row[2])) if row[2] else NEW_THREAD_TITLE,
+                        "last_message_at": _iso(row[0]),
+                        "status": thread_status(row[1]),
+                    }
+                )
+        items.sort(key=lambda t: (t["last_message_at"], t["id"]), reverse=True)
+        return items[: max(int(limit), 0)]
+
+    def attach_job(self, thread_id: str | None, job_id: str) -> None:
+        if thread_id is None or thread_id == DEFAULT_THREAD:
+            return
+        with self._pool.tenant(self._owner) as cur:
+            cur.execute(
+                "UPDATE chat_messages SET thread_id = %s WHERE owner = %s AND job_id = %s",
+                (thread_id, self._owner, job_id),
+            )
+            cur.execute(
+                "SELECT text FROM chat_messages WHERE owner = %s AND thread_id = %s "
+                "AND role = 'user' ORDER BY seq LIMIT 1",
+                (self._owner, thread_id),
+            )
+            first = cur.fetchone()
+            if first is not None:
+                cur.execute(
+                    "UPDATE chat_threads SET title = %s WHERE owner = %s AND id = %s "
+                    "AND title = %s",
+                    (thread_title(str(first[0])), self._owner, thread_id, NEW_THREAD_TITLE),
+                )
 
 
 class PgTopupStore:

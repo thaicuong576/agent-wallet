@@ -194,19 +194,68 @@ class JobStore(Protocol):
     def mark_interrupted(self) -> int: ...
 
 
+DEFAULT_THREAD = "default"
+NEW_THREAD_TITLE = "New chat"
+THREAD_TITLE_MAX = 40
+
+
+def thread_title(message: str) -> str:
+    """Title of a thread: the first 40 characters of the first owner message, set by code."""
+    return " ".join(message.split())[:THREAD_TITLE_MAX] or NEW_THREAD_TITLE
+
+
+def thread_status(job_status: str | None) -> str:
+    """Thread status from the latest job: running, pending (awaiting approval), done or blocked."""
+    if job_status in ("queued", "running"):
+        return "running"
+    if job_status == "pending_approval":
+        return "pending"
+    if job_status in ("denied", "failed", "interrupted"):
+        return "blocked"
+    return "done"
+
+
 @runtime_checkable
 class ChatStore(Protocol):
-    """Chat messages of one owner. Text and ids only: a step is rebuilt from the audit log by
-    the job id, so no order body, key or model transcript is stored here."""
+    """Chat messages and threads of one owner. Text and ids only: a step is rebuilt from the audit
+    log by the job id, so no order body, key or model transcript is stored here.
+
+    A message with no thread belongs to the implicit default thread (id ``"default"``). An agent
+    message appended with a job id joins the thread of that job's user message.
+    """
 
     def append(
-        self, role: str, text: str, job_id: str | None, created_at: datetime
+        self,
+        role: str,
+        text: str,
+        job_id: str | None,
+        created_at: datetime,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         """Store one message (``role`` is ``user`` or ``agent``) and return it with its id."""
         ...
 
-    def list(self, limit: int = 50) -> list[dict[str, Any]]:
-        """The most recent ``limit`` messages, oldest first."""
+    def list(self, limit: int = 50, thread_id: str | None = None) -> list[dict[str, Any]]:
+        """The most recent ``limit`` messages of a thread (default thread when ``None``), oldest
+        first."""
+        ...
+
+    def create_thread(self, created_at: datetime) -> dict[str, Any]:
+        """Insert an empty thread titled ``New chat`` and return ``{"id", "title"}``."""
+        ...
+
+    def thread_exists(self, thread_id: str) -> bool:
+        """True for ``"default"`` and for a thread of this owner; a foreign id is unknown."""
+        ...
+
+    def list_threads(self, limit: int = 30) -> list[dict[str, Any]]:
+        """``{"id", "title", "last_message_at", "status"}`` newest first. ``status`` comes from
+        the latest job of the thread: ``running``, ``pending``, ``done`` or ``blocked``."""
+        ...
+
+    def attach_job(self, thread_id: str | None, job_id: str) -> None:
+        """Move the messages of ``job_id`` into a thread and, while it is still titled
+        ``New chat``, title it with the first 40 characters of the owner's message."""
         ...
 
 
