@@ -36,3 +36,14 @@ Expiration Time: 2026-10-15T05:36:26Z
 ```
 
 /me: `{"address": "0x9d1ae26890c683a52e73a504091b090f7689373a", "agent_address": "0xc18afDC2dF55772bA3c031Df98305F02a3a36493", "chain_id": 84532, "emergency_stop": false, "mode": "multi", "tier": "T2"}`
+
+## Planner-proposed transactions on the hosted app (2026-10-15)
+
+Agent `0xc18afDC2dF55772bA3c031Df98305F02a3a36493`, planner client `openai` (job records, audit seq 15 and 17, chain verified server-side). The model proposed each order from an owner note; the policy engine allowed it ("inside every limit of the IPS"), the gateway simulated, signed and recorded it.
+
+| Step | Transaction |
+| :--- | :--- |
+| approve 10 USDC for the Aave pool (note: allowance not set, approve first) | [0xe08022a78165c51f8b4c2b79142906b6e31439634993756582470adf6a4a0749](https://sepolia.basescan.org/tx/0xe08022a78165c51f8b4c2b79142906b6e31439634993756582470adf6a4a0749) |
+| supply 10 USDC to Aave (note: propose a supply of exactly 10 USDC) | [0xcc49ca6da6435519fb15291b95887bbcd16f9934ce81076efff93836ed4044ff](https://sepolia.basescan.org/tx/0xcc49ca6da6435519fb15291b95887bbcd16f9934ce81076efff93836ed4044ff) |
+
+Honest notes from the same session: a first supply attempt without an allowance failed simulation (`SIMULATION_FAILED`, nothing signed); one run answered `no_action`; an earlier run was rejected because the model returned a malformed `order_id` (fixed in #113). The model's output varies between runs.
