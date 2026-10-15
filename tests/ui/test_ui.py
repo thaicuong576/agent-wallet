@@ -42,6 +42,7 @@ UI_FILES = [
     "views/actions.js",
     "views/approvals.js",
     "views/activate.js",
+    "views/chat.js",
 ]
 JS_FILES = [f for f in UI_FILES if f.endswith(".js")]
 FIXTURES = sorted(p.name for p in (UI / "fixtures").glob("*.json"))
@@ -61,6 +62,7 @@ DESIGN_ROUTES = {
     "/presets",
     "/policy",
     "/runs",
+    "/chat",
     "/jobs/{job_id}",
     "/jobs",
     "/audit/verify",
@@ -92,6 +94,18 @@ def client() -> TestClient:
 def flows() -> dict:
     out = subprocess.run(
         [NODE, str(ROOT / "tests" / "ui" / "flows.mjs")],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return json.loads(out.stdout)
+
+
+@functools.lru_cache(maxsize=1)
+def chat_flows() -> dict:
+    out = subprocess.run(
+        [NODE, str(ROOT / "tests" / "ui" / "chat_flows.mjs")],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -582,3 +596,93 @@ def test_js_chain_check_names_first_bad_seq(tmp_path: pathlib.Path) -> None:
     assert result["firstBad"] == 1
     assert result["rows"][1]["hashOk"] is False
     assert result["rows"][1]["linkOk"] is True
+
+
+# ---- chat tab (ticket 115) ----------------------------------------------------------------
+
+
+def test_chat_is_the_first_tab_and_a_view() -> None:
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    nav = html[html.index("<nav") : html.index("</nav>")]
+    assert nav.index('href="#/chat"') < nav.index('href="#/dashboard"')
+    for tab in ("#/dashboard", "#/feed", "#/approvals"):
+        assert f'href="{tab}"' in nav  # the existing tabs stay
+    main = (UI / "main.js").read_text(encoding="utf-8")
+    assert "VIEWS = { chat," in main and '"#/chat"' in main  # default view once signed in
+
+
+@needs_node
+def test_chat_send_with_enter_shows_typing_then_step_cards() -> None:
+    f = chat_flows()
+    assert "No messages yet." in f["emptyText"]
+    assert f["counterTyped"] == "27 / 500"
+    assert f["postsAfterShiftEnter"] == 0  # Shift+Enter is a newline
+    s = f["send"]
+    assert s["body"] == {"message": "Put 10 USDC to work in Aave"} and s["csrf"] == "1"
+    assert s["typing"] == [
+        "Agent is getting ready…",
+        "Agent is getting ready…",
+        "Agent is thinking…",
+    ]
+    assert s["typingHiddenAfter"] is True and s["composerCleared"] is True
+    assert s["sleeps"] == [2000, 3000]  # the poll cadence of the other jobs
+    assert s["bubbles"] == ["bubble user", "bubble agent"]
+    assert s["cards"] == 2 and s["saysChips"] == 1
+    assert "Approved 10 USDC for the Aave pool." in s["text"] and "✓ Executed" in s["text"]
+    assert s["links"] == [f"https://sepolia.basescan.org/tx/{TX_CHAT}"] * 2
+    assert s["sendDisabled"] is False
+
+
+@needs_node
+def test_chat_blocked_step_is_explained_and_links_to_activate() -> None:
+    b = chat_flows()["blocked"]
+    assert "✕ Blocked" in b["text"] and "↷ Skipped" in b["text"]
+    assert "read-only mode (tier T0)" in b["text"]
+    assert b["codes"] == ["TIER.READ_ONLY"]
+    assert b["cards"] == ["decision step-card bad", "decision step-card neutral"]
+    assert b["activateLinks"] == 2 and set(b["links"]) == {"#/dashboard"}  # no tx link
+
+
+@needs_node
+def test_chat_frozen_state_disables_the_composer() -> None:
+    f = chat_flows()["frozen"]
+    assert "Your agent is frozen" in f["text"] and "Release it from the top bar" in f["text"]
+    assert f["sendDisabled"] is True and f["inputDisabled"] is True and f["posts"] == 0
+
+
+@needs_node
+def test_chat_rate_limit_and_conflict_are_plain_words_and_keep_the_message() -> None:
+    f = chat_flows()
+    r = f["rateLimited"]
+    assert r["status"] == "Too many requests. You can try again in about 2 minutes."
+    assert r["kept"] == "one more thing" and r["bubbles"] == 0 and r["sendEnabled"] is True
+    c = f["conflict"]
+    assert "still in progress" in c["status"] and c["kept"] == "second"
+    assert "Earlier request finished." in c["text"]  # the running job was followed
+
+
+@needs_node
+def test_chat_history_withdraw_hint_and_signed_out() -> None:
+    f = chat_flows()
+    assert f["history"]["bubbles"] == ["bubble user", "bubble agent"]
+    assert f["history"]["getCalls"] == ["/chat?limit=50"]
+    assert (
+        "Agent says" in f["history"]["text"] and "Wallet: 1000 USDC idle." in f["history"]["text"]
+    )
+    assert f["chipFilled"] == "Put 10 USDC to work in Aave"
+    hint = f["withdrawHint"]
+    assert "needs a signature from your wallet" in hint["text"]
+    assert hint["link"] == ["#/dashboard"] and hint["posts"] == 0 and hint["boxUnchanged"]
+    assert f["maxLength"] == 500
+    assert "Connect a wallet" in f["signedOut"]["text"] and f["signedOut"]["chatCalls"] == 0
+
+
+@needs_node
+def test_chat_hostile_strings_stay_text_and_fixtures_flow_works() -> None:
+    h = chat_flows()["hostile"]
+    assert h == {"innerHTMLUsed": False, "injected": 0, "anchors": 0, "shown": True}
+    fx = chat_flows()["fixtures"]
+    assert "read-only mode (tier T0)" in fx["text"] and fx["cards"] == 2
+
+
+TX_CHAT = "0x" + "cd" * 32

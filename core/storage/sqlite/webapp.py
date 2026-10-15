@@ -14,7 +14,7 @@ import json
 import os
 import sqlite3
 import threading
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import closing, contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -29,6 +29,7 @@ from core.storage.interfaces import (
     KeystoreStore,
     RateLimited,
 )
+from core.storage.sqlite.chat import SqliteChat
 from core.storage.sqlite.tenant import SqliteTenantStores, open_tenant, tenant_dir
 
 WEBAPP_DB = "webapp.sqlite"
@@ -80,6 +81,7 @@ class SqliteJobs:
         *,
         limit: int | None = None,
         window: timedelta = timedelta(hours=1),
+        count_kinds: Sequence[str] | None = None,
     ) -> None:
         """Insert a queued job. Raises JobInProgress, or RateLimited when `limit` is reached."""
         with self._connect() as db:
@@ -92,10 +94,12 @@ class SqliteJobs:
                     raise JobInProgress(active["job_id"])
                 if limit is not None:
                     since = _ts(created_at - window)
+                    kinds = list(count_kinds or (kind,))
+                    marks = ", ".join("?" for _ in kinds)  # placeholders only, values are bound
                     rows = db.execute(
-                        "SELECT created_at FROM jobs WHERE kind = ? AND created_at > ?"
-                        " ORDER BY created_at",
-                        (kind, since),
+                        f"SELECT created_at FROM jobs WHERE kind IN ({marks})"  # noqa: S608
+                        " AND created_at > ? ORDER BY created_at",
+                        (*kinds, since),
                     ).fetchall()
                     if len(rows) >= limit:
                         oldest = _parse(rows[len(rows) - limit]["created_at"])
@@ -322,6 +326,7 @@ class SqliteBackend:
             jobs=SqliteJobs(webapp_db),
             policy_selection=SqlitePolicySelection(webapp_db),
             topups=SqliteTopups(webapp_db),
+            chat=SqliteChat(webapp_db),
         )
 
     def keystore_admin(self) -> KeystoreStore:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from core.storage.interfaces import (
     AuditStore,
     AuthStore,
+    ChatStore,
     GatewayLockProvider,
     IntentStore,
     JobStore,
@@ -23,6 +24,7 @@ from core.storage.interfaces import (
 __all__ = [
     "AuditStore",
     "AuthStore",
+    "ChatStore",
     "GatewayLockProvider",
     "IntentStore",
     "JobStore",

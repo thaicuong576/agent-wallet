@@ -94,8 +94,20 @@ The wallet-session routes of design 12.2 are mounted by `create_app` on every st
 | `/agent/mint`, `/runs` | `POST` | session | `api/jobs.py` |
 | `/agent/withdraw` | `POST` | session plus step-up `withdraw` | `api/jobs.py` |
 | `/jobs`, `/jobs/{job_id}` | `GET` | session | `api/jobs.py` |
+| `/chat` | `POST` | session (CSRF header as every write) | `api/chat.py` (starts a job of kind `chat` in `api/jobs.py`) |
+| `/chat?limit=50` | `GET` | session | `api/chat.py` |
 
 Rules enforced here: the owner address comes only from `require_session` (no route has an owner parameter or body field; extra body fields are `422`); a foreign `job_id` or `tx_hash` is `404`; problems use the 12.1 slugs (`job-in-progress` 409 with the active `job_id`, `rate-limited` 429 with `Retry-After`, `custody-unavailable` 503); `origin="owner"` appears only in `api/jobs.py`.
+
+| Claim | Proving check |
+| :--- | :--- |
+### Chat (ticket 115)
+
+`POST /chat` takes `{message}` (1 to 500 characters, no other field) and answers `202 {job_id, status}`. It starts a job of kind `chat` under the same rules as `POST /runs`: one active job per owner (`409 job-in-progress` with the active `job_id`) and one shared hourly limit (6 per owner per hour; chat and run jobs are counted together, `429 rate-limited` with `Retry-After`). `GET /chat` returns `{items: [{id, role, text, job_id, created_at, steps}]}` oldest first (`limit` 1 to 200, default 50). A step is `{order_id, function, token, amount, outcome, reason, rule_codes, tx_hash, explanation}` rebuilt from the audit records of the message's job by `api/chat_compose.py`; `outcome` is `executed`, `denied`, `pending_approval`, `failed` or `skipped`. The agent `text` is composed by code from those outcomes; the model's optional `reply` is appended under the label `Agent says:` and is never part of a step. The chat route proposes with `origin="planner"` through the same gateway, so mint, transfer, withdraw and tier changes are not reachable from it. Detail is in [`webapp.md`](webapp.md#chat-ticket-115).
+
+| Claim | Proving check |
+| :--- | :--- |
+| Chat: multi-order success, stop at the first failure, hostile message denied with nothing signed, question-only reply, T0 text, 409, shared 429, owner isolation | `pytest tests/webapp/test_chat.py -q` |
 
 | Claim | Proving check |
 | :--- | :--- |

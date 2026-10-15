@@ -7,6 +7,7 @@ import { applyTopbar, retryText } from "./gauges.js";
 import { discoverInjected } from "./wallet/injected.js";
 import { isUserRejection } from "./wallet/adapter.js";
 import { TestWallet } from "./wallet/test.js";
+import * as chat from "./views/chat.js";
 import * as onboard from "./views/onboard.js";
 import * as dashboard from "./views/dashboard.js";
 import * as feed from "./views/feed.js";
@@ -93,7 +94,7 @@ export function makeCtx({ api, wallet, sleep }) {
   return ctx;
 }
 
-const VIEWS = { onboard, dashboard, feed, approvals };
+const VIEWS = { chat, onboard, dashboard, feed, approvals };
 
 function boot() {
   const params = new URLSearchParams(globalThis.location.search);
@@ -154,10 +155,13 @@ function boot() {
   });
 
   async function show() {
-    const name = (globalThis.location.hash || "#/onboard").replace(/^#\//, "");
-    const view = VIEWS[name] || VIEWS.onboard;
+    // Chat is the home view once signed in; before that, setting up is.
+    const home = ctx.state.me ? "#/chat" : "#/onboard";
+    const name = (globalThis.location.hash || home).replace(/^#\//, "");
+    const fallback = ctx.state.me ? "chat" : "onboard";
+    const view = VIEWS[name] || VIEWS[fallback];
     for (const a of document.querySelectorAll("nav a")) {
-      const on = a.getAttribute("href") === "#/" + (VIEWS[name] ? name : "onboard");
+      const on = a.getAttribute("href") === "#/" + (VIEWS[name] ? name : fallback);
       if (on) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     }
@@ -169,6 +173,7 @@ function boot() {
     ctx = makeCtx({ api, wallet });
     ctx.onChange(topbar);
     globalThis.addEventListener("hashchange", show);
+    await ctx.refreshSession(); // decides the home view before the first paint
     show();
     topbar();
   })();

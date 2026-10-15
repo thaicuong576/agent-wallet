@@ -7,7 +7,7 @@ for the gateway and agent side, a write protocol that only OwnerControls receive
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -175,11 +175,13 @@ class JobStore(Protocol):
         *,
         limit: int | None = None,
         window: timedelta = timedelta(hours=1),
+        count_kinds: Sequence[str] | None = None,
     ) -> None:
         """Insert a queued job atomically.
 
         Raises JobInProgress when the owner already has an active job, and RateLimited when
-        ``limit`` jobs of this kind were created within ``window`` before ``created_at``.
+        ``limit`` jobs were created within ``window`` before ``created_at``. The jobs counted are
+        those of ``count_kinds`` (default: only ``kind``), so chat and run share one limit.
         """
         ...
 
@@ -190,6 +192,22 @@ class JobStore(Protocol):
     def list(self, limit: int = 50) -> list[dict[str, Any]]: ...
 
     def mark_interrupted(self) -> int: ...
+
+
+@runtime_checkable
+class ChatStore(Protocol):
+    """Chat messages of one owner. Text and ids only: a step is rebuilt from the audit log by
+    the job id, so no order body, key or model transcript is stored here."""
+
+    def append(
+        self, role: str, text: str, job_id: str | None, created_at: datetime
+    ) -> dict[str, Any]:
+        """Store one message (``role`` is ``user`` or ``agent``) and return it with its id."""
+        ...
+
+    def list(self, limit: int = 50) -> list[dict[str, Any]]:
+        """The most recent ``limit`` messages, oldest first."""
+        ...
 
 
 @runtime_checkable
@@ -235,6 +253,7 @@ class TenantStores(Protocol):
     jobs: JobStore
     policy_selection: PolicySelectionStore
     topups: TopupStore
+    chat: ChatStore
 
 
 @runtime_checkable

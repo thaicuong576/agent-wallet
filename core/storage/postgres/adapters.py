@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Callable, Iterable, Iterator, Mapping
+import uuid
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -649,6 +650,7 @@ class PgJobStore:
         *,
         limit: int | None = None,
         window: timedelta = timedelta(hours=1),
+        count_kinds: Sequence[str] | None = None,
     ) -> None:
         """Insert a queued job. Raises ActiveJobExists (a JobInProgress), or RateLimited."""
         created = _utc(created_at)
@@ -668,9 +670,9 @@ class PgJobStore:
                     raise ActiveJobExists(str(active[0]))
                 if limit is not None:
                     cur.execute(
-                        "SELECT created_at FROM jobs WHERE owner = %s AND kind = %s "
+                        "SELECT created_at FROM jobs WHERE owner = %s AND kind = ANY(%s) "
                         "AND created_at > %s ORDER BY created_at",
-                        (self._owner, kind, created - window),
+                        (self._owner, list(count_kinds or (kind,)), created - window),
                     )
                     rows = cur.fetchall()
                     if len(rows) >= limit:
@@ -775,6 +777,52 @@ class PgJobStore:
                 (_now(), self._owner),
             )
             return int(cur.rowcount)
+
+
+class PgChatStore:
+    """Chat messages of one owner: role, text and a job id, never an order body."""
+
+    def __init__(self, pool: PgPool, owner: str) -> None:
+        self._pool = pool
+        self._owner = owner
+
+    @staticmethod
+    def _row(row: tuple[Any, ...]) -> dict[str, Any]:
+        return {
+            "id": str(row[0]),
+            "role": str(row[1]),
+            "text": str(row[2]),
+            "job_id": None if row[3] is None else str(row[3]),
+            "created_at": _iso(row[4]),
+        }
+
+    def append(
+        self, role: str, text: str, job_id: str | None, created_at: datetime
+    ) -> dict[str, Any]:
+        message_id = uuid.uuid4().hex
+        with self._pool.tenant(self._owner) as cur:
+            cur.execute(
+                "INSERT INTO chat_messages (owner, id, role, text, job_id, created_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (self._owner, message_id, role, text, job_id, _utc(created_at)),
+            )
+        return {
+            "id": message_id,
+            "role": role,
+            "text": text,
+            "job_id": job_id,
+            "created_at": _iso(created_at),
+        }
+
+    def list(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._pool.tenant(self._owner) as cur:
+            cur.execute(
+                "SELECT id, role, text, job_id, created_at FROM ("
+                "SELECT id, role, text, job_id, created_at, seq FROM chat_messages "
+                "WHERE owner = %s ORDER BY seq DESC LIMIT %s) recent ORDER BY seq",
+                (self._owner, max(int(limit), 0)),
+            )
+            return [self._row(r) for r in cur.fetchall()]
 
 
 class PgTopupStore:

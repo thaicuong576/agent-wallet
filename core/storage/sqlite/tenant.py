@@ -52,6 +52,7 @@ class SqliteTenantStores:
     jobs: Any = None
     policy_selection: Any = None
     topups: Any = None
+    chat: Any = None
 
     def close(self) -> None:
         self.tier_read.close()
