@@ -70,6 +70,13 @@ class Client:
         v.raise_for_status()
         return {"message": challenge["message"], "session": v.json()}
 
+    def step_up(self, action: str, params: dict[str, Any]) -> dict[str, str]:
+        """Fresh owner signature bound to an action (design 6.2); returns the request header."""
+        r = self.req("POST", "/auth/step-up", json={"action": action, "params": params})
+        r.raise_for_status()
+        ch = r.json()
+        return {"X-Step-Up": f"{ch['challenge_id']}.{self.sign(ch['message'])}"}
+
     def job(
         self, path: str, body: dict[str, Any] | None = None, timeout: int = 240
     ) -> dict[str, Any]:
@@ -186,6 +193,15 @@ def main() -> int:
         "top-up",
         f"[{tx}]({BASESCAN}{tx}) status {receipt['status']}, registered HTTP {reg.status_code}",
     )
+
+    # 1b. activate the agent: raise the tier from T0 to T2 with a fresh owner signature
+    tier_hdr = c.step_up("tier_raise", {"tier": "T2"})
+    tier = c.http.put(
+        c.base + "/tier",
+        headers={**c.headers, **tier_hdr},
+        json={"schema_version": 1, "tier": "T2"},
+    )
+    step("activate agent", f"PUT /tier T2 with step-up signature: HTTP {tier.status_code}")
 
     # 2. mint test USDC through the gateway
     mint = c.job("/agent/mint", {"amount_usdc": args.mint_usdc})
