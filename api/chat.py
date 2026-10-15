@@ -44,11 +44,13 @@ def _records(tenant: Tenant, seqs: list[int]) -> list[dict[str, Any]]:
 
 def _view(tenant: Tenant, message: dict[str, Any], jobs: Any) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
+    phase = "done"
     job_id = message.get("job_id")
     if message["role"] == "agent" and job_id:
         row = jobs.store(tenant).get(job_id)
         if row is not None:
             steps = steps_from_records(_records(tenant, row["seqs"]))
+            phase = jobs.phase(tenant, row)
     return {
         "id": message["id"],
         "role": message["role"],
@@ -56,6 +58,7 @@ def _view(tenant: Tenant, message: dict[str, Any], jobs: Any) -> dict[str, Any]:
         "job_id": job_id,
         "created_at": message["created_at"],
         "steps": steps,
+        "phase": phase,
     }
 
 

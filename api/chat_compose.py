@@ -60,6 +60,7 @@ ERROR_TEXT = {
     "GATEWAY_ERROR": "the gateway could not handle the order",
 }
 
+CANCEL_REASON = "owner-cancelled"
 _SKIPPED = re.compile(rf"^{SKIP_PREFIX} (\w+) \((\d+(?:\.\d+)?) (\w+)\): (.*)$", re.DOTALL)
 
 
@@ -160,6 +161,8 @@ def step_from_record(rec: Mapping[str, Any]) -> dict[str, Any] | None:
     if rec.get("outcome") == "no_action" and match:
         func, amount, token, why = match.groups()
         value = str(int(round(float(amount) * 10**6))) if token == "USDC" else None
+        if why == CANCEL_REASON:
+            why = "you cancelled this run."
         return {
             "order_id": None,
             "function": func,
@@ -239,12 +242,20 @@ def compose_agent_text(
                 lead = "I did not do the rest" if done else "I did not act"
                 parts.append(f"{lead}: {_why(problem)}.")
             skipped = [r for r in steps_rec if not r.get("order")]
-            if skipped:
+            if skipped and not _cancelled(skipped):
                 parts.append(
                     "The next step was not attempted."
                     if len(skipped) == 1
                     else f"The next {len(skipped)} steps were not attempted."
                 )
+        cancelled = [r for r in steps_rec if not r.get("order") and _cancelled([r])]
+        if cancelled:
+            parts.append(
+                "You cancelled the run, so the next step was not attempted."
+                if len(cancelled) == 1
+                else f"You cancelled the run, so the next {len(cancelled)} steps were not "
+                "attempted."
+            )
         hashes = [
             str((r.get("execution") or {}).get("tx_hash"))
             for r in done
@@ -261,6 +272,11 @@ def compose_agent_text(
     elif plan_reason and not steps_rec and stop_text is None and not validation_errors:
         text += "\n\n" + AGENT_SAYS + plan_reason
     return text[:TEXT_MAX_CHARS]
+
+
+def _cancelled(records: Sequence[Mapping[str, Any]]) -> bool:
+    """True when every given skipped record was skipped by the owner's cancel."""
+    return bool(records) and all(_reason_of(r).endswith(f": {CANCEL_REASON}") for r in records)
 
 
 def _reason_of(rec: Mapping[str, Any]) -> str:
