@@ -3,6 +3,7 @@
 import { plannerLabel, recordCard } from "./cards.js";
 import { chainChip, loadRecords } from "./jobs.js";
 import { emptyState, frozenCard } from "../gauges.js";
+import { activitySkeleton } from "../skeleton.js";
 
 export function render(ctx) {
   const { el, api } = ctx;
@@ -48,8 +49,7 @@ export function render(ctx) {
   root.append(head, frozen, tools, verdict, chips, list);
 
   async function load() {
-    list.replaceChildren();
-    for (let i = 0; i < 3; i++) list.append(el("li", "skeleton", "Loading…"));
+    list.replaceChildren(...activitySkeleton(el, 3));
     const me = await ctx.refreshSession();
     if (!me) {
       list.replaceChildren(

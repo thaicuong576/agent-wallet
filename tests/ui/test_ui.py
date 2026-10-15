@@ -321,7 +321,7 @@ def test_page_works_from_fixtures() -> None:
     assert "ETH (gas)" in h["dashboard"] and "Reference price" in h["dashboard"]
     assert "Today's limit" in h["side"] and "$2.00 of $300.00 used" in h["side"]
     assert "chain verified" in h["side"] and "enough" in h["side"]
-    for phrase in ("Per transaction", "Per day", "Approval threshold", "Allowed protocols"):
+    for phrase in ("Per order", "Per day", "Ask me first above", "Where money may go"):
         assert phrase in h["rules"], phrase
     for phrase in ("Blocked", "Waiting for you", "Failed", "Executed"):
         assert phrase in h["feed"], phrase
@@ -709,11 +709,11 @@ def test_chat_is_the_first_tab_and_a_view() -> None:
         assert not (UI / "views" / f"{gone}.js").exists(), gone
 
 
-def test_rules_tab_reads_the_existing_ips_route() -> None:
-    assert '"/ips"' in (UI / "api.js").read_text(encoding="utf-8")
-    assert "api.ips()" in (UI / "views" / "rules.js").read_text(encoding="utf-8")
+def test_rules_tab_reads_the_limits_route() -> None:
+    assert '"/limits"' in (UI / "limits.js").read_text(encoding="utf-8")
+    assert "getLimits(" in (UI / "views" / "rules.js").read_text(encoding="utf-8")
     spec = yaml.safe_load((ROOT / "contracts" / "openapi.yaml").read_text(encoding="utf-8"))
-    assert "get" in spec["paths"]["/ips"]
+    assert "get" in spec["paths"]["/limits"]
 
 
 @needs_node

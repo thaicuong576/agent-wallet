@@ -8,6 +8,7 @@ import { lowerControls } from "./activate.js";
 import { loadRecords } from "./jobs.js";
 import { recordLine } from "./cards.js";
 import { topUpButton } from "./topup.js";
+import { portfolioSkeleton } from "../skeleton.js";
 
 export function render(ctx) {
   const { el, api } = ctx;
@@ -23,7 +24,7 @@ export function render(ctx) {
   const top = topUpButton(ctx, { label: "Top up", getAgent: () => agent });
 
   async function load() {
-    body.replaceChildren(el("div", "skeleton", "Loading balances…"));
+    body.replaceChildren(portfolioSkeleton(el));
     const me = await ctx.refreshSession();
     if (!me) {
       const box = el("div", "card");

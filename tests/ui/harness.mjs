@@ -147,7 +147,9 @@ function mk({ demo = true, override = {}, wallet } = {}) {
   const ips = JSON.parse(fs.readFileSync(path.join(UI, "fixtures", "ips.json"), "utf8"));
   ips.ips.universe.protocols = [HOSTILE];
   ips.ips.objective = HOSTILE;
-  const { ctx } = mk({ override: { decisions: rec, agent, ips } });
+  const limits = JSON.parse(fs.readFileSync(path.join(UI, "fixtures", "limits.json"), "utf8"));
+  limits.protocols = [HOSTILE];
+  const { ctx } = mk({ override: { decisions: rec, agent, ips, limits } });
   await ctx.refreshSession();
   const f = activity.render(ctx);
   const d = portfolio.render(ctx);

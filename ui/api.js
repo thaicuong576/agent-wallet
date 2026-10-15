@@ -525,6 +525,10 @@ export function createApi({
 
   return {
     fixtures,
+    // Shared helpers for modules that own their route (ui/limits.js): the same fetch path and the
+    // same fixture files as every other call.
+    request: (method, path, opts) => real(method, path, opts),
+    fixtureFile: (name) => file(name),
     nonce: (address) => call("nonce", "POST", ROUTES.nonce, { body: { address } }),
     verify: (address, nonce, signature) =>
       call("verify", "POST", ROUTES.verify, { body: { address, nonce, signature } }),
