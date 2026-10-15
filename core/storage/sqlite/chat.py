@@ -1,7 +1,9 @@
-"""SQLite chat store of one owner: ``chat_messages`` in the owner's ``webapp.sqlite``.
+"""SQLite chat store of one owner: ``chat_messages`` and ``chat_threads`` in the owner's
+``webapp.sqlite``.
 
 Text and ids only. A step shown under an agent message is rebuilt from the audit log by the job
-id, so no order body, key or model transcript is stored here.
+id, so no order body, key or model transcript is stored here. A message with a NULL ``thread_id``
+belongs to the implicit default thread.
 """
 
 from __future__ import annotations
@@ -13,6 +15,13 @@ from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from core.storage.interfaces import (
+    DEFAULT_THREAD,
+    NEW_THREAD_TITLE,
+    thread_status,
+    thread_title,
+)
 
 
 def _ts(value: datetime) -> str:
@@ -26,13 +35,23 @@ class SqliteChat:
         CREATE TABLE IF NOT EXISTS chat_messages(
             seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
             role TEXT NOT NULL CHECK (role IN ('user', 'agent')),
-            text TEXT NOT NULL, job_id TEXT, created_at TEXT NOT NULL);
+            text TEXT NOT NULL, job_id TEXT, created_at TEXT NOT NULL, thread_id TEXT);
+        CREATE TABLE IF NOT EXISTS chat_threads(
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL);
     """
 
     def __init__(self, path: Path | str) -> None:
         self._path = str(path)
         with self._connect() as db:
             db.executescript(self._SCHEMA)
+            columns = {r["name"] for r in db.execute("PRAGMA table_info(chat_messages)")}
+            if "thread_id" not in columns:  # a file created before ticket 123
+                db.execute("ALTER TABLE chat_messages ADD COLUMN thread_id TEXT")
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS chat_messages_thread_seq"
+                " ON chat_messages(thread_id, seq)"
+            )
+            db.execute("CREATE INDEX IF NOT EXISTS chat_messages_job ON chat_messages(job_id)")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -41,15 +60,29 @@ class SqliteChat:
             yield db
 
     def append(
-        self, role: str, text: str, job_id: str | None, created_at: datetime
+        self,
+        role: str,
+        text: str,
+        job_id: str | None,
+        created_at: datetime,
+        thread_id: str | None = None,
     ) -> dict[str, Any]:
         message_id = uuid.uuid4().hex
         stamp = _ts(created_at)
+        thread = None if thread_id == DEFAULT_THREAD else thread_id
         with self._connect() as db:
+            if thread is None and job_id is not None:
+                # An agent message joins the thread of the user message of its job.
+                row = db.execute(
+                    "SELECT thread_id FROM chat_messages WHERE job_id = ? AND role = 'user'"
+                    " ORDER BY seq LIMIT 1",
+                    (job_id,),
+                ).fetchone()
+                thread = None if row is None else row["thread_id"]
             db.execute(
-                "INSERT INTO chat_messages(id, role, text, job_id, created_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (message_id, role, text, job_id, stamp),
+                "INSERT INTO chat_messages(id, role, text, job_id, created_at, thread_id)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (message_id, role, text, job_id, stamp, thread),
             )
         return {
             "id": message_id,
@@ -59,11 +92,90 @@ class SqliteChat:
             "created_at": stamp,
         }
 
-    def list(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list(self, limit: int = 50, thread_id: str | None = None) -> list[dict[str, Any]]:
+        thread = None if thread_id in (None, DEFAULT_THREAD) else thread_id
         with self._connect() as db:
             rows = db.execute(
                 "SELECT id, role, text, job_id, created_at FROM ("
-                " SELECT * FROM chat_messages ORDER BY seq DESC LIMIT ?) ORDER BY seq",
-                (max(int(limit), 0),),
+                " SELECT * FROM chat_messages WHERE thread_id IS ? ORDER BY seq DESC LIMIT ?)"
+                " ORDER BY seq",
+                (thread, max(int(limit), 0)),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def create_thread(self, created_at: datetime) -> dict[str, Any]:
+        thread_id = uuid.uuid4().hex
+        with self._connect() as db:
+            db.execute(
+                "INSERT INTO chat_threads(id, title, created_at) VALUES (?, ?, ?)",
+                (thread_id, NEW_THREAD_TITLE, _ts(created_at)),
+            )
+        return {"id": thread_id, "title": NEW_THREAD_TITLE}
+
+    def thread_exists(self, thread_id: str) -> bool:
+        if thread_id == DEFAULT_THREAD:
+            return True
+        with self._connect() as db:
+            row = db.execute("SELECT 1 FROM chat_threads WHERE id = ?", (thread_id,)).fetchone()
+        return row is not None
+
+    def list_threads(self, limit: int = 30) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        with self._connect() as db:
+            # `jobs` lives in the same file; it may not exist yet when only chat was opened.
+            has_jobs = (
+                db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+                ).fetchone()
+                is not None
+            )
+            status_col = "j.status" if has_jobs else "NULL"
+            join = "LEFT JOIN jobs j ON j.job_id = m.job_id" if has_jobs else ""
+            last_sql = (
+                f"SELECT m.created_at, {status_col} AS job_status FROM chat_messages m {join}"
+                " WHERE m.thread_id IS ? ORDER BY m.seq DESC LIMIT 1"
+            )
+            for head in db.execute("SELECT id, title, created_at FROM chat_threads").fetchall():
+                last = db.execute(last_sql, (head["id"],)).fetchone()
+                items.append(
+                    {
+                        "id": head["id"],
+                        "title": head["title"],
+                        "last_message_at": last["created_at"] if last else head["created_at"],
+                        "status": thread_status(last["job_status"] if last else None),
+                    }
+                )
+            last = db.execute(last_sql, (None,)).fetchone()
+            if last is not None:
+                first = db.execute(
+                    "SELECT text FROM chat_messages WHERE thread_id IS NULL AND role = 'user'"
+                    " ORDER BY seq LIMIT 1"
+                ).fetchone()
+                items.append(
+                    {
+                        "id": DEFAULT_THREAD,
+                        "title": thread_title(first["text"]) if first else NEW_THREAD_TITLE,
+                        "last_message_at": last["created_at"],
+                        "status": thread_status(last["job_status"]),
+                    }
+                )
+        items.sort(key=lambda t: (t["last_message_at"], t["id"]), reverse=True)
+        return items[: max(int(limit), 0)]
+
+    def attach_job(self, thread_id: str | None, job_id: str) -> None:
+        if thread_id is None or thread_id == DEFAULT_THREAD:
+            return
+        with self._connect() as db:
+            db.execute(
+                "UPDATE chat_messages SET thread_id = ? WHERE job_id = ?", (thread_id, job_id)
+            )
+            first = db.execute(
+                "SELECT text FROM chat_messages WHERE thread_id = ? AND role = 'user'"
+                " ORDER BY seq LIMIT 1",
+                (thread_id,),
+            ).fetchone()
+            if first is not None:
+                db.execute(
+                    "UPDATE chat_threads SET title = ? WHERE id = ? AND title = ?",
+                    (thread_title(first["text"]), thread_id, NEW_THREAD_TITLE),
+                )

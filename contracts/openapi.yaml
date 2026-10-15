@@ -508,9 +508,15 @@ paths:
               required: [message]
               properties:
                 message: { type: string, minLength: 1, maxLength: 500 }
+                thread_id:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                  description: Conversation to post into; absent is the default thread.
       responses:
         "202": { $ref: "#/components/responses/JobAccepted" }
         "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
         "409": { $ref: "#/components/responses/Problem" }
         "422": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
@@ -525,7 +531,9 @@ paths:
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: thread_id, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 64 } }
       responses:
+        "404": { $ref: "#/components/responses/Problem" }
         "200":
           description: Messages.
           content:
@@ -537,6 +545,52 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/ChatMessage" }
+        "401": { $ref: "#/components/responses/Problem" }
+  /chat/threads:
+    get:
+      tags: [chat]
+      operationId: listChatThreads
+      summary: The owner's conversations, newest first, with the status of the latest job.
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 100, default: 30 } }
+      responses:
+        "200":
+          description: Threads.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChatThread" }
+        "401": { $ref: "#/components/responses/Problem" }
+    post:
+      tags: [chat]
+      operationId: createChatThread
+      summary: Open an empty conversation.
+      description: >-
+        The title starts as "New chat" and is set by code from the first 40 characters of the
+        first owner message; the model never writes it.
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        "201":
+          description: Thread created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, title]
+                properties:
+                  id: { type: string }
+                  title: { type: string, maxLength: 40 }
         "401": { $ref: "#/components/responses/Problem" }
   /jobs:
     get:
@@ -797,6 +851,14 @@ components:
         created_at: { $ref: "#/components/schemas/UtcTimestamp" }
         steps: { type: array, items: { $ref: "#/components/schemas/ChatStep" } }
         phase: { type: string, description: "Phase of the message's job (see Job). `done` for user messages." }
+    ChatThread:
+      type: object
+      required: [id, title, last_message_at, status]
+      properties:
+        id: { type: string, description: "A thread id, or `default` for the implicit thread." }
+        title: { type: string, maxLength: 40 }
+        last_message_at: { $ref: "#/components/schemas/UtcTimestamp" }
+        status: { type: string, enum: [running, pending, done, blocked] }
     Problem:
       type: object
       required: [type, title, status]

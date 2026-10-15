@@ -96,7 +96,9 @@ The wallet-session routes of design 12.2 are mounted by `create_app` on every st
 | `/jobs`, `/jobs/{job_id}` | `GET` | session | `api/jobs.py` |
 | `/jobs/{job_id}/cancel` | `POST` | session (CSRF header as every write) | `api/jobs.py` (ticket 122) |
 | `/chat` | `POST` | session (CSRF header as every write) | `api/chat.py` (starts a job of kind `chat` in `api/jobs.py`) |
-| `/chat?limit=50` | `GET` | session | `api/chat.py` |
+| `/chat?limit=50&thread_id=` | `GET` | session | `api/chat.py` |
+| `/chat/threads?limit=30` | `GET` | session | `api/chat.py` |
+| `/chat/threads` | `POST` | session (CSRF header as every write) | `api/chat.py` |
 | `/limits` | `GET` | session | `api/limits.py` (read model: IPS limits, rolling-24h spend, stop flag; contract C4) |
 | `/chat/suggestions` | `GET` | session | `api/limits.py` (prompts chosen by code from state, no LLM call; contract C5) |
 
@@ -113,6 +115,10 @@ Rules enforced here: the owner address comes only from `require_session` (no rou
 ### Chat (ticket 115)
 
 `POST /chat` takes `{message}` (1 to 500 characters, no other field) and answers `202 {job_id, status}`. It starts a job of kind `chat` under the same rules as `POST /runs`: one active job per owner (`409 job-in-progress` with the active `job_id`) and one shared hourly limit (6 per owner per hour; chat and run jobs are counted together, `429 rate-limited` with `Retry-After`). `GET /chat` returns `{items: [{id, role, text, job_id, created_at, steps}]}` oldest first (`limit` 1 to 200, default 50). A step is `{order_id, function, token, amount, outcome, reason, rule_codes, tx_hash, explanation}` rebuilt from the audit records of the message's job by `api/chat_compose.py`; `outcome` is `executed`, `denied`, `pending_approval`, `failed` or `skipped`. The agent `text` is composed by code from those outcomes; the model's optional `reply` is appended under the label `Agent says:` and is never part of a step. The chat route proposes with `origin="planner"` through the same gateway, so mint, transfer, withdraw and tier changes are not reachable from it. Detail is in [`webapp.md`](webapp.md#chat-ticket-115).
+
+### Conversation threads (ticket 123, contract C3)
+
+`GET /chat/threads?limit=30` (1 to 100) returns `{items: [{id, title, last_message_at, status}]}`, newest first. `status` is `running`, `pending`, `done` or `blocked` and is read from the latest job of the thread. `POST /chat/threads` takes `{}` and answers `201 {id, title: "New chat"}`. `POST /chat` and `GET /chat` take an optional `thread_id`; absent means the implicit default thread (id `default`, the messages written before threads existed, listed only when it has any). The response shape of both is unchanged. A thread id that does not belong to the session's owner is unknown (`404 not-found`, nothing is started). The title is the first 40 characters of the thread's first owner message, set by code, never by the LLM. The hourly run limit (6) is per owner and is shared by all threads. Storage and the migration are in [`storage.md`](storage.md#conversation-threads-and-migration-0005-ticket-123).
 
 | Claim | Proving check |
 | :--- | :--- |

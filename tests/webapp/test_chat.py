@@ -487,7 +487,7 @@ def test_chat_job_row_and_table_hold_no_order_body(world, alice, tmp_path):
     path = (db or alice.tenant.paths.state.parent) / "webapp.sqlite"
     with sqlite3.connect(path) as conn:
         cols = [c[1] for c in conn.execute("PRAGMA table_info(chat_messages)")]
-    assert cols == ["seq", "id", "role", "text", "job_id", "created_at"]
+    assert cols == ["seq", "id", "role", "text", "job_id", "created_at", "thread_id"]
 
 
 def test_openapi_documents_the_chat_routes():
@@ -495,3 +495,91 @@ def test_openapi_documents_the_chat_routes():
     jsonschema.Draft202012Validator.check_schema(
         {"$ref": "#/components/schemas/ChatMessage", "components": SPEC["components"]}
     )
+
+
+# ---------------------------------------------------------------- threads (ticket 123, C3)
+
+
+def threads(owner: Owner) -> list[dict[str, Any]]:
+    resp = owner.get("/chat/threads")
+    assert resp.status_code == 200, resp.text
+    return resp.json()["items"]
+
+
+def test_new_thread_is_empty_and_titled_new_chat(world, alice):
+    resp = alice.post("/chat/threads", {})
+    assert resp.status_code == 201
+    created = resp.json()
+    assert created["title"] == "New chat" and created["id"]
+    assert alice.get(f"/chat?thread_id={created['id']}").json() == {"items": []}
+    assert [t["id"] for t in threads(alice)] == [created["id"]]
+    assert alice.post("/chat/threads", {"title": "x"}).status_code == 422
+
+
+def test_messages_go_to_their_thread_and_the_title_is_set_by_code(world, alice):
+    world.env.llm = ScriptedClient(json.dumps({"action": "no_action", "reason": "x"}))
+    tid = alice.post("/chat/threads", {}).json()["id"]
+    long_text = "Please put ten USDC to work in Aave right now, thanks a lot"
+    resp = alice.post("/chat", {"message": long_text, "thread_id": tid})
+    assert resp.status_code == 202
+    world.drain()
+    say(alice, "default thread message")
+    inside = alice.get(f"/chat?thread_id={tid}").json()["items"]
+    assert [m["role"] for m in inside] == ["user", "agent"]
+    assert inside[0]["text"] == long_text
+    assert [m["text"] for m in conversation(alice) if m["role"] == "user"] == [
+        "default thread message"
+    ]
+    listed = {t["id"]: t for t in threads(alice)}
+    assert listed[tid]["title"] == long_text[:40]
+    assert listed[tid]["status"] in {"done", "blocked"}
+    assert "default" in listed
+    assert listed["default"]["title"] == "default thread message"
+
+
+def test_thread_status_follows_the_latest_job(world, alice):
+    world.env.llm = ScriptedClient(json.dumps({"action": "no_action", "reason": "x"}))
+    tid = alice.post("/chat/threads", {}).json()["id"]
+    alice.post("/chat", {"message": "hello", "thread_id": tid})
+    world.drain()
+    job_id = alice.get(f"/chat?thread_id={tid}").json()["items"][0]["job_id"]
+    assert threads(alice)[0]["status"] == "done"
+    job = alice.tenant.stores.jobs
+    job.update(job_id, status="failed")
+    assert threads(alice)[0]["status"] == "blocked"
+
+
+def test_threads_are_newest_first_and_limited(world, alice):
+    ids = [alice.post("/chat/threads", {}).json()["id"] for _ in range(3)]
+    assert {t["id"] for t in threads(alice)} == set(ids)
+    assert len(alice.get("/chat/threads?limit=2").json()["items"]) == 2
+    assert alice.get("/chat/threads?limit=0").status_code == 422
+
+
+def test_unknown_thread_is_404_and_nothing_is_started(world, alice):
+    resp = alice.post("/chat", {"message": "hi", "thread_id": "f" * 32})
+    assert resp.status_code == 404 and slug(resp) == "not-found"
+    assert alice.get("/chat?thread_id=" + "f" * 32).status_code == 404
+    world.drain()
+    assert conversation(alice) == []
+
+
+def test_another_owners_thread_is_unknown(world, alice, bob):
+    world.env.llm = ScriptedClient(json.dumps({"action": "no_action", "reason": "x"}))
+    tid = alice.post("/chat/threads", {}).json()["id"]
+    alice.post("/chat", {"message": "private", "thread_id": tid})
+    world.drain()
+    assert threads(bob) == []
+    assert bob.get(f"/chat?thread_id={tid}").status_code == 404
+    resp = bob.post("/chat", {"message": "hi", "thread_id": tid})
+    assert resp.status_code == 404
+    assert len(alice.get(f"/chat?thread_id={tid}").json()["items"]) == 2
+
+
+def test_threads_need_a_session_and_the_csrf_header(world, alice):
+    from fastapi.testclient import TestClient
+
+    anon = TestClient(world.app, base_url=ORIGIN)
+    assert anon.get("/chat/threads").status_code == 401
+    no_csrf = alice.client.post("/chat/threads", json={})
+    assert no_csrf.status_code == 403 and slug(no_csrf) == "csrf"
