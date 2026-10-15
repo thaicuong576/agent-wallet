@@ -124,10 +124,9 @@ class OnchainAaveRiskProvider:
                 except TypeError:
                     res = self.rpc_callable(payload["method"], payload["params"])
             elif self.rpc_url:
-                import httpx
+                from core.simulate import _post_json
 
-                resp = httpx.post(self.rpc_url, json=payload, timeout=30.0)
-                res = resp.json()
+                res = _post_json(self.rpc_url, payload)
             else:
                 raise RpcCallError("No RPC callable or URL provided to OnchainAaveRiskProvider")
         except Exception as exc:
