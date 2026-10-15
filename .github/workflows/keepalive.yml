@@ -1,0 +1,30 @@
+name: keepalive
+
+# Pings the hosted app every 10 minutes so the free Render web service does not spin down and
+# the free Supabase project stays active. /health/deep reads one row from the database and
+# returns no data. Set the repository variable KEEPALIVE_URL (for example
+# https://agent-wallet-6vuy.onrender.com); without it the job does nothing.
+# Free minutes are unlimited on public repositories; on a private repository this schedule can
+# exceed the monthly allowance, so disable the workflow there.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    if: vars.KEEPALIVE_URL != ''
+    steps:
+      - name: Ping /health/deep
+        env:
+          URL: ${{ vars.KEEPALIVE_URL }}
+        run: |
+          set -eu
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 90 --retry 2 --retry-delay 10 "$URL/health/deep" || true)
+          echo "health/deep -> $code"
+          test "$code" = "200"
