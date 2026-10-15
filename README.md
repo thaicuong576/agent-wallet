@@ -2,7 +2,7 @@
 
 An AI wallet agent for FinTechathon 2026 (Topic F, Agent Wallet). The agent holds its own funded wallet and acts only inside an Investment Policy Statement (IPS) set by the owner. A deterministic policy engine decides every order, and an eval suite measures whether the agent complies.
 
-> Status: the safe core is built and tested (policy engine, tiers, gateway, signer, audit chain, risk provider, planner and reader, API, owner UI, eval harness). Two transactions are on Base Sepolia (testnet only). The agent runner that ties the planner to the gateway end to end is in progress; see the known-risk list.
+> Status: a working multi-owner webapp is live on Base Sepolia (testnet only): <https://agent-wallet-6vuy.onrender.com/ui/> (Render free tier, so the first request after idle can take about a minute; Supabase Postgres behind it). Sign in with a wallet, the server creates a custodial testnet agent wallet for you, fund its gas, activate it, mint test USDC, run the LLM planner, and every decision lands in a hash-chained audit log. The policy engine, tiers, gateway, signer, audit chain, risk provider, planner and reader, API, UI and the eval harness are built and tested. Hosting and operations: [`docs/architecture/deployment.md`](docs/architecture/deployment.md).
 
 ## For judges: verify in five minutes, no keys needed
 ```sh
@@ -14,6 +14,7 @@ python -m core.audit.verify docs/evidence/audit-chain.jsonl   # hash chain of th
 ```
 | Evidence | Where |
 | :--- | :--- |
+| Hosted end-to-end session (sign-in, top-up, activate, mint, planner runs, hostile run denied, audit verify) | [`docs/evidence/webapp-evidence.md`](docs/evidence/webapp-evidence.md) |
 | On-chain transactions (approve and supply 1 test USDC, receipts `0x1`) | [`docs/evidence/tx_hashes.md`](docs/evidence/tx_hashes.md) |
 | Planner-proposed run: two executed orders, one hostile order denied, verified chain | [`docs/evidence/runner-evidence.md`](docs/evidence/runner-evidence.md) |
 | Evaluation report (offline replay) | [`docs/evidence/eval-report.md`](docs/evidence/eval-report.md) |

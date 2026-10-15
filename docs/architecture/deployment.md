@@ -93,3 +93,21 @@ State survives container recreation (`docker compose down && docker compose up`)
 ## Repository scripts
 
 `scripts/` (e.g. `scripts/container_smoke.sh`, `scripts/check_no_secrets.py`) and evaluation runners (`evals/`) are not bundled into the runtime container image. They run directly on the host from a repository checkout.
+
+## Hosted deployment (Render and Supabase)
+
+The reference deployment is one Render free web service (Docker, branch `main`, auto deploy on commit, health check `/health`) plus a Supabase Postgres project. The same service serves the API and the UI at `/ui/`.
+
+| Setting | Value |
+| :--- | :--- |
+| `AGENT_WALLET_MODE` | `multi` |
+| `DATABASE_URL` | Supabase pooler URL, transaction mode (port 6543); the app role |
+| `DATABASE_MIGRATE_URL` | Not set on the service. Run migrations from a workstation: `python -m core.storage.migrate` with the session pooler URL (port 5432) |
+| `AGENT_WALLET_KEYSTORE_SECRET` | Random secret that encrypts agent keys at rest |
+| `AGENT_WALLET_KEYSTORE_KDF` | `pbkdf2` (fits the free instance memory) |
+| `AGENT_WALLET_SESSION_SECRET` | Random secret for session cookies |
+| `AGENT_WALLET_PUBLIC_ORIGIN` | The public URL of the service (sign-in message and Origin check) |
+| `BASE_SEPOLIA_RPC_URL` | Base Sepolia JSON-RPC endpoint |
+| `OPENAI_API_KEY` | Optional; without it the labelled fallback planner is used |
+
+Steps: create the Supabase project, run the migrations, create the Render service from this repository with the variables above, open `/health/deep` (one database read). The free tier sleeps after 15 minutes idle; ping `/health/deep` every 10 minutes from an external cron to keep it warm. Supabase pauses a free project after a week without activity, so the same ping also keeps the database active. The testnet and custody notice is shown on every page.
