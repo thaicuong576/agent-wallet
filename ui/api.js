@@ -16,6 +16,10 @@ const ROUTES = {
   presets: "/presets",
   runs: "/runs",
   chat: "/chat",
+  threads: "/chat/threads",
+  suggestions: "/chat/suggestions",
+  limits: "/limits",
+  cancel: "/jobs/{job_id}/cancel",
   job: "/jobs/{job_id}",
   jobs: "/jobs",
   auditVerify: "/audit/verify",
@@ -102,7 +106,13 @@ export function createApi({
     chat: [],
     chatSeq: 0,
     seeded: false,
+    threads: null,
+    threadSeq: 0,
   };
+  // In a real browser the fixture jobs advance one phase per poll so the phase strip and Stop can
+  // be seen; under node (the tests) there is no `window` and they answer at once.
+  const paced = fixtures && typeof globalThis.window !== "undefined";
+  const PHASES = ["queued", "rules_check", "rules_check", "sent", "confirming"];
 
   async function file(name) {
     if (!fx.cache.has(name)) {
@@ -193,11 +203,52 @@ export function createApi({
       case "chatSend": {
         needSession();
         if (fx.stopped) throw new ApiError(409, "stopped", "Stopped");
-        return chatFixture(String(arg || ""));
+        await seedThreads();
+        return chatFixture(String(arg.message || ""), arg.threadId);
       }
       case "chat": {
         needSession();
-        return { items: fx.chat.slice(-(Number(arg) || 50)) };
+        await seedThreads();
+        const want = (arg && arg.threadId) || null;
+        const items = fx.chat.filter((m) => (m.thread_id || null) === want);
+        return { items: items.slice(-(Number(arg && arg.limit) || 50)).map(withPhase) };
+      }
+      case "threads": {
+        needSession();
+        await seedThreads();
+        const items = fx.threads.slice();
+        items.sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
+        return { items };
+      }
+      case "newThread": {
+        needSession();
+        await seedThreads();
+        const t = { id: "t" + ++fx.threadSeq, title: "New chat", last_message_at: nowIso(), status: "done" };
+        fx.threads.push(t);
+        return { id: t.id, title: t.title };
+      }
+      case "limits": {
+        needSession();
+        const l = await file("limits");
+        l.used_today_usd = spentToday().toFixed(2);
+        l.emergency_stop = fx.stopped ? "stopped" : "ready";
+        return l;
+      }
+      case "suggestions": {
+        needSession();
+        return file(fx.stopped ? "suggestions-stopped" : "suggestions");
+      }
+      case "cancel": {
+        needSession();
+        const j = fx.jobs.find((x) => x.job_id === arg);
+        if (!j) throw new ApiError(404, "not-found", "Unknown job");
+        if (!j.live || !["queued", "rules_check"].includes(jobPhase(j))) {
+          throw new ApiError(409, "not-cancellable", "Job cannot be cancelled", "", {
+            problem: { error: "not-cancellable", job_id: arg },
+          });
+        }
+        j.cancelled = true;
+        return { job_id: arg, status: "cancelling" };
       }
       case "job": {
         needSession();
@@ -227,7 +278,8 @@ export function createApi({
         }
         const j = fx.jobs.find((x) => x.job_id === arg);
         if (!j) throw new ApiError(404, "", "Unknown job");
-        return j;
+        if (paced && j.live) await new Promise((r) => setTimeout(r, 700));
+        return jobView(j);
       }
       case "jobs":
         needSession();
@@ -309,7 +361,78 @@ export function createApi({
     tx_hash: null,
     ...o,
   });
-  function chatFixture(text) {
+  const nowIso = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
+  const dollars = (a) => (a && a.value ? Number(a.value) / 10 ** (a.decimals ?? 6) : 0);
+  const spentToday = () =>
+    10 +
+    fx.chat.reduce(
+      (n, m) =>
+        n +
+        m.steps
+          .filter((s) => s.outcome === "executed" && s.function === "supply")
+          .reduce((k, s) => k + dollars(s.amount), 0),
+      0,
+    );
+
+  // Threads: a few seeded ones so the rail shows every status, then the ones the owner makes.
+  async function seedThreads() {
+    if (fx.threads) return;
+    const seed = await file("threads");
+    const at = (mins) => new Date(Date.now() - mins * 60000).toISOString().replace(/\.\d+Z$/, "Z");
+    fx.threads = seed.items.map(({ minutes_ago: m, ...t }) => ({ ...t, last_message_at: at(m) }));
+    fx.threadSeq = fx.threads.length;
+    for (const m of seed.messages) {
+      const t = fx.threads.find((x) => x.id === m.thread_id);
+      fx.chat.push({ ...m, created_at: t.last_message_at });
+    }
+  }
+
+  // A fixture chat run walks PHASES one poll at a time, then finishes. `live` is true only while
+  // that walk is in progress.
+  function jobPhase(j) {
+    if (!j.live) return "done";
+    return PHASES[Math.min(j.polls, PHASES.length - 1)];
+  }
+  function jobView(j) {
+    if (!j.live) return j;
+    const phase = jobPhase(j);
+    const finished = j.polls >= PHASES.length;
+    j.polls += 1;
+    if (j.cancelled) {
+      finishCancelled(j);
+      return { ...j, phase: "done" };
+    }
+    if (finished) {
+      j.live = false;
+      return { ...j, phase: "done" };
+    }
+    return { ...j, status: phase === "queued" ? "queued" : "running", phase, finished_at: null };
+  }
+  // A cancel records every step as skipped by the owner.
+  function finishCancelled(j) {
+    j.live = false;
+    j.status = "denied";
+    j.error_code = "OWNER_CANCELLED";
+    const m = fx.chat.find((x) => x.job_id === j.job_id && x.role === "agent");
+    if (!m) return;
+    m.text = "You cancelled the run, so the steps were not attempted.";
+    m.steps = m.steps.map((s) => ({
+      ...s,
+      outcome: "skipped",
+      tx_hash: null,
+      rule_codes: [],
+      explanation: "Not attempted: you cancelled this run.",
+      reason: "skipped " + s.function + " (10 USDC): owner-cancelled",
+    }));
+  }
+  // While a fixture job is live its agent message reports the live phase.
+  function withPhase(m) {
+    if (m.role !== "agent") return m;
+    const j = fx.jobs.find((x) => x.job_id === m.job_id);
+    return { ...m, phase: j && j.live ? jobPhase(j) : "done" };
+  }
+
+  function chatFixture(text, threadId) {
     const seq = ++fx.chatSeq;
     const jobId = "d" + String(seq).padStart(31, "0");
     const now = "2026-10-14T12:" + String(seq % 60).padStart(2, "0") + ":00Z";
@@ -364,9 +487,19 @@ export function createApi({
       agent =
         "No transaction was made.\n\nAgent says: I can answer questions about your balance and put idle USDC to work in Aave.";
     }
-    fx.chat.push({ id: "m" + seq + "u", role: "user", text, job_id: jobId, created_at: now, steps: [] });
-    fx.chat.push({ id: "m" + seq + "a", role: "agent", text: agent, job_id: jobId, created_at: now, steps });
+    const thread = threadId || null;
+    const user = { id: "m" + seq + "u", role: "user", text, job_id: jobId, created_at: now, steps: [] };
+    fx.chat.push({ ...user, thread_id: thread });
+    fx.chat.push({ ...user, id: "m" + seq + "a", role: "agent", text: agent, steps, thread_id: thread });
+    const row = fx.threads && thread ? fx.threads.find((t) => t.id === thread) : null;
+    if (row) {
+      if (row.title === "New chat") row.title = text.slice(0, 40);
+      row.last_message_at = nowIso();
+      row.status = status === "denied" ? "blocked" : "done";
+    }
     fx.jobs.push({
+      live: paced && steps.some((s) => s.outcome === "executed"),
+      polls: 0,
       job_id: jobId,
       kind: "chat",
       status,
@@ -434,10 +567,35 @@ export function createApi({
     setPreset: (presetId) =>
       fixtures ? fixtureCall("policy", { preset_id: presetId }) : noPolicyRoute(),
     run: (opts) => call("run", "POST", ROUTES.runs, { body: opts || {} }, opts || {}),
-    chatSend: (message) =>
-      call("chatSend", "POST", ROUTES.chat, { body: { message } }, message),
-    chat: (limit = 50) =>
-      call("chat", "GET", ROUTES.chat + "?limit=" + encodeURIComponent(limit), {}, limit),
+    // `threadId` is optional everywhere: absent means the implicit default conversation.
+    chatSend: (message, threadId) =>
+      call(
+        "chatSend",
+        "POST",
+        ROUTES.chat,
+        { body: threadId ? { message, thread_id: threadId } : { message } },
+        { message, threadId },
+      ),
+    chat: (limit = 50, threadId) =>
+      call(
+        "chat",
+        "GET",
+        ROUTES.chat +
+          "?limit=" +
+          encodeURIComponent(limit) +
+          (threadId ? "&thread_id=" + encodeURIComponent(threadId) : ""),
+        {},
+        { limit, threadId },
+      ),
+    threads: (limit = 30) =>
+      call("threads", "GET", ROUTES.threads + "?limit=" + encodeURIComponent(limit)),
+    newThread: () => call("newThread", "POST", ROUTES.threads, { body: {} }),
+    suggestions: () => call("suggestions", "GET", ROUTES.suggestions),
+    limits: () => call("limits", "GET", ROUTES.limits),
+    cancelJob: (jobId) =>
+      JOB_ID.test(jobId)
+        ? call("cancel", "POST", ROUTES.cancel.replace("{job_id}", jobId), {}, jobId)
+        : Promise.reject(new ApiError(0, "", "Not a job id")),
     job: (jobId) =>
       JOB_ID.test(jobId)
         ? call("job", "GET", ROUTES.job.replace("{job_id}", jobId), {}, jobId)

@@ -305,7 +305,43 @@ label.inline { display: inline; font-weight: 400; }
 .facts dd { display: inline; margin: 0 4px 0 2px; font-weight: 600; color: var(--ink); }
 
 /* ---- chat ---- */
-.chat-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+.chat-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr) 300px; gap: 20px; align-items: start; }
+.chat-head { display: flex; align-items: center; gap: 12px; }
+.chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.history-toggle { display: none; background: var(--primary); border-color: var(--primary); color: var(--on-accent); font-weight: 600; min-height: 36px; }
+.rail { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.rail-top { display: flex; gap: 8px; }
+.rail-new { flex: 1 1 auto; text-align: left; }
+.rail-close { display: none; }
+.rail-list { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rail-group { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-top: 10px; }
+.rail-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  padding: 10px 12px; border-radius: var(--r-card); border-color: transparent; background: transparent;
+  text-align: left; font-weight: 400; min-width: 0;
+}
+.rail-row:hover { background: var(--chip); }
+.rail-row.active, .rail-row.active:hover { background: var(--primary); border-color: var(--primary); color: var(--on-accent); }
+.rail-row.active .rail-title { font-weight: 600; }
+.rail-row:disabled { background: transparent; border-color: transparent; color: var(--faint); }
+.rail-title { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-meta { font-size: 12px; color: var(--muted); }
+.rail-meta.bad { color: var(--red); }
+.rail-row.active .rail-meta { color: var(--on-accent); }
+.rail-backdrop { position: fixed; inset: 0; background: rgba(22, 21, 19, 0.45); z-index: 40; }
+.rail-backdrop[hidden] { display: none; }
+.phase-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.phase-chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--chip); color: var(--faint); }
+.phase-chip.passed { background: var(--green-bg); color: var(--green); }
+.phase-chip.current { background: var(--accent-gold-soft); color: var(--on-accent); font-weight: 600; }
+.step-card.running { background: var(--chip); }
+.step-card.running .step-icon { background: var(--ink); color: var(--canvas); }
+.step-card.uncertain { background: var(--amber-bg); border-color: var(--amber-border); }
+.step-card.uncertain .step-icon { background: var(--ink); color: var(--canvas); }
+.limit-line { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+.composer button.stop { background: var(--ink); border-color: var(--ink); color: var(--canvas); border-radius: var(--r-step); padding: 14px 22px; font-size: 15px; min-height: 52px; font-weight: 500; }
+.composer button.stop:before { content: "■ "; }
+.composer button.stop:disabled { background: var(--chip); border-color: var(--border); color: var(--faint); }
 .chat-card { display: flex; flex-direction: column; padding: 0; min-height: 560px; max-height: calc(100vh - 150px); }
 .chat-card > header { padding: 16px 24px; border-bottom: 1px solid var(--border-soft); font-weight: 600; }
 .chat-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 24px; display: flex; flex-direction: column; gap: 18px; }
@@ -429,6 +465,14 @@ label.inline { display: inline; font-weight: 400; }
   .hdr { gap: 8px 12px; }
   .tabs { order: 3; flex: 1 1 100%; }
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
+  .history-toggle { display: inline-flex; align-items: center; }
+  .rail {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 50; width: min(86vw, 320px);
+    padding: 16px; background: var(--card); border-right: 1px solid var(--border);
+    overflow-y: auto; visibility: hidden; transform: translateX(-100%);
+  }
+  .rail.open { visibility: visible; transform: none; }
+  .rail-close { display: inline-flex; }
   .chat-card { max-height: none; min-height: 0; }
   .chat-scroll { max-height: 60vh; min-height: 220px; padding: 16px; }
   .composer-box { padding: 12px 16px; }

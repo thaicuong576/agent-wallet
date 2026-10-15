@@ -1,0 +1,11 @@
+{
+  "per_order_usd": "100.00",
+  "per_day_usd": "300.00",
+  "used_today_usd": "10.00",
+  "approval_threshold_usd": "100.00",
+  "protocols": [
+    "aave_v3"
+  ],
+  "emergency_stop": "ready",
+  "as_of": "2026-10-16T09:00:00Z"
+}

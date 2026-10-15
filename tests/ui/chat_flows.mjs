@@ -138,13 +138,50 @@ function server(script = {}) {
         emergency_stop: state.stopped,
       });
     }
-    if (method === "GET" && url.startsWith("/chat?")) return reply(200, { items: state.items });
+    if (method === "GET" && url.startsWith("/chat?")) {
+      const tid = new URL(url, "http://x").searchParams.get("thread_id");
+      return reply(200, { items: (tid && state.byThread && state.byThread[tid]) || state.items });
+    }
+    if (method === "GET" && url === "/limits") {
+      return state.limits ? reply(200, state.limits) : reply(503, { status: 503, title: "Unavailable" });
+    }
+    if (method === "GET" && url === "/chat/suggestions") {
+      return state.suggestions ? reply(200, { items: state.suggestions }) : reply(503, { status: 503 });
+    }
+    if (method === "GET" && url.startsWith("/chat/threads")) {
+      return reply(200, { items: state.threads || [] });
+    }
+    if (method === "POST" && url === "/chat/threads") {
+      return reply(201, { id: "tnew", title: "New chat" });
+    }
+    if (method === "POST" && url === "/jobs/" + JOB + "/cancel") {
+      const c = state.cancel || { status: 202, body: { job_id: JOB, status: "cancelling" } };
+      return reply(c.status, c.body);
+    }
     if (method === "POST" && url === "/chat") {
       const out = script.onSend(body, state);
       if (out.problem) return reply(out.problem.status, out.problem.body, out.problem.headers);
       state.pending = out;
       state.polls = 0;
       return reply(202, { job_id: JOB, status: "queued" });
+    }
+    if (method === "GET" && url === "/jobs/" + JOB && state.jobScript) {
+      const at = Math.min(state.polls++, state.jobScript.length - 1);
+      const last = at === state.jobScript.length - 1;
+      if (last && state.pending) {
+        state.items.push(...state.pending.messages);
+        state.pending = null;
+      }
+      return reply(200, {
+        job_id: JOB,
+        kind: "chat",
+        planner_client: "openai",
+        order_ids: [],
+        error_code: null,
+        created_at: "2026-10-15T12:00:00Z",
+        finished_at: last ? "2026-10-15T12:00:03Z" : null,
+        ...state.jobScript[at],
+      });
     }
     if (method === "GET" && url === "/jobs/" + JOB) {
       state.polls++;
@@ -218,11 +255,13 @@ const out = {};
   out.emptyText = root.textContent;
   const box = input(root);
   const typingEl = byClass(root, "typing")[0];
+  const seenLive = [];
   const seenTyping = [];
   const api = ctx.api;
   const origJob = api.job;
   api.job = async (id) => {
     seenTyping.push(typingEl.hidden ? "" : typingEl.textContent);
+    seenLive.push(byClass(root, "live").map((n) => n.textContent).join("|"));
     return origJob(id);
   };
   box.value = "Put 10 USDC to work in Aave";
@@ -238,6 +277,7 @@ const out = {};
     body: post && post.body,
     csrf: post && post.headers["X-AW-CSRF"],
     typing: seenTyping,
+    live: seenLive,
     typingHiddenAfter: typingEl.hidden,
     composerCleared: box.value === "",
     sleeps,
@@ -432,6 +472,224 @@ const out = {};
   await fire(button(root, "Send"), "click");
   await tick(60);
   out.fixtures = { text: root.textContent, cards: byClass(root, "step-card").length };
+}
+
+// ---- webapp v2: phases, Stop, limit line, quick fixes, threads, suggestions -----------------
+const LIMITS = {
+  per_order_usd: "50.00",
+  per_day_usd: "1000.00",
+  used_today_usd: "10.00",
+  approval_threshold_usd: "50.00",
+  protocols: ["aave_v3"],
+  emergency_stop: "ready",
+  as_of: "2026-10-16T09:00:00Z",
+};
+const cardTitles = (root) => byClass(root, "step-title").map((n) => n.textContent);
+const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.url === url);
+
+// 10. phase strip, Stop (202) and the Send button turning into Stop
+{
+  const { srv, ctx } = make({
+    state: {
+      limits: LIMITS,
+      jobScript: [
+        { status: "queued", phase: "queued" },
+        { status: "running", phase: "rules_check" },
+        { status: "running", phase: "sent" },
+        { status: "running", phase: "confirming" },
+        { status: "denied", phase: "done", error_code: "OWNER_CANCELLED" },
+      ],
+    },
+    onSend: (body) => ({
+      messages: [
+        msg("user", body.message),
+        msg("agent", "You cancelled the run, so the next step was not attempted.", [
+          step({
+            function: "supply",
+            outcome: "skipped",
+            reason: "skipped supply (10 USDC): owner-cancelled",
+            explanation: "Not attempted: you cancelled this run.",
+          }),
+        ]),
+      ],
+    }),
+  });
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+  const box = input(root);
+  const seen = [];
+  let stopClicked = null;
+  const origJob = ctx.api.job;
+  ctx.api.job = async (id) => {
+    const live = byClass(root, "live")[0];
+    const chips = live ? byClass(live, "phase-chip") : [];
+    const sendBtn = find(root, (n) => n.className === "stop" || n.className === "primary")[0];
+    seen.push({
+      title: live ? byClass(live, "step-title")[0].textContent : "",
+      chips: chips.map((c) => c.className.split(" ")[1] + ":" + c.textContent),
+      stop: Boolean(sendBtn && sendBtn.className === "stop" && sendBtn.textContent === "Stop"),
+    });
+    if (seen.length === 2) {
+      const stopBtn = find(root, (n) => n.className === "stop")[0];
+      stopClicked = Promise.resolve(stopBtn.listeners.click[0]());
+    }
+    return origJob(id);
+  };
+  box.value = "Put 10 USDC to work in Aave";
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(80);
+  await stopClicked;
+  out.phases = {
+    seen,
+    cancelPosts: postsTo(srv, "/jobs/" + JOB + "/cancel").length,
+    csrf: (postsTo(srv, "/jobs/" + JOB + "/cancel")[0] || { headers: {} }).headers["X-AW-CSRF"],
+    sendLabelAfter: find(root, (n) => n.tagName === "BUTTON" && n.className === "primary").map((n) => n.textContent),
+    skipped: byClass(root, "step-card").filter((n) => n.className.includes("skipped")).length,
+    skipText: root.textContent.includes("You stopped the run, so this step was not sent."),
+  };
+}
+
+// 11. Stop answered 409: the order is already sent
+{
+  const { ctx } = make({
+    state: {
+      jobScript: [
+        { status: "running", phase: "sent" },
+        { status: "running", phase: "sent" },
+        { status: "succeeded", phase: "done" },
+      ],
+      cancel: { status: 409, body: { type: "urn:agent-wallet:problem:not-cancellable", title: "Job cannot be cancelled", status: 409, job_id: JOB, error: "not-cancellable" } },
+    },
+    onSend: (body) => ({ messages: [msg("user", body.message), msg("agent", "Done.", [])] }),
+  });
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+  const box = input(root);
+  let status = "";
+  const origJob = ctx.api.job;
+  let n = 0;
+  ctx.api.job = async (id) => {
+    if (++n === 2) {
+      const stopBtn = find(root, (x) => x.className === "stop")[0];
+      await stopBtn.listeners.click[0]();
+      status = byClass(root, "msg").map((x) => x.textContent).join("|");
+    }
+    return origJob(id);
+  };
+  box.value = "Put 10 USDC to work in Aave";
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(80);
+  out.tooLate = status;
+}
+
+// 12. blocked card: limit line and quick fixes; unknown phase degrades to "Working"
+{
+  const blocked = step({
+    function: "supply",
+    amount: { value: "5000000000", decimals: 6 },
+    outcome: "denied",
+    rule_codes: ["LIMIT.PER_TX"],
+    explanation: "The agent could not supply 5000 USDC to Aave. Nothing was sent.",
+  });
+  const { srv, ctx } = make({
+    state: {
+      limits: LIMITS,
+      items: [msg("user", "Put 5000 USDC to work in Aave"), msg("agent", "I did not act.", [blocked])],
+      jobScript: [{ status: "running", phase: "mystery" }, { status: "succeeded", phase: "done" }],
+    },
+    onSend: (body) => ({ messages: [msg("user", body.message), msg("agent", "Because of the limit.", [])] }),
+  });
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+  const box = input(root);
+  const tryChip = button(root, "Try 50 USDC");
+  out.quick = {
+    limitLine: byClass(root, "limit-line").map((n) => n.textContent),
+    chips: byClass(root, "step-actions").map((n) => n.textContent),
+    limitsCalls: srv.calls.filter((c) => c.url === "/limits").length,
+  };
+  await fire(tryChip, "click");
+  out.quick.composer = box.value;
+  out.quick.postsAfterTry = postsTo(srv, "/chat").length;
+  const seen = [];
+  const origJob = ctx.api.job;
+  ctx.api.job = async (id) => {
+    const live = byClass(root, "live")[0];
+    seen.push(live ? live.textContent : "");
+    return origJob(id);
+  };
+  await fire(button(root, "Why is this blocked?"), "click");
+  await tick(80);
+  out.quick.asked = (postsTo(srv, "/chat")[0] || {}).body;
+  out.quick.unknownPhase = seen;
+  out.quick.composerAfter = box.value;
+}
+
+// 13. threads: rail groups, select loads that thread, New chat posts a thread, send carries it
+{
+  const nowIso = new Date().toISOString();
+  const { srv, ctx } = make({
+    state: {
+      suggestions: [
+        { text: "What did you do today?", kind: "question" },
+        { text: "Supply 10 USDC to Aave", kind: "action" },
+      ],
+      threads: [
+        { id: "t1", title: "Put 10 USDC to work", last_message_at: nowIso, status: "running" },
+        { id: "t2", title: "Withdraw 5 USDC", last_message_at: "2026-01-01T10:00:00Z", status: "blocked" },
+      ],
+      byThread: { t2: [msg("user", "Withdraw 5 USDC"), msg("agent", "Blocked thread reply.", [])] },
+    },
+    onSend: (body) => ({ messages: [msg("user", body.message), msg("agent", "Okay.", [])] }),
+  });
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+  const rows = () => byClass(root, "rail-row");
+  out.rail = {
+    groups: byClass(root, "rail-group").map((n) => n.textContent),
+    rows: rows().map((n) => n.textContent),
+    chips: byClass(root, "prompt-chip").map((n) => n.textContent),
+  };
+  await fire(rows()[1], "click");
+  out.rail.loaded = srv.calls.filter((c) => c.method === "GET" && c.url.includes("thread_id=t2")).length;
+  out.rail.active = rows().filter((n) => n.className.includes("active")).map((n) => n.textContent);
+  out.rail.text = bubbles(root).map((b) => b.textContent);
+  await fire(button(root, "+ New chat"), "click");
+  out.rail.newPosts = postsTo(srv, "/chat/threads").length;
+  const box = input(root);
+  box.value = "hello";
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(60);
+  out.rail.sendBody = (postsTo(srv, "/chat")[0] || {}).body;
+}
+
+// 14. suggestions fail: the static prompts come back; a job that fails after "sent" says so
+{
+  const { ctx } = make({
+    state: {
+      jobScript: [
+        { status: "running", phase: "sent" },
+        { status: "failed", phase: "done", error_code: "RPC_UNAVAILABLE" },
+      ],
+    },
+    onSend: (body) => ({ messages: [msg("user", body.message), msg("agent", "It failed.", [])] }),
+  });
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+  out.fallback = byClass(root, "prompt-chip").map((n) => n.textContent);
+  const box = input(root);
+  box.value = "Put 10 USDC to work in Aave";
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(80);
+  out.uncertain = {
+    text: root.textContent.includes("It may still land. Check Activity before trying again."),
+    link: find(root, (n) => n.tagName === "A").map((n) => n.attrs.href),
+  };
 }
 
 console.log(JSON.stringify(out));

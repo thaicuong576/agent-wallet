@@ -3,8 +3,8 @@
 // Every API string is written with textContent. "Agent says" text is the model's own words and
 // is labelled as such; the step cards, not the prose, are the record of what happened.
 import { cta, frozenCard } from "../gauges.js";
-import { stepCard } from "./cards.js";
-import { sidePanel } from "./side.js";
+import { ACTIVE_PHASES, runningCard, stepCard, uncertainCard } from "./cards.js";
+import { historyRail, sidePanel } from "./side.js";
 
 export const MESSAGE_MAX = 500;
 const AGENT_SAYS = "Agent says: ";
@@ -13,11 +13,16 @@ const STOPPED = new Set(["TIER.EMERGENCY_STOP", "TIER.GLOBAL_STOP"]);
 
 export const PROMPTS = ["What is my balance?", "Put 10 USDC to work in Aave", "Pull 5 USDC back out"];
 const PLACEHOLDER = "Tell your agent what to do…";
+const SUGGESTIONS_MAX = 4;
+// /limits is read once per render of the log; a few seconds of cache covers a burst of renders.
+const LIMITS_TTL_MS = 5000;
+const TOO_LATE = "Too late to stop: this order is already sent.";
 // Transaction hashes are shown only as BaseScan links on the step cards, not in the prose.
 const TX_LIST = /\s*Transactions?: 0x[0-9a-f]{64}(?:, 0x[0-9a-f]{64})*\.?/g;
 
-// One message bubble, with its step cards under an agent message.
-export function bubble(ctx, message) {
+// One message bubble, with its step cards under an agent message. `opts` goes to stepCard
+// ({limits, onTry, onAsk}); every field is optional.
+export function bubble(ctx, message, opts = {}) {
   const { el } = ctx;
   const mine = message.role === "user";
   const li = el("li", "bubble " + (mine ? "user" : "agent"));
@@ -39,7 +44,7 @@ export function bubble(ctx, message) {
   const steps = Array.isArray(message.steps) ? message.steps : [];
   if (steps.length) {
     const list = el("ol", "steps");
-    for (const s of steps) list.append(stepCard(ctx, s));
+    for (const s of steps) list.append(stepCard(ctx, s, opts));
     li.append(list);
     const codes = new Set(steps.flatMap((s) => (Array.isArray(s.rule_codes) ? s.rule_codes : [])));
     if ([...codes].some((c) => NEEDS_ACTIVATION.has(c))) {
@@ -60,7 +65,13 @@ export function render(ctx) {
 
   // ---- conversation card
   const card = el("div", "card chat-card");
-  const head = el("header", "", "Your agent");
+  const head = el("header", "chat-head");
+  const toggle = el("button", "history-toggle", "History");
+  toggle.type = "button";
+  toggle.setAttribute("aria-controls", "chat-history");
+  toggle.setAttribute("aria-expanded", "false");
+  const title = el("span", "chat-title", "Your agent");
+  head.append(toggle, title);
   const notice = el("div");
   const log = el("ol", "chat-log");
   log.setAttribute("aria-live", "polite");
@@ -91,24 +102,37 @@ export function render(ctx) {
   composer.append(input, send);
   const meta = el("div", "composer-meta");
   meta.append(el("span", "", "Enter sends, Shift+Enter adds a line."), counter);
-  for (const text of PROMPTS) {
-    const chip = el("button", "prompt-chip", text);
-    chip.type = "button";
-    chip.addEventListener("click", () => {
-      input.value = text;
-      updateCounter();
-      if (input.focus) input.focus();
-    });
-    prompts.append(chip);
+  // The composer text is only ever filled here; nothing is sent until the owner presses Send.
+  function fill(text) {
+    input.value = text;
+    updateCounter();
+    if (input.focus) input.focus();
   }
+  function showPrompts(texts) {
+    prompts.replaceChildren();
+    for (const text of texts) {
+      const chip = el("button", "prompt-chip", text);
+      chip.type = "button";
+      chip.addEventListener("click", () => fill(text));
+      prompts.append(chip);
+    }
+  }
+  showPrompts(PROMPTS);
   box.append(prompts, label, composer, meta, status);
   card.append(head, scroll, box);
 
   const side = sidePanel(ctx);
-  root.append(h1, card, side.node);
+  const rail = historyRail(ctx, { onSelect: selectThread, onNew: newChat });
+  root.append(h1, rail.node, rail.backdrop, card, side.node);
 
   let busy = false;
   let frozen = false;
+  let threadId = null; // null is the implicit default conversation
+  let activeJob = null; // {id, phase} while a job of this view is queued or running
+  let cancelling = false;
+  let limitsAt = 0;
+  let limitsCache = null;
+  let liveSlot = null;
 
   function updateCounter() {
     const n = input.value.length;
@@ -122,15 +146,32 @@ export function render(ctx) {
       submit();
     }
   });
-  send.addEventListener("click", () => submit());
+  send.addEventListener("click", () => (activeJob ? stop() : submit()));
 
+  // The Send button becomes Stop (ink fill) while a job is queued or running.
   function lock() {
-    send.disabled = busy || frozen;
+    const running = Boolean(activeJob) && !frozen;
+    send.textContent = running ? "Stop" : "Send";
+    send.className = running ? "stop" : "primary";
+    send.disabled = running ? cancelling : busy || frozen;
+    rail.setBusy(busy || Boolean(activeJob));
     input.disabled = frozen;
     input.setAttribute("placeholder", frozen ? "Frozen. Resume the agent to chat." : PLACEHOLDER);
   }
 
-  function showHistory(items) {
+  async function getLimits() {
+    if (Date.now() - limitsAt < LIMITS_TTL_MS) return limitsCache;
+    try {
+      limitsCache = await api.limits();
+    } catch (_) {
+      limitsCache = null; // the limit line is left out rather than guessed
+    }
+    limitsAt = Date.now();
+    return limitsCache;
+  }
+
+  function showHistory(items, limits) {
+    const lastAgent = items.map((m) => m.role).lastIndexOf("agent");
     if (!items.length) {
       const li = el("li", "empty");
       li.append(
@@ -144,15 +185,26 @@ export function render(ctx) {
       log.replaceChildren(li);
       return;
     }
-    log.replaceChildren(...items.map((m) => bubble(ctx, m)));
+    // Quick fixes (Try ..., Why is this blocked?) are offered on the newest agent message only.
+    const quick = { limits, onTry: fill, onAsk: (q) => submit(q) };
+    log.replaceChildren(
+      ...items.map((m, i) => bubble(ctx, m, i === lastAgent ? quick : { limits })),
+    );
     const last = log.lastChild;
     if (last && typeof last.scrollIntoView === "function") last.scrollIntoView({ block: "end" });
   }
 
-  async function loadHistory() {
+  // `resume`: a job still running on the server (the page was reloaded, or another thread was
+  // opened) is followed again; the live card replaces its half-finished message.
+  async function loadHistory(resume = false) {
     try {
-      const page = await api.chat(50);
-      showHistory(Array.isArray(page.items) ? page.items : []);
+      const page = await api.chat(50, threadId);
+      const all = Array.isArray(page.items) ? page.items : [];
+      const live = all.filter((m) => m.role === "agent" && ACTIVE_PHASES.has(m.phase) && m.job_id);
+      const items = all.filter((m) => !live.includes(m));
+      showHistory(items, await getLimits());
+      const last = live[live.length - 1];
+      if (resume && last && !activeJob && /^[0-9a-f]{32}$/.test(last.job_id)) follow(last.job_id);
     } catch (e) {
       status.className = "msg error";
       status.textContent = ctx.describeError(e);
@@ -198,25 +250,149 @@ export function render(ctx) {
     typing.textContent = "";
   }
 
-  function jobWords(job) {
-    if (job.status === "queued") return "Agent is getting ready…";
-    return "Agent is thinking…";
+  // The agent's live step: the phase strip under a bubble of its own.
+  function paintLive() {
+    if (!activeJob) return;
+    if (!liveSlot) {
+      const li = el("li", "bubble agent live");
+      liveSlot = el("ol", "steps");
+      li.append(liveSlot);
+      log.append(li);
+      if (typeof li.scrollIntoView === "function") li.scrollIntoView({ block: "end" });
+    }
+    liveSlot.replaceChildren(runningCard(ctx, activeJob.phase));
+  }
+
+  function refreshAround() {
+    loadSuggestions();
+    loadThreads();
   }
 
   async function follow(jobId) {
-    const job = await ctx.pollJob(jobId, (j) => typingOn(jobWords(j)));
+    activeJob = { id: jobId, phase: "queued" };
+    cancelling = false;
+    liveSlot = null;
+    let sent = false;
     typingOff();
+    lock();
+    paintLive();
+    let job = null;
+    try {
+      job = await ctx.pollJob(jobId, (j) => {
+        const phase = typeof j.phase === "string" ? j.phase : j.status === "queued" ? "queued" : "working";
+        activeJob.phase = phase;
+        if (phase === "sent" || phase === "confirming") sent = true;
+        paintLive();
+      });
+    } finally {
+      activeJob = null;
+      cancelling = false;
+      liveSlot = null;
+    }
+    limitsAt = 0;
     await loadHistory();
     if (job && (job.status === "failed" || job.status === "interrupted")) {
-      status.className = "msg error";
-      status.textContent = "The request did not finish. See the agent's message above.";
+      if (sent) {
+        // The order left the wallet and the outcome is unknown: never say "nothing was sent".
+        const li = el("li", "bubble agent");
+        const list = el("ol", "steps");
+        list.append(uncertainCard(ctx));
+        li.append(list);
+        log.append(li);
+      } else {
+        status.className = "msg error";
+        status.textContent = "The request did not finish. See the agent's message above.";
+      }
     }
+    lock();
+    refreshAround();
     ctx.changed();
   }
 
-  async function submit() {
-    if (busy || frozen) return;
-    const text = input.value.trim();
+  // Stop: ask the server to skip the steps not yet sent. An order already sent is never undone.
+  async function stop() {
+    if (!activeJob || cancelling) return;
+    cancelling = true;
+    lock();
+    status.className = "msg";
+    status.textContent = "";
+    try {
+      await api.cancelJob(activeJob.id);
+      status.textContent = "Stopping. Steps not sent yet will be skipped.";
+    } catch (e) {
+      cancelling = false;
+      status.className = "msg error";
+      status.textContent = e && e.status === 409 ? TOO_LATE : ctx.describeError(e);
+    }
+    lock();
+  }
+
+  async function loadSuggestions() {
+    let texts = PROMPTS;
+    try {
+      const res = await api.suggestions();
+      const got = (Array.isArray(res.items) ? res.items : [])
+        .map((x) => (x && typeof x.text === "string" ? x.text.trim() : ""))
+        .filter((t) => t && t.length <= MESSAGE_MAX)
+        .slice(0, SUGGESTIONS_MAX);
+      if (got.length) texts = got;
+    } catch (_) {
+      texts = PROMPTS;
+    }
+    showPrompts(texts);
+  }
+
+  async function loadThreads() {
+    try {
+      const res = await api.threads();
+      rail.setThreads(res.items, true);
+    } catch (_) {
+      rail.setThreads([], false);
+    }
+    const name = threadId === null ? "" : rail.title(threadId);
+    title.textContent = name || "Your agent";
+  }
+
+  async function selectThread(id) {
+    threadId = id;
+    rail.setActive(id);
+    status.textContent = "";
+    await loadHistory(true);
+    await loadThreads();
+  }
+
+  async function newChat() {
+    status.className = "msg";
+    status.textContent = "";
+    try {
+      const t = await api.newThread();
+      threadId = t.id;
+      rail.setActive(threadId);
+      showHistory([], null);
+      await loadThreads();
+      if (input.focus) input.focus();
+    } catch (e) {
+      status.className = "msg error";
+      status.textContent = ctx.describeError(e);
+    }
+  }
+
+  toggle.addEventListener("click", () => {
+    rail.open();
+    toggle.setAttribute("aria-expanded", "true");
+  });
+  root.addEventListener("keydown", (ev) => {
+    if (ev && ev.key === "Escape" && rail.isOpen()) {
+      rail.close();
+      toggle.setAttribute("aria-expanded", "false");
+      if (toggle.focus) toggle.focus();
+    }
+  });
+
+  // `forced` is a question sent by a chip; it does not touch what the owner is typing.
+  async function submit(forced) {
+    if (busy || frozen || activeJob) return;
+    const text = typeof forced === "string" ? forced : input.value.trim();
     if (!text) return;
     if (text.length > MESSAGE_MAX) {
       status.className = "msg error";
@@ -232,11 +408,14 @@ export function render(ctx) {
     const placeholder = log.children.length === 1 && log.children[0].className === "empty";
     if (placeholder) log.replaceChildren();
     log.append(mine);
-    input.value = "";
-    updateCounter();
+    const typed = input.value;
+    if (typeof forced !== "string") {
+      input.value = "";
+      updateCounter();
+    }
     typingOn("Agent is getting ready…");
     try {
-      const accepted = await api.chatSend(text);
+      const accepted = await api.chatSend(text, threadId);
       await follow(accepted.job_id);
     } catch (e) {
       typingOff();
@@ -254,7 +433,7 @@ export function render(ctx) {
       } else {
         await loadHistory();
       }
-      input.value = text; // nothing was sent: keep what the owner typed
+      input.value = typeof forced === "string" ? typed : text; // nothing was sent: keep the text
       updateCounter();
     }
     busy = false;
@@ -270,11 +449,16 @@ export function render(ctx) {
       return;
     }
     await loadState();
-    await loadHistory();
+    loadSuggestions();
+    loadThreads();
+    await loadHistory(true);
   }
 
   ctx.onChange(() => {
-    if (root.isConnected !== false && ctx.state.me) loadState();
+    if (root.isConnected !== false && ctx.state.me) {
+      loadState();
+      loadSuggestions();
+    }
   });
   start();
   return root;

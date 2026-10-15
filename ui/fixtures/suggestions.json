@@ -1,0 +1,8 @@
+{
+  "items": [
+    { "text": "What did you do today?", "kind": "question" },
+    { "text": "Supply 10 USDC to Aave", "kind": "action" },
+    { "text": "Pull 5 USDC back out", "kind": "action" },
+    { "text": "What are my limits?", "kind": "question" }
+  ]
+}
