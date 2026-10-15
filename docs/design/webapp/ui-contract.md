@@ -1,10 +1,10 @@
 # Webapp UI contract
 
-Approved by the owner on 2026-10-15 as the target look and layout. The static mockups in [`ui-contract/`](ui-contract/) (`Main.html` Chat, `Portfolio.html`, `Setup.html`; open them in a browser) are the contract: the built UI must match their structure, hierarchy, copy tone and states. `DESIGN.md` still supplies tokens; where the mockups and `DESIGN.md` disagree, the mockups win.
+Approved by the owner on 2026-10-15 as the target look and layout. The static mockups in [`ui-contract/`](ui-contract/) (`Main.html` Chat, `Portfolio.html`, `Setup.html`; open them in a browser) are the contract for structure, hierarchy, copy tone and states. Colour, type, radii and elevation come from the root `DESIGN.md`, which wins wherever a mockup differs (the mockups predate it).
 
 ## Principles
 1. **Chat is home.** The owner talks to the agent; every other page supports that.
-2. **Light, calm, fintech.** Off-white ground (`#FAFAF6`), white cards with a 1 px warm border, 16 px radius, bright yellow accent (`#FFD23F`, soft `#FFF3BF` for active tabs and `#FFE680` for owner bubbles), green for done or safe, red only for blocked or stop. No dark theme by default (dark mode may follow `prefers-color-scheme`, same structure).
+2. **Light, calm, fintech.** Soft canvas ground (`canvas-soft`), white cards with a 1 px hairline and 8 px radius (15 px stat panels), no shadows, gold accent (`primary`, soft gold for owner bubbles and waiting steps, a 5 px gold bar under the active tab), forest for done or safe, error red only for blocked or stop. Page titles and big numbers use Georgia. Every value is a `DESIGN.md` token. No dark theme by default (dark mode may follow `prefers-color-scheme`, same structure).
 3. **No warning banner.** No full-width notice bar on any page. Testnet and custody are stated once in Setup (first run), by a small chip "Base Sepolia testnet" in the header, and by one grey line in the footer. The honest content is unchanged, only its placement.
 4. **Plain words first.** Every outcome is a sentence a non-technical person understands; rule codes are small secondary chips; transaction hashes only as "BaseScan" links.
 5. **Provenance stays honest.** "Agent says" text is labelled; step cards come from the audit log only; reference prices are labelled where a USD value is shown.

@@ -1,6 +1,6 @@
 # Webapp UI (rebuilt to the approved UI contract, ticket 119)
 
-> Look and layout: [`docs/design/webapp/ui-contract.md`](../design/webapp/ui-contract.md) and the three static mockups in [`docs/design/webapp/ui-contract/`](../design/webapp/ui-contract/) (`Main.html`, `Portfolio.html`, `Setup.html`). Tokens and behaviour: [`DESIGN.md`](../../DESIGN.md), [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md) (sections 12 and 14). Where the mockups and `DESIGN.md` disagree, the mockups win.
+> Look and layout: [`docs/design/webapp/ui-contract.md`](../design/webapp/ui-contract.md) and the three static mockups in [`docs/design/webapp/ui-contract/`](../design/webapp/ui-contract/) (`Main.html`, `Portfolio.html`, `Setup.html`). Tokens and behaviour: [`DESIGN.md`](../../DESIGN.md), [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md) (sections 12 and 14). Where the mockups and `DESIGN.md` disagree, `DESIGN.md` wins.
 
 A static single page under `ui/`, mounted by `api/main.py` at `/ui`. Plain ES modules, no build step, no dependency, no CDN, no web font, no `localStorage`: it works offline except for the wallet and the RPC behind it.
 
@@ -101,7 +101,7 @@ sequenceDiagram
 | File | Role |
 | :--- | :--- |
 | `index.html` | Shell: header, tabs, chips, pill, Emergency stop, `#view`, footer line |
-| `style.css` | Tokens from the mockups and `DESIGN.md` as CSS custom properties, dark mode, focus ring, reduced motion, 1280 px and 375 px layouts |
+| `style.css` | `DESIGN.md` tokens as CSS custom properties (canvas, ink, hairline, gold, forest, error; radii 4 / 8 / 15 px; Georgia for titles and numbers), dark mode, focus ring, reduced motion, 1280 px and 375 px layouts |
 | `main.js` | `routeFor`, header wiring, stop and resume, shared context (`makeCtx`), `describeError` |
 | `api.js` | The only module that calls the network; `ROUTES` lists every path; `?fixtures=1` switch |
 | `gauges.js` | Pure helpers: spend and gas gauges, retry text, relative time, header state, frozen card |
