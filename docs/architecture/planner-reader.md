@@ -6,6 +6,10 @@ The `core.agent` package implements the Dual-LLM pattern with prompt-injection d
 
 In accordance with system boundaries, `core.agent` never imports `core.signer`, `core.gateway` internals, or `core.tiers.owner`.
 
+## Owner chat channel (ticket 115)
+
+`Planner.plan(..., owner_instruction=text)` carries the owner's chat message on its own labelled channel (`owner_instruction: {channel, trust: "untrusted_text", text}`), never inside the Reader facts. It is untrusted for rule purposes: the output is validated exactly as before, the planner can only propose `approve`, `supply`, `withdraw` and `exactInputSingle` with planner recipients, and every order still goes to the gateway with `origin="planner"`. The output contract accepts an ordered `orders` list (the single `order` form still works) and an optional `reply` of plain text (control characters removed, at most 600 characters) that the API shows as "Agent says" and never as proof of an outcome. Tests: `tests/agent/test_planner_chat.py`.
+
 ## Where Planner and Reader sit
 
 ```mermaid

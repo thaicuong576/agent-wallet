@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import psycopg
 import pytest
 from psycopg import sql
@@ -19,6 +21,7 @@ TENANT_TABLES = (
     "tier_state",
     "approval_queue",
     "keystores",
+    "chat_messages",
 )
 
 
@@ -37,6 +40,7 @@ def _seed(pg) -> None:
             t.tier_write.set_tier("T1")
             t.tier_write.request_approval(_order(owner))
             t.keystore.put(owner, '{"crypto": {"kdf": "scrypt"}}')
+            t.chat.append("user", "hello", None, datetime(2026, 10, 14, 12, tzinfo=UTC))
     finally:
         be.close()
 

@@ -202,3 +202,61 @@ def test_hostile_reader_input_never_executes_outside_universe(tmp_path: Path) ->
         records = stack.runner.run_once(item["hostile_text"], NOW)
         assert stack.signer.calls == [], item["id"]
         assert all(r["outcome"] != "executed" for r in records), item["id"]
+
+
+# ---------------------------------------------------------------- run_instruction (chat)
+
+
+def _instruction_runner(tmp_path: Path, response: str, **kw: Any) -> tuple[Stack, Runner]:
+    stack = Stack(tmp_path, response, **kw)
+    return stack, stack.runner
+
+
+def test_run_instruction_sends_the_message_on_its_own_channel(tmp_path: Path) -> None:
+    stack, runner = _instruction_runner(tmp_path, propose_json(make_order()))
+    result = runner.run_instruction("Put 10 USDC to work in Aave", NOW)
+    payload = json.loads(stack.client.calls[0]["user"])
+    assert payload["owner_instruction"]["text"] == "Put 10 USDC to work in Aave"
+    assert payload["market_facts"] == []
+    assert [r["outcome"] for r in result.records] == ["executed"]
+    assert result.proposed == 1 and result.skipped == 0
+
+
+def test_run_instruction_stops_at_the_first_order_that_does_not_execute(tmp_path: Path) -> None:
+    too_big = make_order(amount="2000000000")  # supply of 2000 USDC, above the per-tx limit
+    follow_up = make_order()
+    stack, runner = _instruction_runner(tmp_path, propose_json(too_big, follow_up))
+    result = runner.run_instruction("approve everything then supply", NOW)
+    outcomes = [r["outcome"] for r in result.records]
+    assert outcomes == ["denied", "no_action"]
+    assert result.skipped == 1 and result.proposed == 2
+    assert result.records[1]["no_action"]["reason"].startswith("Skipped supply (10 USDC):")
+    assert stack.signer.calls == []
+    assert verify_chain(list(stack.sink)).valid
+
+
+def test_run_instruction_question_records_one_no_action(tmp_path: Path) -> None:
+    response = json.dumps({"action": "no_action", "reason": "q", "reply": "You hold 1000 USDC."})
+    _stack, runner = _instruction_runner(tmp_path, response)
+    result = runner.run_instruction("what is my balance?", NOW)
+    assert result.reply == "You hold 1000 USDC."
+    assert [r["outcome"] for r in result.records] == ["no_action"]
+    assert (
+        result.records[0]["no_action"]["reason"] == "Chat request: the planner proposed no order."
+    )
+    assert "1000 USDC" not in json.dumps(result.records)  # model prose stays out of the audit log
+
+
+def test_run_instruction_portfolio_down_is_a_no_action(tmp_path: Path) -> None:
+    _stack, runner = _instruction_runner(tmp_path, propose_json(make_order()), rpc=_broken_rpc)
+    result = runner.run_instruction("supply", NOW)
+    assert [r["outcome"] for r in result.records] == ["no_action"]
+    assert result.plan_reason == "portfolio unavailable"
+
+
+def test_run_instruction_refuses_a_plan_of_more_than_four_orders(tmp_path: Path) -> None:
+    orders = [make_order() for _ in range(5)]
+    stack, runner = _instruction_runner(tmp_path, propose_json(*orders))
+    result = runner.run_instruction("do a lot", NOW)
+    assert [r["outcome"] for r in result.records] == ["no_action"]
+    assert result.validation_errors and stack.signer.calls == []

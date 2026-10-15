@@ -8,6 +8,7 @@ from core.storage.sqlite.adapters import (
     SqliteLedgerQueries,
     SqliteTiers,
 )
+from core.storage.sqlite.chat import SqliteChat
 from core.storage.sqlite.tenant import SqliteTenantStores, open_tenant, tenant_dir
 from core.storage.sqlite.webapp import (
     WEBAPP_DB,
@@ -22,6 +23,7 @@ __all__ = [
     "WEBAPP_DB",
     "SqliteAuditStore",
     "SqliteBackend",
+    "SqliteChat",
     "SqliteGatewayLockProvider",
     "SqliteJobs",
     "SqliteLedgerQueries",

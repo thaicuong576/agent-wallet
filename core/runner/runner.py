@@ -7,6 +7,7 @@ audit write path: every record it returns was appended by the gateway.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -17,12 +18,38 @@ from core.policy.ips import LoadedIps
 from core.runner.portfolio import PortfolioUnavailable, WalletSnapshot
 
 REASON_MAX_LEN = 500
+MAX_INSTRUCTION_ORDERS = 4
+SKIP_PREFIX = "Skipped"
+
+
+@dataclass
+class InstructionResult:
+    """What one owner instruction produced. Every record was appended by the gateway."""
+
+    records: list[dict[str, Any]] = field(default_factory=list)
+    reply: str | None = None
+    plan_reason: str | None = None
+    validation_errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    proposed: int = 0
+    skipped: int = 0
 
 
 class PortfolioReaderLike(Protocol):
     """Anything that can produce a WalletSnapshot as of `now`."""
 
     def read(self, now: datetime) -> WalletSnapshot: ...
+
+
+def _amount_text(order: dict[str, Any]) -> str:
+    amount = order.get("amount") or {}
+    try:
+        units, decimals = int(amount["value"]), int(amount["decimals"])
+    except (KeyError, TypeError, ValueError):
+        return "?"
+    whole, frac = divmod(units, 10**decimals)
+    text = f"{whole}.{frac:0{decimals}d}".rstrip("0").rstrip(".") if decimals else str(whole)
+    return f"{text} {order.get('token', '')}".strip()
 
 
 def _iso(now: datetime) -> str:
@@ -84,3 +111,67 @@ class Runner:
             if record.get("outcome") == "failed":
                 break
         return records
+
+    def run_instruction(self, instruction: str, now: datetime) -> InstructionResult:
+        """One owner chat instruction: plan, then propose the orders one at a time.
+
+        The instruction reaches the planner on its own labelled channel (not as Reader facts) and
+        the planner's orders go through the gateway with `origin="planner"`, so mint and transfer
+        stay impossible. Execution stops at the first order that is not `executed`; each order
+        left over is recorded as a skipped step with the reason.
+        """
+        result = InstructionResult()
+        try:
+            snapshot = self.portfolio.read(now)
+        except PortfolioUnavailable:
+            result.records.append(self._no_action("portfolio unavailable", now))
+            result.plan_reason = "portfolio unavailable"
+            return result
+
+        plan = self.planner.plan(snapshot.state, self.ips, None, owner_instruction=instruction)
+        result.reply = getattr(plan, "reply", None)
+        result.warnings = list(plan.warnings)
+        result.validation_errors = list(plan.validation_errors)
+        if plan.is_no_action:
+            result.plan_reason = str((plan.no_action or {}).get("reason") or "no action")
+            result.records.append(
+                self._no_action("Chat request: the planner proposed no order.", now)
+            )
+            return result
+        orders = list(plan.orders)
+        if len(orders) > MAX_INSTRUCTION_ORDERS:
+            result.validation_errors.append(
+                f"the plan has {len(orders)} orders, at most {MAX_INSTRUCTION_ORDERS} are accepted"
+            )
+            result.records.append(self._no_action("Chat request: the plan was too long.", now))
+            return result
+
+        result.proposed = len(orders)
+        blocker: str | None = None
+        for order in orders:
+            if blocker is not None:
+                what = f"{order.get('function', 'step')} ({_amount_text(order)})"
+                reason = f"{SKIP_PREFIX} {what}: {blocker}"
+                result.records.append(self._no_action(reason, now))
+                result.skipped += 1
+                continue
+            if result.records:
+                try:
+                    self.portfolio.read(now)
+                except PortfolioUnavailable:
+                    blocker = "the portfolio could not be read."
+                    what = f"{order.get('function', 'step')} ({_amount_text(order)})"
+                    result.records.append(self._no_action(f"{SKIP_PREFIX} {what}: {blocker}", now))
+                    result.skipped += 1
+                    continue
+            record = self.gateway.propose(order)
+            result.records.append(record)
+            outcome = str(record.get("outcome"))
+            if outcome != "executed":
+                words = {
+                    "denied": "the previous step was blocked.",
+                    "failed": "the previous step failed.",
+                    "pending_approval": "the previous step is waiting for your approval.",
+                }
+                blocker = words.get(outcome, "the previous step did not go through.")
+        return result

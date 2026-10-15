@@ -15,6 +15,7 @@ const ROUTES = {
   withdraw: "/agent/withdraw",
   presets: "/presets",
   runs: "/runs",
+  chat: "/chat",
   job: "/jobs/{job_id}",
   jobs: "/jobs",
   auditVerify: "/audit/verify",
@@ -98,6 +99,8 @@ export function createApi({
     tier: demo && scenario !== "t0" ? "T2" : "T0",
     extra: [],
     jobs: [],
+    chat: [],
+    chatSeq: 0,
     seeded: false,
   };
 
@@ -186,6 +189,15 @@ export function createApi({
         };
         fx.jobs.push(job);
         return { job_id: job.job_id, status: "queued" };
+      }
+      case "chatSend": {
+        needSession();
+        if (fx.stopped) throw new ApiError(409, "stopped", "Stopped");
+        return chatFixture(String(arg || ""));
+      }
+      case "chat": {
+        needSession();
+        return { items: fx.chat.slice(-(Number(arg) || 50)) };
       }
       case "job": {
         needSession();
@@ -284,6 +296,89 @@ export function createApi({
     }
   }
 
+  // Scripted conversation for the no-backend mode: a balance question, a deposit request (blocked
+  // at tier T0, executed above it) and anything else. Shapes copy GET /chat.
+  const FX_TX = "0x" + "cd".repeat(32);
+  const usdc10 = { value: "10000000", decimals: 6 };
+  const fxStep = (o) => ({
+    order_id: null,
+    token: "USDC",
+    amount: usdc10,
+    reason: null,
+    rule_codes: [],
+    tx_hash: null,
+    ...o,
+  });
+  function chatFixture(text) {
+    const seq = ++fx.chatSeq;
+    const jobId = "d" + String(seq).padStart(31, "0");
+    const now = "2026-10-14T12:" + String(seq % 60).padStart(2, "0") + ":00Z";
+    let agent = "";
+    let steps = [];
+    let status = "succeeded";
+    if (/balance|how much/i.test(text)) {
+      agent = "No transaction was made.\n\nAgent says: Wallet: 1000 USDC idle, 0 USDC in Aave.";
+    } else if (/put|supply|deposit|invest|aave|work/i.test(text)) {
+      if (fx.tier === "T0") {
+        status = "denied";
+        agent =
+          "I did not act: your agent is in read-only mode (tier T0), so it cannot act yet. Activate it to let it work inside your policy.";
+        steps = [
+          fxStep({
+            function: "approve",
+            outcome: "denied",
+            rule_codes: ["TIER.READ_ONLY"],
+            reason: "Tier T0 is read-only; no order is executed.",
+            explanation:
+              "The agent could not approve 10 USDC for the Aave pool: your agent is in read-only mode (tier T0). Nothing was sent.",
+          }),
+          fxStep({
+            function: "supply",
+            outcome: "skipped",
+            explanation: "Not attempted: the previous step was blocked.",
+          }),
+        ];
+      } else {
+        agent =
+          "I approved 10 USDC for the Aave pool and supplied 10 USDC to Aave. Transactions: " +
+          FX_TX +
+          ", " +
+          FX_TX +
+          ".";
+        steps = [
+          fxStep({
+            function: "approve",
+            outcome: "executed",
+            tx_hash: FX_TX,
+            explanation: "Approved 10 USDC for the Aave pool.",
+          }),
+          fxStep({
+            function: "supply",
+            outcome: "executed",
+            tx_hash: FX_TX,
+            explanation: "Supplied 10 USDC to Aave.",
+          }),
+        ];
+      }
+    } else {
+      agent =
+        "No transaction was made.\n\nAgent says: I can answer questions about your balance and put idle USDC to work in Aave.";
+    }
+    fx.chat.push({ id: "m" + seq + "u", role: "user", text, job_id: jobId, created_at: now, steps: [] });
+    fx.chat.push({ id: "m" + seq + "a", role: "agent", text: agent, job_id: jobId, created_at: now, steps });
+    fx.jobs.push({
+      job_id: jobId,
+      kind: "chat",
+      status,
+      planner_client: "scripted",
+      order_ids: [],
+      error_code: status === "denied" ? "TIER.READ_ONLY" : null,
+      created_at: now,
+      finished_at: now,
+    });
+    return { job_id: jobId, status: "queued" };
+  }
+
   function call(key, method, path, opts, arg) {
     return fixtures ? fixtureCall(key, arg) : real(method, path, opts);
   }
@@ -339,6 +434,10 @@ export function createApi({
     setPreset: (presetId) =>
       fixtures ? fixtureCall("policy", { preset_id: presetId }) : noPolicyRoute(),
     run: (opts) => call("run", "POST", ROUTES.runs, { body: opts || {} }, opts || {}),
+    chatSend: (message) =>
+      call("chatSend", "POST", ROUTES.chat, { body: { message } }, message),
+    chat: (limit = 50) =>
+      call("chat", "GET", ROUTES.chat + "?limit=" + encodeURIComponent(limit), {}, limit),
     job: (jobId) =>
       JOB_ID.test(jobId)
         ? call("job", "GET", ROUTES.job.replace("{job_id}", jobId), {}, jobId)

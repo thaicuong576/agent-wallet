@@ -21,6 +21,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from api import chat as webapp_chat
 from api import jobs as webapp_jobs
 from api import wallet as webapp_wallet
 from api.auth import (
@@ -374,6 +375,7 @@ def create_app(
     app.include_router(auth_router)
     app.include_router(webapp_wallet.router)
     app.include_router(webapp_jobs.router)
+    app.include_router(webapp_chat.router)
 
     def _single_scope() -> _Scope:
         return _Scope(tier_view, owner_controls, gateway, audit_sink, active_ips, active_ips_hash)

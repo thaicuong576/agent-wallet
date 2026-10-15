@@ -11,6 +11,7 @@ from core.storage.migrate import apply_migrations, check_schema
 from core.storage.postgres.adapters import (
     PgAuditStore,
     PgAuthStore,
+    PgChatStore,
     PgGatewayLockProvider,
     PgIntentStore,
     PgJobStore,
@@ -47,6 +48,7 @@ class PgTenantStores:
     jobs: PgJobStore
     policy_selection: PgPolicySelectionStore
     topups: PgTopupStore
+    chat: PgChatStore
 
     def close(self) -> None:
         """Connections belong to the backend pool; a tenant handle holds none."""
@@ -86,6 +88,7 @@ class PostgresBackend:
             jobs=PgJobStore(self._pool, owner),
             policy_selection=PgPolicySelectionStore(self._pool, owner),
             topups=PgTopupStore(self._pool, owner),
+            chat=PgChatStore(self._pool, owner),
         )
 
     def auth(self) -> PgAuthStore:

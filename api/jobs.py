@@ -29,6 +29,13 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from api.auth import AuthProblem, Session, require_step_up
+from api.chat_compose import (
+    FALLBACK_LLM_ERROR,
+    FALLBACK_UNCONFIGURED,
+    compose_agent_text,
+    text_for_error,
+    user_facing_stop,
+)
 from api.wallet import current_tenant, get_webapp, problem_invalid
 from core.agent import Planner, Reader, ScriptedClient
 from core.agent.client import LLMClient, LLMError, OpenAIClient
@@ -45,7 +52,10 @@ log = logging.getLogger("agent_wallet.jobs")
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ORDER_SCHEMA = ROOT_DIR / "contracts" / "schemas" / "order.schema.json"
 
-KINDS = ("run", "mint", "withdraw")
+KINDS = ("run", "mint", "withdraw", "chat")
+# Chat and run jobs share one hourly limit (ticket 115).
+RUN_LIKE = ("run", "chat")
+CHAT_MESSAGE_MAX_CHARS = 500
 ACTIVE = ("queued", "running")
 STOP_CODES = frozenset({"TIER.EMERGENCY_STOP", "TIER.GLOBAL_STOP"})
 OWNER_STOP_CODE = "TIER.EMERGENCY_STOP"
@@ -75,7 +85,11 @@ class JobLimits:
         return cls(mint_calls_per_hour=mint)
 
     def per_hour(self, kind: str) -> int | None:
-        return {"run": self.runs_per_hour, "mint": self.mint_calls_per_hour}.get(kind)
+        return {
+            "run": self.runs_per_hour,
+            "chat": self.runs_per_hour,
+            "mint": self.mint_calls_per_hour,
+        }.get(kind)
 
 
 # ---------------------------------------------------------------- problems (RFC 7807)
@@ -168,6 +182,7 @@ class Outcome:
     order_ids: list[str] | None = None
     seqs: list[int] | None = None
     planner_client: str = "none"
+    chat_text: str | None = None  # the agent message of a chat job, composed by code
 
 
 def _rule_codes(record: Mapping[str, Any]) -> list[str]:
@@ -242,15 +257,39 @@ class JobService:
                 raise problem_invalid(
                     f"note must be at most {self.limits.note_max_chars} characters"
                 )
+        elif kind == "chat":
+            message = args.get("message")
+            if not isinstance(message, str) or not (
+                1 <= len(message.strip()) <= CHAT_MESSAGE_MAX_CHARS
+            ):
+                raise problem_invalid(f"message must be 1 to {CHAT_MESSAGE_MAX_CHARS} characters")
+            args["message"] = message.strip()
         else:
             args["order"] = self._owner_order(tenant, kind, args)  # validated before queueing
         job_id = uuid.uuid4().hex
         try:
-            self.store(tenant).create(job_id, kind, self._clock(), limit=self.limits.per_hour(kind))
+            self.store(tenant).create(
+                job_id,
+                kind,
+                self._clock(),
+                limit=self.limits.per_hour(kind),
+                count_kinds=RUN_LIKE if kind in RUN_LIKE else None,
+            )
         except JobInProgress as exc:
             raise job_in_progress(exc.job_id) from None
         except RateLimited as exc:
             raise rate_limited(exc.retry_after_s) from None
+        if kind == "chat":
+            try:
+                tenant.stores.chat.append("user", args["message"], job_id, self._clock())
+            except Exception:
+                self.store(tenant).update(
+                    job_id,
+                    status="failed",
+                    error_code="INTERNAL_ERROR",
+                    finished_at=_ts(self._clock()),
+                )
+                raise
         self._executor.submit(self._execute, tenant, job_id, kind, args)
         return job_id
 
@@ -356,6 +395,8 @@ class JobService:
         except Exception as exc:  # noqa: BLE001 - never leak text, never leave a job running
             log.warning("job %s failed: %s", job_id, type(exc).__name__)
         finally:
+            if kind == "chat":
+                self._append_agent_message(tenant, job_id, outcome)
             fields: dict[str, Any] = {
                 "status": outcome.status,
                 "error_code": outcome.error_code,
@@ -369,11 +410,22 @@ class JobService:
                 fields["planner_client"] = outcome.planner_client
             store.update(job_id, **fields)
 
+    def _append_agent_message(self, tenant: Tenant, job_id: str, outcome: Outcome) -> None:
+        """The agent's chat message, written before the job turns terminal so a poller that sees
+        the job finish also finds the message."""
+        text = outcome.chat_text or text_for_error(outcome.error_code or "INTERNAL_ERROR")
+        try:
+            tenant.stores.chat.append("agent", text, job_id, self._clock())
+        except Exception as exc:  # noqa: BLE001 - never leave a job running
+            log.warning("job %s chat message not stored: %s", job_id, type(exc).__name__)
+
     def _dispatch(
         self, tenant: Tenant, store: JobStore, job_id: str, kind: str, args: dict[str, Any]
     ) -> Outcome:
         if kind == "run":
             return self._run(tenant, store, job_id, args)
+        if kind == "chat":
+            return self._chat(tenant, store, job_id, args)
         return self._owner_job(tenant, kind, args["order"])
 
     def _gas_gate(self, tenant: Tenant) -> Outcome | None:
@@ -451,6 +503,70 @@ class JobService:
             [r["order_id"] for r in records if r.get("order_id")],
             [int(r["seq"]) for r in records],
             label,
+        )
+
+    # -- chat
+
+    def _chat(self, tenant: Tenant, store: JobStore, job_id: str, args: dict[str, Any]) -> Outcome:
+        """One owner message: plan, then run the orders one by one through the gateway.
+
+        The agent text is composed from what the gateway recorded; the model's `reply` only rides
+        along under its own label.
+        """
+        now = self._clock()
+        code = self._stopped(tenant, owner_stop_counts=True)
+        if code is not None:
+            reason = (
+                "Chat request not handled: the operator's global stop is set."
+                if code == GLOBAL_STOP_CODE
+                else "Chat request not handled: the emergency stop is engaged."
+            )
+            record = tenant.gateway.record_no_action(reason, _now_iso(now))
+            return Outcome(
+                "denied",
+                code,
+                [],
+                [int(record["seq"])],
+                chat_text=compose_agent_text([record], stop_text=user_facing_stop(code)),
+            )
+        gas_error = self._gas_gate(tenant)
+        if gas_error is not None:
+            return gas_error
+
+        label, planner = self._select_planner("auto")
+        fallback = FALLBACK_UNCONFIGURED if label == "fallback" else None
+        store.update(job_id, planner_client=label)
+        portfolio = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
+        ips = tenant.gateway.policy.ips
+        message = args["message"]
+        try:
+            result = self._runner(tenant, portfolio, ips, label, planner).run_instruction(
+                message, now
+            )
+        except LLMError:
+            # Nothing is proposed before the model answers, so the fallback cannot duplicate.
+            label, planner = "fallback", FallbackPlanner()
+            fallback = FALLBACK_LLM_ERROR
+            store.update(job_id, planner_client=label)
+            result = self._runner(tenant, portfolio, ips, label, planner).run_instruction(
+                message, now
+            )
+        records = result.records
+        status, error = classify(records, "chat")
+        text = compose_agent_text(
+            records,
+            reply=result.reply,
+            plan_reason=result.plan_reason,
+            validation_errors=result.validation_errors,
+            fallback=fallback,
+        )
+        return Outcome(
+            status,
+            error,
+            [r["order_id"] for r in records if r.get("order_id")],
+            [int(r["seq"]) for r in records],
+            label,
+            chat_text=text,
         )
 
     def _runner(

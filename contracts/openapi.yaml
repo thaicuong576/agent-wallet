@@ -21,6 +21,7 @@ tags:
   - name: auth
   - name: agent
   - name: jobs
+  - name: chat
 
 paths:
   /orders:
@@ -484,6 +485,59 @@ paths:
         "202": { $ref: "#/components/responses/JobAccepted" }
         "409": { $ref: "#/components/responses/Problem" }
         "429": { $ref: "#/components/responses/Problem" }
+  /chat:
+    post:
+      tags: [chat]
+      operationId: sendChat
+      summary: Hand the agent a task or ask it a question, as a job of kind chat.
+      description: >-
+        The message goes to the planner as the owner's instruction (an untrusted, separately
+        labelled channel). The planner may propose an ordered list of orders; each goes through the
+        gateway with `origin: planner`, so mint and transfer are impossible from chat. Execution
+        stops at the first order that is not executed. Counts against the same hourly limit as
+        `POST /runs`, and the one-active-job rule applies. Poll `GET /jobs/{job_id}`, then read
+        `GET /chat`.
+      security: [{ SessionCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [message]
+              properties:
+                message: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        "202": { $ref: "#/components/responses/JobAccepted" }
+        "401": { $ref: "#/components/responses/Problem" }
+        "409": { $ref: "#/components/responses/Problem" }
+        "422": { $ref: "#/components/responses/Problem" }
+        "429": { $ref: "#/components/responses/Problem" }
+    get:
+      tags: [chat]
+      operationId: listChat
+      summary: The owner's chat messages, oldest first, with the steps of each agent message.
+      description: >-
+        A step is rebuilt from the audit records of the message's job (never from model prose).
+        The agent text is composed by code from the outcomes; a model `reply` appears in it under
+        the label "Agent says" and is never proof of an outcome.
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses:
+        "200":
+          description: Messages.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChatMessage" }
+        "401": { $ref: "#/components/responses/Problem" }
   /jobs:
     get:
       tags: [jobs]
@@ -620,7 +674,7 @@ components:
       required: [job_id, kind, status, planner_client, order_ids, created_at]
       properties:
         job_id: { type: string }
-        kind: { type: string, enum: [run, mint, withdraw] }
+        kind: { type: string, enum: [run, mint, withdraw, chat] }
         status: { type: string, enum: [queued, running, succeeded, denied, failed, interrupted] }
         planner_client: { type: string, enum: [openai, scripted, fallback, none] }
         order_ids: { type: array, items: { type: string }, description: "Ids only; fetch records from /decisions." }
@@ -644,6 +698,29 @@ components:
               reason: { type: [string, "null"] }
               tx_hash: { type: [string, "null"] }
               planner_client: { type: string, enum: [openai, scripted, fallback, none] }
+    ChatStep:
+      type: object
+      required: [order_id, function, token, amount, outcome, reason, rule_codes, tx_hash, explanation]
+      properties:
+        order_id: { type: [string, "null"] }
+        function: { type: [string, "null"] }
+        token: { type: [string, "null"] }
+        amount: { type: [object, "null"] }
+        outcome: { type: string, enum: [executed, denied, pending_approval, failed, skipped] }
+        reason: { type: [string, "null"] }
+        rule_codes: { type: array, items: { type: string } }
+        tx_hash: { type: [string, "null"] }
+        explanation: { type: string, description: "Plain sentence composed by code." }
+    ChatMessage:
+      type: object
+      required: [id, role, text, job_id, created_at, steps]
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [user, agent] }
+        text: { type: string, maxLength: 4000 }
+        job_id: { type: [string, "null"] }
+        created_at: { $ref: "#/components/schemas/UtcTimestamp" }
+        steps: { type: array, items: { $ref: "#/components/schemas/ChatStep" } }
     Problem:
       type: object
       required: [type, title, status]

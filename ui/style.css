@@ -289,3 +289,28 @@ li.empty { list-style: none; }
 .fact dt { font-size: 0.8rem; opacity: 0.8; }
 .fact dd { margin: 2px 0 0; font-weight: 700; overflow-wrap: anywhere; }
 .decision.wait .fact { background: transparent; border: 1px solid var(--on-accent); }
+
+/* ---- chat: bubbles, step cards, composer ---- */
+.chat-log { list-style: none; margin: var(--s-md) 0; padding: 0; display: grid; gap: var(--s-sm); }
+.bubble { max-width: 46rem; padding: var(--s-sm) var(--s-md); border-radius: var(--r-xl); border: 1px solid var(--hairline); overflow-wrap: anywhere; }
+.bubble p { margin: 4px 0; }
+.bubble.user { justify-self: end; background: var(--accent-gold-soft); color: var(--on-accent); border-color: var(--primary-pressed); border-bottom-right-radius: var(--r-xs); }
+.bubble.agent { justify-self: start; background: var(--canvas-soft); border-bottom-left-radius: var(--r-xs); }
+.bubble .who { display: block; font-size: 0.8rem; font-weight: 700; opacity: 0.8; }
+.bubble .says { margin-top: var(--s-xs); }
+.bubble .steps { margin-top: var(--s-xs); }
+.bubble .cta { margin: var(--s-xs) 0; }
+.step-card { border-left-width: 6px; }
+.typing { min-height: 1.4em; margin: var(--s-xs) 0; font-weight: 600; }
+.composer textarea { max-width: none; resize: vertical; }
+.counter { font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.counter.full { color: var(--error); font-weight: 700; }
+.suggest { display: flex; flex-wrap: wrap; gap: var(--s-xs); margin: var(--s-xs) 0; }
+button.chip.prompt-chip { min-height: 44px; padding: 6px 14px; cursor: pointer; font-size: 0.9rem; }
+button.chip.prompt-chip:hover { border-color: var(--ink); }
+button.chip.hint-chip { border-style: dashed; }
+.frozen-note { border-left: 8px solid var(--error); }
+@media (max-width: 480px) {
+  .bubble { max-width: 100%; }
+  .row button { flex: 1 1 100%; }
+}

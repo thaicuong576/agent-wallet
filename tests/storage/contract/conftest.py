@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from core.gateway.intents import IntentStore
-from core.storage.sqlite import SqliteTenantStores, open_tenant
+from core.storage.sqlite import SqliteChat, SqliteJobs, SqliteTenantStores, open_tenant
 from tests.storage.test_pg_support import SKIP_REASON, TEST_DATABASE_URL, PgContractBackend
 
 OWNER_A = "0x" + "a" * 40
@@ -46,6 +46,9 @@ class SqliteBackend:
             lock_timeout_s=lock_timeout_s,
             price_fn=_price,
         )
+        # Webapp stores sit beside the gateway files; the bare helper leaves them unset.
+        stores.jobs = SqliteJobs(stores.path / "webapp.sqlite")
+        stores.chat = SqliteChat(stores.path / "webapp.sqlite")
         self._open.append(stores)
         return stores
 

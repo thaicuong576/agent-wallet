@@ -8,7 +8,9 @@ Source of truth: `docs/design/webapp/system-design.md` sections 5, 8, 10, 11, 12
 | :--- | :--- |
 | `api/wallet.py` | `WebappServices`, `current_tenant` (the session owner's tenant), `WalletService` (live balances, gas floor, top-up verification through an injected RPC callable), the top-up service over `tenant.stores.topups`, routes `/me`, `/agent`, `/topups`, `/presets`, `/audit/verify` |
 | `api/jobs.py` | `JobService` (`start`, `get`, `list`, `mark_interrupted_on_startup`), `JobLimits` (the job rows live in `tenant.stores.jobs`; `SqliteJobs` is re-exported from `core/storage/sqlite/webapp.py`), routes `/agent/mint`, `/agent/withdraw`, `/runs`, `/jobs` |
-| `core/agent/planner.py` | `FallbackPlanner`: deterministic, labelled `fallback` |
+| `api/chat.py`, `api/chat_compose.py` | `POST /chat`, `GET /chat`; step and message text composed by code from audit records (ticket 115) |
+| `core/agent/planner.py` | `FallbackPlanner`: deterministic, labelled `fallback`; reads an owner chat message by keywords |
+| `core/runner/runner.py` | `Runner.run_instruction`: one owner chat message, planned and proposed order by order |
 | `api/main.py` | In `AGENT_WALLET_MODE=multi`, builds the services from the environment (RPC URL, keystore secret, `DATABASE_URL` or data directory) and the `StorageBackend` |
 | `core/gateway/tenant.py` | `TenantRegistry(settings, rpc, backend=...)` builds every per-owner object from `backend.open_tenant(owner)` |
 
@@ -84,11 +86,36 @@ The jobs table never holds an order body, a note or a key. A partial unique inde
 | Process restart | `interrupted` | none |
 | Another job is active / hourly limit used | no job (`409 job-in-progress` / `429 rate-limited`) | n/a |
 
-Limits (one place, `JobLimits`): 6 runs per owner per hour, 4 mint calls per owner per hour (`AGENT_WALLET_MINT_CALLS_PER_HOUR`), note at most 2,000 characters. The count is of job rows, so every mint attempt counts whatever its outcome.
+Limits (one place, `JobLimits`): 6 runs or chat messages (one shared count) per owner per hour, 4 mint calls per owner per hour (`AGENT_WALLET_MINT_CALLS_PER_HOUR`), note at most 2,000 characters. The count is of job rows, so every mint attempt counts whatever its outcome.
 
 ## Planners
 
 `auto` uses `OpenAIClient` when `OPENAI_API_KEY` is set and falls back to `FallbackPlanner` on `LLMError` (nothing is proposed before the LLM answers, so the retry cannot duplicate an order). Without a key the fallback is used directly. `scripted_hostile` is a scripted client that emits a schema-valid supply far above the per-transaction limit, to show the gateway denying it. Records of the audit chain have a closed schema and cannot carry `planner_client`; the label is on the job and on every record summary returned by `GET /jobs/{job_id}`.
+
+## Chat (ticket 115)
+
+```mermaid
+flowchart LR
+  B[Chat tab] -->|POST /chat| R[api/chat.py]
+  R --> J[JobService.start kind=chat]
+  J -->|user message, job id| C[(ChatStore: chat_messages)]
+  J --> W[worker]
+  W --> P[Planner or Fallback<br/>owner_instruction channel]
+  P -->|orders, reply| RN[Runner.run_instruction]
+  RN -->|one by one, origin=planner| GW[Gateway]
+  GW --> AU[(audit chain)]
+  W -->|text composed by code| C
+  B -->|GET /chat| R
+  R -->|steps rebuilt by job id| AU
+```
+
+- **Storage.** `chat_messages(owner, id, role, text, job_id, created_at)` (SQLite: `webapp.sqlite`; Postgres: migration `0004_chat.sql`, row level security, no grant to API roles). Ids and text only: the steps are rebuilt from the audit records of `job_id` (the job row's `seqs`), so no order body, key or model transcript is stored.
+- **Planner channel.** The message is passed as `owner_instruction` (`{channel: "owner_chat", trust: "untrusted_text", text}`), separate from Reader `market_facts`. It is untrusted for rule purposes: every order goes through the policy engine with `origin="planner"`, the planner schema rejects `mint`, `transfer` and the `owner` recipient, and the chat job has no path to the owner functions.
+- **Contract.** The planner may return `orders` (an ordered list; the single `order` form still works) and a short `reply` (plain text, at most 600 characters). At most four orders are accepted; a plan with more is refused whole. The `reply` is shown as "Agent says" and is never proof of an outcome.
+- **Execution.** `Runner.run_instruction` proposes the orders one at a time and stops at the first that is not `executed` (`denied`, `failed` or `pending_approval`). Each order left over is written to the audit log as a `no_action` record `Skipped <function> (<amount> <token>): <why>`, which the step builder shows as a `skipped` step. A question-only message records one `no_action` (`Chat request: the planner proposed no order.`); the model's words are never written to the audit log.
+- **Fallback.** With no `OPENAI_API_KEY`, or on `LLMError`, the labelled `FallbackPlanner` answers and the message says so. It reads the text by keywords: a deposit request (put, supply, deposit, invest, lend, earn, stake, work; amount from "N USDC", capped by idle USDC, default the per-transaction limit) becomes `approve` then `supply`; a question gets the wallet and Aave balance as a reply; withdraw, send, transfer, mint, swap and sell are declined in words.
+- **Limits.** Chat and run jobs share one count per owner per hour (`JobStore.create(..., count_kinds=("run", "chat"))`) and the one-active-job rule.
+- **Stops and gas.** An owner or global stop ends the chat job `denied` before the planner is called, with a plain message and one `no_action` record; below the gas floor the job fails with `GAS_BELOW_FLOOR` and a plain message.
 
 ## Top-ups (design 8.1)
 

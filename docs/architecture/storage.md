@@ -60,7 +60,7 @@ flowchart LR
     F -->|unset| SB[SqliteBackend<br/>DATA_DIR]
     F -->|set| PB[PostgresBackend<br/>pool]
     API --> TR[TenantRegistry<br/>backend.open_tenant]
-    TR --> TS[TenantStores<br/>tiers, audit, intents, ledger,<br/>lock, keystore, jobs, topups]
+    TR --> TS[TenantStores<br/>tiers, audit, intents, ledger,<br/>lock, keystore, jobs, topups, chat]
     SB --> TS
     PB --> TS
     TS --> GW[Gateway]
@@ -93,6 +93,19 @@ the services use: `jobs.seqs` (audit sequence numbers, ids only) and `topups.blo
 Tests: `tests/storage/test_migration_0003.py` (static SQL checks always; the migrated schema and the
 role behaviour when `TEST_DATABASE_URL` is set).
 
+### Chat store and migration 0004
+
+`ChatStore` (`append(role, text, job_id, created_at)`, `list(limit)` oldest first, the most recent
+`limit` rows) holds the owner's chat messages: ids and text only, never an order body (a step is
+rebuilt from the audit log by `job_id`). SQLite: table `chat_messages` in the owner's
+`webapp.sqlite` (`SqliteChat`, `core/storage/sqlite/chat.py`). Postgres: `0004_chat.sql` creates
+`chat_messages` with `owner`, an identity `seq` for ordering, `role` limited to `user` or `agent`,
+and text of at most 4,000 characters; it enables row level security with the same owner-bound
+policy as `jobs` and grants only `aw_app` (nothing to `anon` or `authenticated`). `JobStore.create`
+takes `count_kinds` so one hourly limit can count several kinds (chat and run share it).
+Tests: `tests/storage/contract/test_chat.py` (both backends) and `tests/storage/test_migration_0004.py`
+(static SQL checks always).
+
 ## Contract suite
 
 `tests/storage/contract/` runs against the `backend` fixture in `conftest.py`, parametrised over
@@ -109,6 +122,7 @@ afterwards (the append-only triggers forbid TRUNCATE, so tables are never cleane
 | Exclusion, timeout fails closed (`GatewayBusy`), release on error | `test_lock.py` |
 | Tier default, stop, approvals, read after write on two connections | `test_tiers.py` |
 | Two owners never see each other, address validation | `test_isolation.py` |
+| Chat messages: order, limit, role check, isolation; one limit over several job kinds | `test_chat.py` |
 
 ## Postgres backend (P2)
 

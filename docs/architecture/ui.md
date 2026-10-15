@@ -1,4 +1,4 @@
-# Webapp UI (Stage 0 views, F1c additions)
+# Webapp UI (Stage 0 views, F1c additions, chat tab)
 
 > Visual language: [`DESIGN.md`](../../DESIGN.md). Behaviour and architecture: [`docs/design/webapp/system-design.md`](../design/webapp/system-design.md) (sections 12, 14). Tickets F1 and F1b (live API).
 
@@ -17,6 +17,20 @@ flowchart LR
   A -.->|?fixtures=1| F[ui/fixtures/*.json]
   W -.->|?fixtures=1| T[TestWallet stub]
 ```
+
+## Chat tab (ticket 115)
+
+`Chat` is the first tab and the home view once signed in (`#/chat`; signed out the home view is Set up). Dashboard, Feed and Approvals are unchanged.
+
+- **Conversation.** Owner and agent bubbles from `GET /chat`; after a send the owner's bubble appears at once and the list is reloaded from the server when the job ends. An agent bubble shows the text composed by the server; a paragraph that starts `Agent says:` is the model's own words and gets an "Agent says" chip.
+- **Composer.** Enter sends, Shift+Enter adds a line, a live `n / 500` counter, the text is kept when a request is refused.
+- **Suggested prompts.** "Put 10 USDC to work in Aave" and "What is my balance?" fill the composer. "Withdraw 5 USDC to my wallet" is a dashed hint chip: it sends nothing and explains that withdrawing needs a wallet signature, with a link to the Withdraw control on the Dashboard.
+- **Progress.** A typing indicator ("Agent is getting ready…", "Agent is thinking…") while `GET /jobs/{id}` is polled at the usual 2 s to 5 s cadence.
+- **Step cards.** Under each agent message, one card per step: function and amount, an outcome chip with an icon and a word (Executed, Blocked, Waiting for you, Failed, Skipped), the plain explanation, the rule code chips with their plain sentences, and the BaseScan link for an executed step. A blocked step reads in words, never as a bare code.
+- **States.** T0 or T1: a card explains that orders are blocked, with an "Activate your agent" link (the activate control is on the Dashboard); an agent message whose steps carry `TIER.READ_ONLY` repeats the link. Emergency stop: a frozen card, the composer is disabled and nothing is sent. `429`: plain words with the retry time and the message stays in the box. `409`: the running job is followed and then history reloads.
+- **Fixtures.** `?fixtures=1` scripts the same flow (blocked at T0, executed above it) with no backend.
+
+Tests: `tests/ui/chat_flows.mjs` (fake server and fake DOM) with the `test_chat_*` cases in `tests/ui/test_ui.py`. Previews: `docs/previews/chat-*.png`.
 
 ## Live mode (F1b)
 Real mode is the default when the page is served by the API; `?fixtures=1` keeps the demo. Every call goes through `api.js` with `credentials: "same-origin"` and `X-AW-CSRF: 1`; the browser adds the `Origin` header the API checks. Problem bodies (RFC 7807) become `ApiError` (slug, detail, `retryAfter`, the whole problem for the `job_id` of a 409) and `describeError` maps them to plain sentences. A 401 from any route clears the signed-in state once.
@@ -96,6 +110,7 @@ Tests: `tests/ui/flows.mjs` and `tests/ui/test_ui.py` (`test_activate_agent_send
 | `explain.js` | Rule code (all 25 plus `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, `TIER.POLICY_CHANGED`) and error code to plain language; unit helpers |
 | `wallet/adapter.js`, `injected.js`, `test.js` | Adapter interface, EIP-1193 implementation (EIP-6963 first), `TestWallet` stub |
 | `views/onboard.js`, `dashboard.js`, `feed.js`, `approvals.js` | The views, each with empty, loading and error states |
+| `views/chat.js` | Chat tab: bubbles, composer, prompt chips, typing indicator, step cards |
 | `views/jobs.js`, `views/actions.js` | Job panel and polling, record loading; Mint, Run, hostile note, Withdraw |
 | `chain.js` | In-browser audit hash check (unchanged), used by the feed's "Check in browser" |
 | `fixtures/*.json` | Data for the no-backend mode |
