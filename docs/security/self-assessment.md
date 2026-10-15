@@ -2,7 +2,7 @@
 
 Scope: the agent-wallet system as built in this repository, testnet only (Base Sepolia, chain 84532). This report covers the permission-tier implementation and the known-risk list that the competition asks for. It states what is enforced and which test proves it, and it lists what is not done yet. Status values are `enforced` (code and test exist), `partial` and `open`.
 
-Last updated against `main` after the runner tickets T1 to T4 and T5a merged. The remaining runner tickets (T5b, T6, T7) are tracked in `docs/design/runner/design.md`; items that depend on them are marked `partial` or `open`.
+Last updated against `main` after the multi-owner webapp (custody, wallet sign-in, Postgres storage, jobs, global stop) merged. The webapp controls are in section 3b and risks K13 to K18 in section 4.
 
 ## 1. Principles
 1. The LLM proposes, code decides. The model never holds a key and cannot call the signer.
@@ -48,6 +48,20 @@ Who can change what:
 | C14 | Concurrent proposes are serialised by a cross-process lock held from limit read to audit append; a lock timeout denies with nothing signed | enforced | `tests/gateway/test_lock.py` |
 | C13 | Emergency stop and tier state are shared by API and runner through one persistent file | partial | `tests/tiers/test_shared_file.py` covers two stores on one file; the end-to-end API-to-runner test lands with the runner (T5) |
 
+## 3b. Webapp controls (multi-owner mode)
+
+| # | Control | Status | Evidence |
+| :--- | :--- | :--- | :--- |
+| W1 | Wallet sign-in: server nonce, signed message bound to origin and chain, single use; HttpOnly SameSite cookie, CSRF header and Origin check on every write | enforced | `tests/webapp/test_auth*.py`, `docs/architecture/auth.md` |
+| W2 | Step-up: anything that widens authority (tier raise, stop release, withdraw, approvals) needs a fresh owner signature bound to the action and its parameters, single use | enforced | `tests/webapp`, hosted evidence `activate agent` step |
+| W3 | Per-owner isolation: every route takes the owner from the verified session only; owner-scoped storage; cross-owner reads and actions fail | enforced | `tests/webapp` isolation tests, `tests/storage` contract suite on SQLite and Postgres |
+| W4 | Agent keys are generated server-side, stored encrypted (KDF plus authenticated encryption, secret from the environment) and never returned by any route or written to logs | enforced (testnet custody) | `tests/gateway/test_custody*.py`, `docs/architecture/custody-tenancy.md` |
+| W5 | Origin-aware policy: a planner cannot mint or transfer; owner functions need `origin="owner"`, set by code, never read from the order body | enforced | `tests/gateway/test_origin.py` |
+| W6 | Global stop (env flag, flag file or settings row) is re-read after simulation and immediately before signing; an unreadable flag stops | enforced | `tests/gateway/test_global_stop.py` |
+| W7 | Run jobs: one active job per owner, 6 runs per owner per hour, mint call-count limit, failed jobs never leave a half-recorded order | enforced | `tests/webapp/test_jobs.py` |
+| W8 | Database: append-only audit and intents by trigger, row level security enabled on every table, no grants to the Supabase data API roles, parameterised SQL only | enforced | migrations 0001 to 0003, `tests/storage` |
+| W9 | Hosted evidence is reproducible: `scripts/webapp_evidence.py` signs in as a throwaway owner and writes the record | enforced | `docs/evidence/webapp-evidence.md` |
+
 ## 4. Known-risk list
 
 | ID | Risk | Severity | Status | Mitigation or plan |
@@ -64,11 +78,17 @@ Who can change what:
 | K10 | Single-process file locking: `BEGIN IMMEDIATE` serialises writers on one host, not across machines | Low | accepted | One wallet, one host; documented in the runner design |
 | K11 | LLM provider outage or cost | Low | accepted | Replay mode (`ScriptedClient`, fixtures) runs the whole system offline |
 | K12 | No third-party audit or formal verification | Medium | accepted | Self-assessment and the eval harness are the evidence offered |
+| K13 | Custodial agent keys: the server holds every owner's testnet agent key, so a server compromise exposes them | High (would be critical on mainnet) | accepted for testnet | Testnet only, stated on every page; keys encrypted at rest; next step is non-custodial session keys under the same policy engine |
+| K14 | The keystore secret and session secret live in the host environment; losing the keystore secret makes agent keys unrecoverable | Medium | accepted | Secrets are kept outside the repo; rotate by generating new agent wallets (no real funds) |
+| K15 | Free hosting: cold starts, a single instance, in-process job queue (a restart marks running jobs interrupted) | Low | accepted | `/health/deep` keep-warm, `mark_interrupted_on_startup`; jobs are idempotent by `order_id` |
+| K16 | The hosted LLM can return malformed or unhelpful output | Low | enforced | Output is schema-validated; a malformed order id is replaced by code, any other malformed field rejects; fallback planner is labelled; the policy engine decides regardless |
+| K17 | Gas for the agent comes from the owner; the agent cannot self-fund ETH | Low | accepted | Gas floor check before any job; top-up verified on chain (sender, recipient, value) |
+| K18 | Wallet sign-in proves control of an address only on a testnet; phishing of a signature request | Low | accepted | The message states origin, chain and purpose; step-up messages name the action |
 
 ## 5. How to reproduce the evidence
 ```sh
 python -m pytest -q                                  # unit, e2e, boundary and contract tests
-python -m evals.run                                  # 44 scenarios, offline, no key; writes docs/evidence/eval-report.md
+python -m evals.run                                  # 46 scenarios, offline, no key; writes docs/evidence/eval-report.md
 python -m core.audit.verify docs/evidence/audit-chain.jsonl   # hash chain of the live run
 python scripts/check_no_secrets.py                   # no secret is tracked
 ```
