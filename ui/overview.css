@@ -51,7 +51,7 @@
 .hero .total { font-size: 44px; margin: 2px 0; }
 .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
 .hero-actions button { min-height: 44px; }
-.hname .hrow-amount { display: none; }
+.hname .small.hrow-amount { display: none; }
 
 .alloc { display: flex; gap: 2px; height: 14px; margin: 14px 0 10px; }
 .alloc .seg { height: 100%; border-radius: 3px; min-width: 2px; }
@@ -82,7 +82,7 @@ i.swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px;
 @media (max-width: 519px) {
   .hrow { grid-template-columns: minmax(0, 1fr) auto; }
   .hrow > .num:nth-child(2), .hrow > .num:nth-child(4) { display: none; }
-  .hname .hrow-amount { display: block; }
+  .hname .small.hrow-amount { display: block; }
 }
 
 /* ---- overview side ---- */
