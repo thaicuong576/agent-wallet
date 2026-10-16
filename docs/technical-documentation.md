@@ -32,17 +32,48 @@ flowchart LR
 
 | Layer | Package | Responsibility | Note |
 | :--- | :--- | :--- | :--- |
-| Contracts | `contracts/` | JSON Schemas, OpenAPI, 25 rule codes, examples | [`contracts.md`](architecture/contracts.md) |
+| Contracts | `contracts/` | JSON Schemas, OpenAPI, 28 rule codes, IPS presets, examples | [`contracts.md`](architecture/contracts.md) |
 | Agent | `core/agent` | Reader (untrusted text to structured facts), Planner (facts to orders), LLM client | [`planner-reader.md`](architecture/planner-reader.md) |
 | Policy | `core/policy` | IPS loader (immutable, hashed), pure rule engine | [`ips-loader.md`](architecture/ips-loader.md), [`policy-engine.md`](architecture/policy-engine.md) |
 | Gateway | `core/gateway` | propose, tier gate, policy, simulate, sign, record; idempotency | [`gateway.md`](architecture/gateway.md), [`gateway-wiring.md`](architecture/gateway-wiring.md) |
 | Signer | `core/signer` | Local key, signs only chain 84532, never imported outside the gateway | [`signer.md`](architecture/signer.md) |
-| Protocols | `core/protocols` | Aave V3 calldata builders with exact-amount approvals | [`aave-adapter.md`](architecture/aave-adapter.md) |
-| Risk | `core/risk` | Risk-input provider: on-chain Aave data, offline fixtures | [`risk-inputs.md`](architecture/risk-inputs.md) |
+| Protocols | `core/protocols` | One registry: each protocol is a spec with its calldata builder, spenders, positions and plain-English description. Aave v3 (USDC, USDT), Aave stata ERC-4626 vaults, Morpho Blue (two allow-listed markets), Uniswap v3 swaps with an oracle-based minimum output | [`protocols.md`](architecture/protocols.md), [`aave-adapter.md`](architecture/aave-adapter.md), [`aave-stata.md`](architecture/aave-stata.md), [`morpho-blue.md`](architecture/morpho-blue.md), [`uniswap-v3.md`](architecture/uniswap-v3.md) |
+| Risk | `core/risk` | Risk-input provider: on-chain Aave data, offline fixtures. The hosted app currently serves labelled reference inputs for every protocol (known risk K21) | [`risk-inputs.md`](architecture/risk-inputs.md) |
 | Tiers | `core/tiers` | Persistent tier, emergency stop, approval queue; read-only view vs owner controls | [`tiers.md`](architecture/tiers.md) |
 | Audit | `core/audit` | Append-only SQLite hash chain, verifier, JSONL export | [`audit-log.md`](architecture/audit-log.md) |
-| Interface | `api`, `ui` | REST API from the OpenAPI contract, minimal owner console | [`api.md`](architecture/api.md), [`ui.md`](architecture/ui.md) |
-| Evaluation | `evals` | Offline replay harness, 44 scenarios, report | [`evals.md`](architecture/evals.md) |
+| Interface | `api`, `ui` | REST API from the OpenAPI contract; web app with chat as home, portfolio, activity, rules, owner sign-in, step-up signatures | [`api.md`](architecture/api.md), [`ui.md`](architecture/ui.md), [`webapp.md`](architecture/webapp.md) |
+| Hosting and storage | `core/storage`, `Dockerfile` | Multi-owner mode: per-owner agent wallet, encrypted keystore, Postgres (row level security) or SQLite, jobs, chat threads | [`custody-tenancy.md`](architecture/custody-tenancy.md), [`storage.md`](architecture/storage.md), [`deployment.md`](architecture/deployment.md) |
+| Evaluation | `evals` | Offline replay harness, 46 scenarios, 27 of 28 rule codes covered (the 28th is a status, not a violation), report | [`evals.md`](architecture/evals.md) |
+
+### 2b. Hosted web app, protocol registry and trust boundary
+
+```mermaid
+flowchart LR
+  subgraph Owner side
+    W[Owner wallet: signs in and approves widening actions]
+    UI[Web app: chat, portfolio, activity, rules]
+  end
+  subgraph Server: Render, Postgres on Supabase
+    API[API: session from a signed message, CSRF, step-up]
+    JOBS[Jobs: one active per owner, hourly limit, cancel]
+    PL[Planner LLM: enums only]
+    GW[Gateway: tier, policy, simulate, sign, record]
+    REG[(Protocol registry: spenders, calldata, positions)]
+    KS[(Keystore: encrypted agent key per owner)]
+    AUD[(Audit chain, RLS per owner)]
+  end
+  W -->|signature| API
+  UI --> API --> JOBS --> PL --> GW
+  REG --> GW
+  GW --> KS
+  GW -->|signed tx| CH[(Base Sepolia)]
+  GW --> AUD
+```
+
+- **Trust boundary today.** The owner keeps the rules and the kill switch: tier, preset, approvals and releasing a stop need a fresh owner signature bound to that action and its parameters. The server holds the agent's key (generated server-side, encrypted at rest, never returned by a route) and can only use it through the gateway, which enforces the owner's IPS. A compromised server could sign anything its keys allow, so the keys hold testnet value only. This is stated on every page and in known risks K7 and K13.
+- **Path to mainnet (out of scope for this submission).** Replace the server-held key with a smart account whose session key is limited by the same policy (ERC-4337 or a comparable account standard), or with threshold signing, so the server can no longer sign outside the owner's limits even if compromised. The policy engine, tiers, registry and audit log stay unchanged; only the signer behind the gateway changes.
+- **Protocol registry.** A protocol is a spec registered in code (`core/protocols/registry.py`): the order carries enums and amounts only, never an address. Spenders, targets, fee tiers and market parameters live in the spec; the gateway re-checks that the protocol and market are enabled after the policy decision (`ACCESS.PROTOCOL_NOT_ENABLED`, `ACCESS.MARKET_NOT_ALLOWED`) and the IPS universe must list the protocol. Presets (`conservative`, `diversified`) are files under `contracts/presets/`; choosing one needs an owner signature bound to the preset.
+- **Valuation.** Every USD figure goes through one function over a token registry; a token without a readable price is denied, never valued at zero. Swaps compute their minimum output from the Aave oracle, never from the pool.
 
 ## 3. Core algorithm: one order, end to end
 `Gateway.propose(order)`:
@@ -77,7 +108,7 @@ Summarised here, argued in full in [`security/self-assessment.md`](security/self
 - **Fail closed**: missing data, unreadable tier, unset owner token, unsupported simulation all deny.
 - **Testnet containment**: chain id check in the signer; testnet addresses only.
 - **Secrets**: `.env` ignored, names only in `.env.example`, secret scan in CI.
-- **Evidence over claims**: every control names its test; the eval harness exercises 25/25 rule codes.
+- **Evidence over claims**: every control names its test; the eval harness exercises 27 of 28 rule codes offline (the 28th, `TIER.POLICY_CHANGED`, is a status, not a violation).
 
 ## 5. Data model
 ```mermaid
@@ -102,4 +133,4 @@ python -m core.audit.verify docs/evidence/audit-chain.jsonl
 Live evidence on Base Sepolia: `docs/evidence/tx_hashes.md`.
 
 ## 7. Limits of this version
-Reference prices (not market prices), a single RPC endpoint, a local testnet key without HSM, and, until the runner tickets land, in-memory idempotency and caller-supplied hourly and daily counters. The status and plan for each are in the known-risk list.
+Reference prices (not market prices), a single RPC endpoint, custodial testnet keys without an HSM (see 2b for the mainnet path), and testnet protocol quirks: Morpho markets are user-created with constant oracles, the Aave oracle is admin-set, and a Uniswap pool can be mispriced. The policy engine's risk rules read labelled reference inputs for the new protocols until per-protocol on-chain inputs land (K21). Job cancellation state is in-process, correct for the single instance we run (K23). The status and plan for each are in the known-risk list.
