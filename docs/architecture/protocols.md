@@ -20,6 +20,7 @@ flowchart LR
 | `ProtocolSpec`, `ProtocolRegistry` (`register`, `get`, `all_specs`, `by_category`) | `core/protocols/registry.py` | id, name, category, chain id, `paper`, functions, tokens, spenders, `build_calls(order, ctx)`, `positions(wallet, reader)`, `describe(order)` |
 | `TokenSpec`, `usd_value(token, amount)` | `core/protocols/tokens.py` | `usd_source`: `stable` (pegged, sanity band), `aave_oracle` (`AaveOracle.getAssetPrice`, read once per call), `unavailable` |
 | Aave v3 and wallet specs | `core/protocols/aave.py` | registered on import, behaviour unchanged |
+| Morpho Blue lending spec | `core/protocols/morpho_blue.py` | registered on import, supply and withdraw on whitelisted USDC markets (`usdc-wbtc`, `usdc-cbeth`) |
 | Derived constants | `core/protocols/addresses.py` | `SUPPORTED_PROTOCOLS`, `SUPPORTED_TOKENS`, `SUPPORTED_FUNCTIONS`, `PROTOCOL_ADDRESSES`, `TOKEN_ADDRESSES` are computed from the registry on first access |
 
 ## Valuation

@@ -46,13 +46,13 @@ def test_aave_registers_itself_and_wallet_comes_first():
     assert ids[:2] == ["wallet", "aave-v3"]
     spec = registry.get("aave-v3")
     assert spec.category == "lending" and not spec.paper
-    assert registry.by_category("lending") == [spec]
+    assert spec in registry.by_category("lending")
     assert spec.spenders == frozenset({AAVE_V3_POOL})
 
 
 def test_unknown_protocol_is_not_found_and_preflight_denies():
     assert registry.get("nope") is None
-    hits = registry.preflight(order(protocol="morpho-blue"))
+    hits = registry.preflight(order(protocol="moonwell"))
     assert [h["code"] for h in hits] == ["ACCESS.PROTOCOL_NOT_ENABLED"]
 
 
@@ -65,12 +65,12 @@ def test_duplicate_registration_is_refused():
 
 
 def test_derived_constants_match_the_pre_registry_values():
-    assert addresses.SUPPORTED_PROTOCOLS == frozenset({"aave-v3", "wallet"})
+    assert {"aave-v3", "wallet"}.issubset(addresses.SUPPORTED_PROTOCOLS)
     assert addresses.SUPPORTED_TOKENS == frozenset({"USDC", "ETH"})
     assert addresses.SUPPORTED_FUNCTIONS == frozenset(
         {"approve", "supply", "withdraw", "mint", "transfer"}
     )
-    assert addresses.PROTOCOL_ADDRESSES == {"aave-v3": addresses.AAVE_V3_POOL}
+    assert addresses.PROTOCOL_ADDRESSES["aave-v3"] == addresses.AAVE_V3_POOL
     assert addresses.TOKEN_ADDRESSES == {"USDC": addresses.AAVE_V3_USDC}
 
 
@@ -83,7 +83,7 @@ def test_builder_dispatches_to_the_spec_and_refuses_unregistered_protocols():
     calls = build_calls(order(), WALLET)
     assert calls[0].to == AAVE_V3_POOL
     with pytest.raises(TxBuildError, match="not enabled"):
-        build_calls(order(protocol="morpho-blue"), WALLET)
+        build_calls(order(protocol="moonwell"), WALLET)
 
 
 def test_approve_is_bound_to_the_spec_spender_and_exact_amount():

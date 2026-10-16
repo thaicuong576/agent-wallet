@@ -131,6 +131,18 @@ class PortfolioReader:
         overrides = {"USDC": self.usdc_address, "aUSDC": self.ausdc_address}
         return overrides.get(key, default)
 
+    def eth_call(self, to: str, data: str) -> str:
+        """Generic contract read for specs that need view calls beyond ERC-20 balance."""
+        try:
+            res = self.rpc("eth_call", [{"to": to, "data": data}, "latest"])
+        except Exception as exc:
+            raise PortfolioUnavailable(f"RPC eth_call failed for {to}: {exc}") from exc
+        if isinstance(res, Mapping):
+            if "error" in res:
+                raise PortfolioUnavailable(f"RPC returned error for {to}: {res['error']}")
+            res = res.get("result", "")
+        return str(res)
+
     def _call_balance_of(self, token_address: str) -> int:
         calldata = "0x70a08231" + eth_abi.encode(["address"], [self.wallet]).hex()
         try:

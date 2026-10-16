@@ -49,7 +49,8 @@
             "type": "string",
             "enum": [
               "wallet",
-              "aave-v3"
+              "aave-v3",
+              "morpho-blue"
             ]
           },
           "balance": {
