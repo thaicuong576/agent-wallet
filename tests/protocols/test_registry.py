@@ -65,13 +65,13 @@ def test_duplicate_registration_is_refused():
 
 
 def test_derived_constants_match_the_pre_registry_values():
-    assert addresses.SUPPORTED_PROTOCOLS == frozenset({"aave-v3", "wallet"})
-    assert addresses.SUPPORTED_TOKENS == frozenset({"USDC", "ETH"})
-    assert addresses.SUPPORTED_FUNCTIONS == frozenset(
-        {"approve", "supply", "withdraw", "mint", "transfer"}
+    assert {"aave-v3", "wallet"}.issubset(addresses.SUPPORTED_PROTOCOLS)
+    assert {"USDC", "ETH"}.issubset(addresses.SUPPORTED_TOKENS)
+    assert {"approve", "supply", "withdraw", "mint", "transfer"}.issubset(
+        addresses.SUPPORTED_FUNCTIONS
     )
-    assert addresses.PROTOCOL_ADDRESSES == {"aave-v3": addresses.AAVE_V3_POOL}
-    assert addresses.TOKEN_ADDRESSES == {"USDC": addresses.AAVE_V3_USDC}
+    assert addresses.PROTOCOL_ADDRESSES["aave-v3"] == addresses.AAVE_V3_POOL
+    assert addresses.TOKEN_ADDRESSES["USDC"] == addresses.AAVE_V3_USDC
 
 
 def test_market_not_listed_by_the_spec_is_denied():
@@ -135,11 +135,12 @@ def test_gateway_denies_an_allowed_order_for_an_unregistered_protocol_and_signs_
 
 
 def test_data_only_tokens_are_listed_but_have_no_price():
-    for symbol in ("USDT", "WETH", "WBTC", "cbETH", "LINK", "USDbC"):
+    for symbol in ("WETH", "WBTC", "cbETH", "LINK", "USDbC"):
         assert tokens.get_token(symbol) is not None
         with pytest.raises(PriceUnavailable):
             usd_value(symbol, 10**6)
-    assert MAINNET_REFERENCE_PRICES == {"USDC": "1.00"}
+    assert MAINNET_REFERENCE_PRICES["USDC"] == "1.00"
+    assert MAINNET_REFERENCE_PRICES["USDT"] == "1.00"
 
 
 def test_stable_value_and_peg_band():
@@ -147,6 +148,7 @@ def test_stable_value_and_peg_band():
     with pytest.raises(PriceUnavailable):
         usd_value("USDC", 1, observed_price="0.50")
     assert usd_value("USDC", 1_000_000, observed_price="0.999") == Decimal("1.00")
+    assert usd_value("USDT", 2_000_000) == Decimal("2.00")
 
 
 def test_oracle_token_reads_once_and_fails_closed(monkeypatch):

@@ -32,9 +32,15 @@ from core.protocols.registry import (
     register,
 )
 
+# Base Sepolia Aave USDT and aUSDT addresses
+# Source: docs/design/testnet-facts-defi-survey.md
+AAVE_V3_USDT: Final[str] = "0x0a215D8ba66387DCA84B284D18c3B4ec3de6E54a"
+AAVE_V3_A_USDT: Final[str] = "0xce3caae5ed17a7aafceebc897de843fa6cc0c018"
+
 # Allowed values for this adapter, as they were before the registry (zero behaviour change).
 SUPPORTED_PROTOCOLS: Final[frozenset[str]] = frozenset({"aave-v3", "wallet"})
-SUPPORTED_TOKENS: Final[frozenset[str]] = frozenset({"USDC", "ETH"})
+SUPPORTED_TOKENS: Final[frozenset[str]] = frozenset({"USDC", "USDT", "ETH"})
+_AAVE_V3_TOKENS: Final[frozenset[str]] = frozenset({"USDC", "USDT"})
 SUPPORTED_FUNCTIONS: Final[frozenset[str]] = frozenset(
     {"approve", "supply", "withdraw", "mint", "transfer"}
 )
@@ -92,6 +98,10 @@ def validate_order(order: dict) -> None:
         raise OrderValidationError(
             f"Unsupported token for Aave adapter: '{token}'. "
             f"Expected one of {sorted(SUPPORTED_TOKENS)}"
+        )
+    if protocol == "aave-v3" and token not in _AAVE_V3_TOKENS:
+        raise OrderValidationError(
+            f"Unsupported token for Aave v3: '{token}'. Expected one of {sorted(_AAVE_V3_TOKENS)}"
         )
 
     func = order.get("function")
@@ -200,16 +210,24 @@ def build_calls(
 
     amount_int = int(order["amount"]["value"])
     func = order["function"]
+    token = order.get("token")
+
+    def _token_address(t: str | None) -> str:
+        if t == "USDC":
+            return AAVE_V3_USDC
+        if t == "USDT":
+            return AAVE_V3_USDT
+        raise OrderValidationError(f"Unsupported token for Aave adapter: '{t}'")
 
     if func == "approve":
-        # Target is USDC token contract; spender is resolved recipient (Aave Pool)
+        token_addr = _token_address(token)
         data = build_approve_calldata(recipient_address, amount_int)
-        return [Call(to=AAVE_V3_USDC, data=data, value=0)]
+        return [Call(to=token_addr, data=data, value=0)]
 
     elif func == "supply":
-        # Target is Aave Pool; asset is USDC; onBehalfOf is resolved recipient (wallet)
+        token_addr = _token_address(token)
         data = build_supply_calldata(
-            asset=AAVE_V3_USDC,
+            asset=token_addr,
             amount=amount_int,
             on_behalf_of=recipient_address,
             referral_code=0,
@@ -217,19 +235,18 @@ def build_calls(
         return [Call(to=AAVE_V3_POOL, data=data, value=0)]
 
     elif func == "withdraw":
-        # Target is Aave Pool; asset is USDC; to is resolved recipient (wallet)
+        token_addr = _token_address(token)
         data = build_withdraw_calldata(
-            asset=AAVE_V3_USDC,
+            asset=token_addr,
             amount=amount_int,
             to=recipient_address,
         )
         return [Call(to=AAVE_V3_POOL, data=data, value=0)]
 
     elif func == "mint":
-        # Token is pinned to AAVE_V3_USDC; target is pinned to AAVE_V3_FAUCET constant;
-        # to is the agent wallet
+        token_addr = _token_address(token)
         data = build_mint_calldata(
-            token=AAVE_V3_USDC,
+            token=token_addr,
             to=recipient_address,
             amount=amount_int,
         )
@@ -237,7 +254,6 @@ def build_calls(
 
     elif func == "transfer":
         # Recipient is owner (resolved server-side); target is USDC contract or owner for ETH
-        token = order.get("token")
         if token == "USDC":
             data = build_transfer_calldata(to=recipient_address, amount=amount_int)
             return [Call(to=AAVE_V3_USDC, data=data, value=0)]
@@ -253,8 +269,6 @@ order_to_calls = build_calls
 
 # --- registry wiring ---------------------------------------------------------------------
 
-_USDC_ONLY: Final[frozenset[str]] = frozenset({"USDC"})
-
 
 def _build(order: Mapping[str, Any], ctx: BuildContext) -> list[Call]:
     return build_calls(dict(order), ctx.wallet, owner_address=ctx.owner_address)
@@ -266,8 +280,14 @@ def _wallet_positions(wallet: str, reader: PositionReader) -> list[PositionLeg]:
 
 
 def _aave_positions(wallet: str, reader: PositionReader) -> list[PositionLeg]:
+    legs = []
     ausdc = reader.address_for("aUSDC", AAVE_V3_A_USDC)
-    return [PositionLeg("USDC", "aave-v3", reader.balance_of(ausdc), 6)]
+    legs.append(PositionLeg("USDC", "aave-v3", reader.balance_of(ausdc), 6))
+    ausdt = reader.address_for("aUSDT", AAVE_V3_A_USDT)
+    bal_usdt = reader.balance_of(ausdt)
+    if bal_usdt > 0:
+        legs.append(PositionLeg("USDT", "aave-v3", bal_usdt, 6))
+    return legs
 
 
 def _describe_aave(order: Mapping[str, Any]) -> str:
@@ -308,13 +328,13 @@ register(
         category="lending",
         chain_id=BASE_SEPOLIA_CHAIN_ID,
         functions=frozenset({"approve", "supply", "withdraw", "mint"}),
-        tokens=_USDC_ONLY,
+        tokens=_AAVE_V3_TOKENS,
         spenders=frozenset({AAVE_V3_POOL}),
         build_calls=_build,
         positions=_aave_positions,
         describe=_describe_aave,
         owner_functions=frozenset({"mint"}),
         recipients=frozenset({"self", "aave_pool"}),
-        summary="Supply and withdraw USDC on Aave v3 (Base Sepolia)",
+        summary="Supply and withdraw USDC and USDT on Aave v3 (Base Sepolia)",
     )
 )

@@ -45,6 +45,6 @@ def test_price_source_constant() -> None:
 
 
 def test_mainnet_reference_prices_table() -> None:
-    """MAINNET_REFERENCE_PRICES table contains only USDC in v1."""
-    assert MAINNET_REFERENCE_PRICES == {"USDC": "1.00"}
+    """MAINNET_REFERENCE_PRICES table contains stable tokens (USDC and USDT)."""
+    assert MAINNET_REFERENCE_PRICES == {"USDC": "1.00", "USDT": "1.00"}
     assert "WETH" not in MAINNET_REFERENCE_PRICES
