@@ -1,7 +1,7 @@
 // Setup: three steps (Connected, Add gas, Activate), shown until the agent is activated. After
 // activation the owner lands in Chat. Mint test USDC lives on Portfolio.
 import { formatWei, parseUnits } from "../explain.js";
-import { activateAgent, TIER_NAMES } from "./activate.js";
+import { activateAgent, ACTIVATE_TIER, TIER_NAMES } from "./activate.js";
 import { sendGas } from "./topup.js";
 import { txLink } from "./cards.js";
 
@@ -208,6 +208,49 @@ export function render(ctx) {
         el("p", "note", "Right now the agent is " + (TIER_NAMES[data.tier] || "inactive") + " (tier " + data.tier + ")."),
       );
     }
+
+    let selectedPreset = "conservative";
+    const presetsBox = el("div", "stack");
+    const presetsTitle = el("p", "note", "Investment policy preset:");
+    presetsBox.append(presetsTitle);
+
+    const optConservative = el("div", "row");
+    const radioCons = el("input");
+    radioCons.type = "radio";
+    radioCons.name = "preset_id";
+    radioCons.id = "preset-conservative";
+    radioCons.value = "conservative";
+    radioCons.checked = true;
+    radioCons.addEventListener("change", () => {
+      if (radioCons.checked) selectedPreset = "conservative";
+    });
+    const labelCons = el("label", "stack");
+    labelCons.setAttribute("for", "preset-conservative");
+    labelCons.append(
+      el("strong", "", "Conservative: Aave USDC lending"),
+      el("span", "note", "Keeps capital in stablecoins and lends it on Aave. Limits: 100 USD per tx, 300 USD per day."),
+    );
+    optConservative.append(radioCons, labelCons);
+
+    const optDiversified = el("div", "row");
+    const radioDiv = el("input");
+    radioDiv.type = "radio";
+    radioDiv.name = "preset_id";
+    radioDiv.id = "preset-diversified";
+    radioDiv.value = "diversified";
+    radioDiv.addEventListener("change", () => {
+      if (radioDiv.checked) selectedPreset = "diversified";
+    });
+    const labelDiv = el("label", "stack");
+    labelDiv.setAttribute("for", "preset-diversified");
+    labelDiv.append(
+      el("strong", "", "Diversified: lending, vaults, Morpho and swaps (testnet)"),
+      el("span", "note", "Lends on Aave, deposits in Stata vaults, supplies to Morpho Blue, and swaps on Uniswap v3. Limits: 100 USD per tx, 300 USD per day."),
+    );
+    optDiversified.append(radioDiv, labelDiv);
+    presetsBox.append(optConservative, optDiversified);
+    card.append(presetsBox);
+
     const btn = el("button", ready ? "primary" : "", "Activate agent");
     btn.type = "button";
     btn.disabled = !ready;
@@ -218,7 +261,11 @@ export function render(ctx) {
       msg.className = "msg";
       msg.textContent = "Waiting for your wallet…";
       try {
-        const res = await activateAgent(ctx);
+        const res = await activateAgent(
+          ctx,
+          ACTIVATE_TIER,
+          selectedPreset === "conservative" ? undefined : selectedPreset,
+        );
         msg.className = "msg ok";
         msg.textContent = "✓ Agent activated: tier " + res.tier + ". It may act inside your limits.";
         ctx.changed();

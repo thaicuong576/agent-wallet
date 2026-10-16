@@ -617,13 +617,18 @@ export function createApi({
             emergency_stop: Boolean(m.emergency_stop),
           })),
     // Raising the tier needs `stepUp` (X-Step-Up for action tier_raise); lowering does not.
-    setTier: (tier, stepUp) =>
+    setTier: (tier, stepUp, presetId) =>
       call(
         "setTier",
         "PUT",
         ROUTES.tier,
-        { body: { schema_version: 1, tier }, headers: withStepUp(stepUp) },
-        tier,
+        {
+          body: presetId
+            ? { schema_version: 1, tier, preset_id: presetId }
+            : { schema_version: 1, tier },
+          headers: withStepUp(stepUp),
+        },
+        presetId ? { tier, preset_id: presetId } : tier,
       ),
     ips: () => call("ips", "GET", ROUTES.ips),
     decisions: (limit = 50) =>

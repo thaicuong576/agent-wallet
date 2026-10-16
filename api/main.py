@@ -39,7 +39,12 @@ from core.storage.migrate import MigrationError
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_RPC_URL = "https://sepolia.base.org"
 EXAMPLES_DIR = ROOT_DIR / "contracts" / "examples"
-DEFAULT_IPS_PATH = EXAMPLES_DIR / "ips.valid.json"
+PRESETS_DIR = ROOT_DIR / "contracts" / "presets"
+DEFAULT_IPS_PATH = (
+    PRESETS_DIR / "conservative.json"
+    if (PRESETS_DIR / "conservative.json").exists()
+    else EXAMPLES_DIR / "ips.valid.json"
+)
 
 
 def http_rpc(url: str, timeout: float = 30.0) -> Callable[[str, list[Any]], Any]:
@@ -134,7 +139,20 @@ def build_webapp(
     ips_path = pathlib.Path(env.get("IPS_PATH") or DEFAULT_IPS_PATH)
 
     def ips_for(owner: str, preset_id: str | None) -> LoadedIps:
-        return load_ips(ips_path)  # ticket A4 replaces this with the preset files
+        if preset_id is None and backend is not None:
+            try:
+                latest = backend.open_tenant(owner).policy_selection.latest()
+                if latest and latest.get("preset_id"):
+                    preset_id = latest["preset_id"]
+            except Exception:
+                pass
+        preset = preset_id or "conservative"
+        preset_file = PRESETS_DIR / f"{preset}.json"
+        if preset_file.exists():
+            return load_ips(preset_file)
+        if preset == "conservative" and ips_path.exists():
+            return load_ips(ips_path)
+        raise ValueError(f"Unknown preset_id: {preset}")
 
     secret = env.get("AGENT_WALLET_KEYSTORE_SECRET")
     settings = TenantSettings(

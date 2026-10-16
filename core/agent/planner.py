@@ -83,8 +83,8 @@ You MUST produce valid JSON with one of these structures:
       "value": "<positive integer string without leading zeros, e.g. '1000000'>",
       "decimals": {decimals}
     }},
-    "recipient": {recipients}{recipient_comma}
-{swap_fields}  }}
+    "recipient": {recipients}{extra_fields}
+  }}
 }}
 
 2. Proposing no action (also the right answer to a question or to a request you cannot do):
@@ -118,7 +118,11 @@ def _enum_list(values: Sequence[str]) -> str:
     return " | ".join(f'"{v}"' for v in values)
 
 
-def render_system_prompt(enabled_protocols: Sequence[str] | None = None) -> str:
+def render_system_prompt(
+    enabled_protocols: Sequence[str] | Mapping[str, Any] | None = None,
+    *,
+    ips: Mapping[str, Any] | None = None,
+) -> str:
     """Planner system prompt generated from the protocol registry.
 
     Lists only registered protocols the IPS enables (all registered ones when `enabled_protocols`
@@ -128,39 +132,87 @@ def render_system_prompt(enabled_protocols: Sequence[str] | None = None) -> str:
     from core.protocols import registry as protocol_registry
     from core.protocols.tokens import get_token
 
+    if isinstance(enabled_protocols, Mapping):
+        ips = enabled_protocols
+        enabled_protocols = None
+
+    ips_tokens: set[str] | None = None
+    ips_functions: set[str] | None = None
+    ips_recipients: set[str] | None = None
+
+    if ips is not None:
+        if hasattr(ips, "ips") and isinstance(ips.ips, Mapping):
+            ips = ips.ips
+        universe = ips.get("universe", {}) if isinstance(ips, Mapping) else {}
+        if enabled_protocols is None and "protocols" in universe:
+            enabled_protocols = universe.get("protocols")
+        if "tokens" in universe:
+            ips_tokens = set(universe.get("tokens", []))
+        if "functions" in universe:
+            ips_functions = set(universe.get("functions", []))
+        if "recipients" in universe:
+            ips_recipients = set(universe.get("recipients", []))
+
+    allowed_set = set(enabled_protocols) if enabled_protocols is not None else None
+
     specs = [
         s
         for s in protocol_registry.all_specs()
-        if s.planner_functions and (enabled_protocols is None or s.id in enabled_protocols)
+        if s.planner_functions and (allowed_set is None or s.id in allowed_set)
     ]
     protocols = [s.id for s in specs]
-    functions = sorted({f for s in specs for f in s.planner_functions})
-    tokens = sorted({t for s in specs for t in s.tokens})
-    recipients = sorted({r for s in specs for r in s.recipients if r != "owner"})
+    functions = sorted(
+        {
+            f
+            for s in specs
+            for f in s.planner_functions
+            if ips_functions is None or f in ips_functions
+        }
+    )
+    tokens = sorted({t for s in specs for t in s.tokens if ips_tokens is None or t in ips_tokens})
+    recipients = sorted(
+        {
+            r
+            for s in specs
+            for r in s.recipients
+            if r != "owner" and (ips_recipients is None or r in ips_recipients)
+        }
+    )
     decimals = ", ".join(
         f"{get_token(t).decimals} for {t}" for t in tokens if get_token(t) is not None
     )
+    all_markets = sorted({m for s in specs for m in s.markets})
     swap = "exactInputSingle" in functions
-    swap_fields = (
-        f'    "token_out": {_enum_list(tokens)},  // REQUIRED ONLY for exactInputSingle\n'
-        '    "max_slippage_bps": <integer>  // REQUIRED ONLY for exactInputSingle\n'
-        if swap
-        else ""
-    )
+
+    extra_parts: list[str] = []
+    if all_markets:
+        extra_parts.append(
+            f'    "market": {_enum_list(all_markets)}  // REQUIRED for morpho-blue supply/withdraw'
+        )
+    if swap:
+        extra_parts.append(
+            f'    "token_out": {_enum_list(tokens)}  // REQUIRED ONLY for exactInputSingle'
+        )
+        extra_parts.append(
+            '    "max_slippage_bps": <integer>  // REQUIRED ONLY for exactInputSingle'
+        )
+
+    extra_fields = (",\n" + ",\n".join(extra_parts)) if extra_parts else ""
+
     body = _PROMPT_TEMPLATE.format(
         protocols=_enum_list(protocols),
         functions=_enum_list(functions),
         tokens=_enum_list(tokens),
         decimals=decimals,
         recipients=_enum_list(recipients),
-        recipient_comma="," if swap else "",
         recipients_plain=", ".join(f'"{r}"' for r in recipients),
-        swap_fields=swap_fields,
+        extra_fields=extra_fields,
     )
     lines = ["", "Enabled protocols (the only ones that exist):"]
     for s in specs:
         paper = " [PAPER: simulated, no real transaction]" if s.paper else ""
-        lines.append(f"- {s.id} ({s.category}){paper}: {s.summary or s.name}")
+        market_info = f" (markets: {', '.join(sorted(s.markets))})" if s.markets else ""
+        lines.append(f"- {s.id} ({s.category}){paper}: {s.summary or s.name}{market_info}")
     return body + "\n".join(lines) + "\n"
 
 
@@ -360,7 +412,7 @@ class Planner:
             )
 
         raw_response = self.client.complete(
-            system=render_system_prompt(sorted(allowed_protocols)),
+            system=render_system_prompt(sorted(allowed_protocols), ips=plain_ips),
             user=user_content,
             schema=PLANNER_OUTPUT_SCHEMA,
         )

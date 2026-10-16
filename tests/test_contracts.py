@@ -201,3 +201,23 @@ def test_new_order_invalid_examples(example_file):
     assert list(dr_validator.iter_errors(example)), (
         f"{example_file} unexpectedly passed embedded Order schema"
     )
+
+
+def test_presets_validate_against_ips_schema():
+    validator = jsonschema.Draft202012Validator(load(f"{C}/schemas/ips.schema.json"))
+    preset_files = glob.glob(f"{C}/presets/*.json")
+    assert len(preset_files) >= 2, "must have at least conservative and diversified presets"
+    for path in preset_files:
+        data = load(path)
+        errors = list(validator.iter_errors(data))
+        assert not errors, f"preset {path} failed schema validation: {errors}"
+
+
+def test_conservative_preset_hash_unchanged():
+    from core.policy.ips import compute_ips_hash
+
+    example = load(f"{C}/examples/ips.valid.json")
+    conservative = load(f"{C}/presets/conservative.json")
+    expected_hash = "5d2a59943f97d6706d28bb583c2e5f17ec02d03fff357125973260f05b21060e"
+    assert compute_ips_hash(conservative) == compute_ips_hash(example)
+    assert compute_ips_hash(conservative) == expected_hash

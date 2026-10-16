@@ -194,8 +194,12 @@ def test_audit_chain_verifies_per_owner(env):
 
 
 def test_presets_listing_is_plain_language_with_a_hash():
-    (preset,) = list_presets()
-    assert preset["preset_id"] == "conservative"
-    assert len(preset["ips_hash"]) == 64 and set(preset["limits"]) >= {"per_tx_usd", "per_day_usd"}
-    assert all(isinstance(v, str) for v in preset["limits"].values())
-    assert "USD" in preset["summary"]
+    presets = list_presets()
+    assert len(presets) == 2
+    for preset in presets:
+        assert len(preset["ips_hash"]) == 64
+        assert set(preset["limits"]) >= {"per_tx_usd", "per_day_usd"}
+        assert all(isinstance(v, str) for v in preset["limits"].values())
+        assert "USD" in preset["summary"]
+    assert presets[0]["preset_id"] == "conservative"
+    assert presets[1]["preset_id"] == "diversified"

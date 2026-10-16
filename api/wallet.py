@@ -38,8 +38,13 @@ SUGGESTED_TOPUP_FACTOR = 10  # suggested top-up = 10 x floor
 _TX_HASH = re.compile(r"^0x[0-9a-f]{64}$")
 RpcCall = Callable[[str, list[Any]], Any]
 
+PRESETS_DIR = Path(__file__).resolve().parent.parent / "contracts" / "presets"
+CONSERVATIVE_IPS_FILE = PRESETS_DIR / "conservative.json"
+DIVERSIFIED_IPS_FILE = PRESETS_DIR / "diversified.json"
 PRESET_IPS_FILE = (
-    Path(__file__).resolve().parent.parent / "contracts" / "examples" / "ips.valid.json"
+    CONSERVATIVE_IPS_FILE
+    if CONSERVATIVE_IPS_FILE.exists()
+    else Path(__file__).resolve().parent.parent / "contracts" / "examples" / "ips.valid.json"
 )
 
 
@@ -234,20 +239,33 @@ class WalletService:
 
 
 def list_presets() -> list[dict[str, Any]]:
-    """One preset built from the example IPS. Ticket A4 replaces this with the preset files."""
-    ips = json.loads(PRESET_IPS_FILE.read_text(encoding="utf-8"))
-    limits = ips["limits"]
+    """Return presets built from the preset files in contracts/presets/."""
+    cons_ips = json.loads(CONSERVATIVE_IPS_FILE.read_text(encoding="utf-8"))
+    div_ips = json.loads(DIVERSIFIED_IPS_FILE.read_text(encoding="utf-8"))
+    cons_limits = cons_ips["limits"]
+    div_limits = div_ips["limits"]
     return [
         {
             "preset_id": "conservative",
-            "title": "Conservative stablecoin lending",
+            "title": "Conservative: Aave USDC lending",
             "summary": (
                 "Keeps capital in stablecoins and lends it on Aave. Each transaction is capped at "
-                f"{limits['per_tx_usd']} USD and each day at {limits['per_day_usd']} USD."
+                f"{cons_limits['per_tx_usd']} USD and each day at {cons_limits['per_day_usd']} USD."
             ),
-            "ips_hash": compute_ips_hash(ips),
-            "limits": {k: str(v) for k, v in limits.items()},
-        }
+            "ips_hash": compute_ips_hash(cons_ips),
+            "limits": {k: str(v) for k, v in cons_limits.items()},
+        },
+        {
+            "preset_id": "diversified",
+            "title": "Diversified: lending, vaults, Morpho and swaps (testnet)",
+            "summary": (
+                "Lends on Aave, deposits in Stata vaults, supplies to Morpho Blue, "
+                "and swaps on Uniswap v3. Each transaction is capped at "
+                f"{div_limits['per_tx_usd']} USD and each day at {div_limits['per_day_usd']} USD."
+            ),
+            "ips_hash": compute_ips_hash(div_ips),
+            "limits": {k: str(v) for k, v in div_limits.items()},
+        },
     ]
 
 

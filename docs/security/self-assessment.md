@@ -85,6 +85,7 @@ Who can change what:
 | K17 | Gas for the agent comes from the owner; the agent cannot self-fund ETH | Low | accepted | Gas floor check before any job; top-up verified on chain (sender, recipient, value) |
 | K18 | Wallet sign-in proves control of an address only on a testnet; phishing of a signature request | Low | accepted | The message states origin, chain and purpose; step-up messages name the action |
 | K19 | Each new protocol adds spender and target addresses that the agent may approve and call | Medium | enforced, owner review | Spenders and targets live in the registry spec in code (never in an order or from the LLM); approvals are the exact amount; an unregistered protocol or market is denied (`ACCESS.PROTOCOL_NOT_ENABLED`, `ACCESS.MARKET_NOT_ALLOWED`); adding a spender changes `core/protocols/*` and needs owner review (AGENTS.md: keys, funds, signer, permissions) |
+| K20 | Choosing the diversified preset widens the agent's approved universe (tokens USDT, WBTC, WETH; protocols aave-stata, morpho-blue, uniswap-v3) | Medium | enforced, owner signature | Choosing a preset widens the owner-approved universe and limits; the selection occurs at activation via PUT /tier where the owner explicitly signs a step-up authorization covering the chosen preset's IPS hash; existing callers default to conservative with no change in universe or hash (`tests/gateway/test_diversified_preset_e2e.py`) |
 
 ## 5. How to reproduce the evidence
 ```sh

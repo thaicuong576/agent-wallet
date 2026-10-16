@@ -176,6 +176,10 @@ paths:
               properties:
                 schema_version: { type: integer, const: 1 }
                 tier: { type: string, enum: [T0, T1, T2] }
+                preset_id:
+                  type: string
+                  enum: [conservative, diversified]
+                  description: Optional IPS preset to activate. Default is conservative.
       responses:
         "200":
           description: The new tier state.
