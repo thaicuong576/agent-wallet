@@ -81,6 +81,9 @@ class FakeEl {
   getAttribute(k) {
     return k in this.attrs ? this.attrs[k] : null;
   }
+  removeAttribute(k) {
+    delete this.attrs[k];
+  }
   addEventListener(type, fn) {
     (this.handlers[type] ||= []).push(fn);
   }
