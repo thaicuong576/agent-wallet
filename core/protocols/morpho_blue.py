@@ -281,7 +281,9 @@ def build_calls(order: Mapping[str, Any], ctx: BuildContext) -> list[Call]:
 
 
 def _read_contract(reader: PositionReader, to: str, data: str) -> str:
-    """Additive generic read helper dispatching to reader.eth_call or reader.rpc."""
+    """Additive generic read helper dispatching to reader.call, reader.eth_call or reader.rpc."""
+    if hasattr(reader, "call"):
+        return reader.call(to, data)
     if hasattr(reader, "eth_call"):
         return reader.eth_call(to, data)
     if hasattr(reader, "read_contract"):

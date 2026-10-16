@@ -45,6 +45,8 @@ class PositionReader(Protocol):
 
     def address_for(self, key: str, default: str) -> str: ...
 
+    def call(self, to: str, data: str) -> str: ...
+
     def eth_call(self, to: str, data: str) -> str: ...
 
 
@@ -100,6 +102,7 @@ def register(spec: ProtocolSpec) -> None:
 def _ensure_loaded() -> None:
     # Adapters register themselves when imported.
     import core.protocols.aave  # noqa: F401
+    import core.protocols.aave_stata  # noqa: F401
     import core.protocols.morpho_blue  # noqa: F401
 
 
