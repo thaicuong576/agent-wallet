@@ -203,6 +203,22 @@ def test_layout_guards_for_375px_are_in_the_stylesheet() -> None:
     assert "overflow-x: scroll" not in css and "width: 100vw" not in css
     assert "max-width: 1280px" in css and "--gutter: 32px" in css
     assert "body.screen-chat" in css and "max-width: 1600px" in css and "100dvh" in css
+    phone = _block_after(css, "@media (max-width: 900px)")
+    assert re.search(r"\.tabs \{[^}]*position: fixed", phone, re.S)
+    assert "min-height: 44px" in phone
+
+
+def _block_after(css: str, query: str) -> str:
+    start = css.index(query)
+    end = css.find("@media", start + len(query))
+    return css[start : end if end != -1 else len(css)]
+
+
+def test_wallet_strip_is_built_by_side_js_and_hidden_on_desktop() -> None:
+    side = (UI / "views" / "side.js").read_text(encoding="utf-8")
+    css = (UI / "style.css").read_text(encoding="utf-8")
+    assert "wallet-strip" in side and "aria-expanded" in side
+    assert ".wallet-strip" in css and "display: none" in css
 
 
 def test_chat_screen_is_a_single_scroll_region_and_declares_color_scheme() -> None:

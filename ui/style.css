@@ -545,7 +545,21 @@ button.solid-danger:hover { filter: brightness(0.92); }
 @media (max-width: 900px) {
   :root { --gutter: 16px; }
   .hdr { gap: 8px 12px; }
-  .tabs { order: 3; flex: 1 1 100%; }
+  .hdr-right { display: contents; }
+  #mode-chip, #addr-chip, #account-slot { order: 1; }
+  .brand { font-size: 0; }
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; height: 60px;
+    display: flex; gap: 0; flex: none; min-width: 0; overflow-x: auto;
+    background: var(--card); border-top: 1px solid var(--border);
+  }
+  .tabs a {
+    flex: 1 1 0; display: flex; align-items: center; justify-content: center; min-height: 44px;
+    padding: 0 6px; border: 0; border-top: 4px solid transparent; border-radius: 0;
+  }
+  .tabs a[aria-current="page"] { border-top-color: var(--primary); }
+  main { padding-bottom: 76px; }
+  .foot { margin-bottom: 60px; }
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .history-toggle { display: inline-flex; align-items: center; }
   .rail {
@@ -556,7 +570,7 @@ button.solid-danger:hover { filter: brightness(0.92); }
   .rail.open { visibility: visible; transform: none; }
   .rail-close { display: inline-flex; }
   .chat-card { max-height: none; min-height: 0; }
-  .chat-scroll { max-height: 60vh; min-height: 220px; padding: 16px; }
+  .chat-scroll { max-height: none; min-height: 0; padding: 12px; }
   .composer-box { padding: 12px 16px; }
   .chat-card > header { padding: 12px 16px; }
   .grid-2, .grid-eq { grid-template-columns: minmax(0, 1fr); }
@@ -571,7 +585,8 @@ button.solid-danger:hover { filter: brightness(0.92); }
   .setup h1 { font-size: 24px; }
   .setup-steps { flex-direction: column; }
   .setup-card { padding: 16px; }
-  .composer { flex-direction: column; align-items: stretch; }
+  .composer { flex-direction: row; align-items: flex-end; }
+  .composer button { min-width: 72px; }
   .big { font-size: 28px; }
   .pill.addr, .pill.net { max-width: 100%; }
 }
@@ -584,6 +599,33 @@ button.solid-danger:hover { filter: brightness(0.92); }
 }
 @media (prefers-reduced-motion: reduce) {
   .sk { animation: none !important; }
+
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 .addr-box button { flex: 0 0 auto; white-space: nowrap; }
+
+/* ---- phone (900px and below): Chat is one scroll region with a pinned composer; wallet sheet ---- */
+@media (max-width: 900px) {
+  body.screen-chat { height: 100dvh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+  body.screen-chat main { min-height: 0; overflow: hidden; padding: 8px 12px 0; }
+  body.screen-chat .chat-layout { height: 100%; grid-template-rows: auto minmax(0, 1fr); }
+  body.screen-chat .side { grid-row: 1; }
+  body.screen-chat .chat-card { grid-row: 2; height: 100%; min-height: 0; max-height: none; }
+  .suggest { flex-wrap: nowrap; overflow-x: auto; }
+  .prompt-chip { flex: 0 0 auto; }
+  button, .btn, .prompt-chip, .rail-row { min-height: 44px; }
+  .wallet-strip {
+    display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px;
+    padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--r-card);
+    background: var(--card); color: var(--ink); font: 600 15px/1.2 var(--font); text-align: left;
+  }
+  .side .card { display: none; }
+  .side.open {
+    position: fixed; inset: 0 0 60px 0; z-index: 30; overflow-y: auto; padding: 16px;
+    background: var(--ground); display: flex; flex-direction: column; gap: 16px;
+  }
+  .side.open > .card { display: flex; flex-direction: column; }
+}
+@media (min-width: 901px) {
+  .wallet-strip { display: none; }
+}
