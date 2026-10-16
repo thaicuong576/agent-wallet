@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI v3 wireframe: Chat</title><link rel="stylesheet" href="wire.css"></head>
+<body>
+<div class="app">
+<header class="topbar">
+  <div class="brand"><span class="logo"></span>agent-wallet</div>
+  <nav class="nav"><a href="#">Overview</a><a class="on" href="#">Chat</a><a href="#">Activity</a><a href="#">Rules</a></nav>
+  <div class="right">
+    <span class="pill ok">● Agent active</span>
+    <span class="pill mono">0x1111…1111 ▾</span>
+    <button class="btn stop">Emergency stop</button>
+  </div>
+</header>
+<div class="cols">
+  <nav class="rail" aria-label="Conversations">
+    <button class="btn primary" style="width:100%;justify-content:flex-start">+ New chat</button>
+    <div class="grp">Today</div>
+    <div class="thread on"><b>Put 10 USDC to work</b><small>Running · now</small></div>
+    <div class="thread"><b>What is my balance?</b><small>Done · 2 h ago</small></div>
+    <div class="grp">Yesterday</div>
+    <div class="thread"><b>Withdraw 5 USDC</b><small>Done · 1 d ago</small></div>
+    <div class="thread"><b>Move 5000 USDC out</b><small style="color:var(--error)">Blocked · 1 d ago</small></div>
+    <div class="grp">Earlier</div>
+    <div class="thread"><b>Supply 150 USDC to Aave</b><small>Waiting for you · 2 d ago</small></div>
+  </nav>
+
+  <section class="conv" aria-label="Conversation">
+    <div class="chead"><b>Put 10 USDC to work</b><span class="chip warn">Running</span><span class="small sp">The page never scrolls. Only this conversation does.</span></div>
+    <div class="scroll">
+      <div class="lane">
+        <div class="you">What is my balance?</div>
+        <div class="turn">
+          <div class="sum">You have <b>$212.40</b>: $98.00 idle, $114.40 working.</div>
+        </div>
+
+        <div class="you">Put 10 USDC to work in Aave</div>
+
+        <div class="turn" aria-live="polite" aria-label="Agent progress">
+          <div class="sum"><b>Working on it</b> <span class="small">· 7 s</span></div>
+          <div class="step"><span class="ico done">✓</span><div class="t">Message received<div class="s">Your request is queued</div></div><span class="time">0.3 s</span></div>
+          <div class="step"><span class="ico done">✓</span><div class="t">Read your wallet<div class="s">98.00 USDC idle, 0.02 ETH for gas</div></div><span class="time">1.1 s</span></div>
+          <div class="step cur"><span class="ico now">●</span><div class="t"><b>Thinking about your request</b><div class="s">The agent is turning your words into orders. Nothing has been sent.</div></div><span class="time">5.6 s</span></div>
+          <div class="step"><span class="ico todo">○</span><div class="t faint">Checking your rules</div></div>
+          <div class="step"><span class="ico todo">○</span><div class="t faint">Sending to Base Sepolia</div></div>
+          <div class="step" style="justify-content:space-between;align-items:center"><span class="small">You can stop until an order is sent.</span><button class="btn sm">Stop</button></div>
+        </div>
+
+        <div class="small faint" style="text-align:center">After a result lands, the turn collapses to one sentence and a step list:</div>
+        <div class="turn">
+          <div class="sum"><b>Done.</b> Moved $10.00 into Aave. Inside every limit.</div>
+          <div class="step"><span class="ico done">✓</span><div class="t">Approved 10 USDC for the Aave pool</div><a href="#">BaseScan ↗</a></div>
+          <div class="step"><span class="ico done">✓</span><div class="t">Supplied 10 USDC to Aave <span class="chip">Aave v3</span></div><a href="#">BaseScan ↗</a></div>
+        </div>
+
+        <div class="turn">
+          <div class="sum"><b>Blocked.</b> 5,000 USDC is more than the $100 you allow per order. Nothing was sent.</div>
+          <div class="step blocked"><span class="ico block">✕</span><div class="t">Supply 5,000 USDC to Aave<div class="s">This order $5,000.00 · per-order limit $100.00 · today $12.00 of $300.00 <span class="chip">LIMIT.PER_TX</span></div><div class="row" style="margin-top:8px"><button class="btn sm">Try 100 USDC</button><button class="btn sm">Why is this blocked?</button></div></div></div>
+        </div>
+
+        <div class="turn">
+          <div class="sum"><b>Needs you.</b> Supplying 150 USDC is above your $100 approval limit.</div>
+          <div class="step waiting"><span class="ico wait">…</span><div class="t">Supply 150 USDC to Aave<div class="s">Approve here or review it on Overview.</div><div class="row" style="margin-top:8px"><button class="btn sm primary">Approve (signature)</button><button class="btn sm">Reject</button></div></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="composer">
+      <div class="lane">
+        <div class="row" style="flex-wrap:wrap;gap:8px"><span class="chip">What did you do today?</span><span class="chip">Supply 10 USDC to Aave</span><span class="chip">Pull 5 USDC back out</span></div>
+        <div class="row"><div class="input">Tell your agent what to do…</div><button class="btn primary" style="min-height:46px">Send</button></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="ctx" aria-label="Wallet summary">
+    <section class="card">
+      <div class="label">Agent wallet</div>
+      <div class="mid">$212.40</div>
+      <div class="alloc" style="margin:10px 0 8px"><span class="s-idle" style="flex:46"></span><span class="s-lend" style="flex:19"></span><span class="s-vault" style="flex:9"></span><span class="s-morpho" style="flex:14"></span><span class="s-swap" style="flex:12"></span></div>
+      <div class="hrow" style="grid-template-columns:1fr auto;min-height:44px"><div class="hname"><span class="av sm t-usdc" data-test>U</span><span>USDC idle</span></div><div class="num">$98.00</div></div>
+      <div class="hrow" style="grid-template-columns:1fr auto;min-height:44px"><div class="hname"><span class="av sm t-usdc" data-test>U</span><span>Lent on Aave</span></div><div class="num">$40.00</div></div>
+      <div class="hrow" style="grid-template-columns:1fr auto;min-height:44px"><div class="hname"><span class="av sm t-wbtc" data-test>W</span><span>Swapped, Morpho, vault</span></div><div class="num">$74.40</div></div>
+      <div class="row"><button class="btn sm primary">Add funds</button><button class="btn sm">Withdraw</button></div>
+    </section>
+    <section class="card"><h2>Today's limit</h2><div><b>$12.00</b> of $300.00</div><div class="meter"><i style="width:4%"></i></div><div class="small">Ask me above $100</div></section>
+    <section class="card"><div class="row"><b>Gas</b><span class="chip ok sp">enough</span></div><div class="small">0.02 ETH for fees</div></section>
+    <section class="card small">Audit log · 5 records · <span class="chip ok">verified ✓</span></section>
+  </aside>
+</div>
+</div>
+</body></html>

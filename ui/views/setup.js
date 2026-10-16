@@ -1,5 +1,5 @@
 // Setup: three steps (Connected, Add gas, Activate), shown until the agent is activated. After
-// activation the owner lands in Chat. Mint test USDC lives on Portfolio.
+// activation the owner lands in Chat. Test USDC comes from Add funds on Overview.
 import { formatWei, parseUnits } from "../explain.js";
 import { activateAgent, ACTIVATE_TIER, TIER_NAMES } from "./activate.js";
 import { sendGas } from "./topup.js";
@@ -66,7 +66,7 @@ export function render(ctx) {
       el(
         "p",
         "note faint",
-        "Next: you land in Chat and can say what you want in plain words. Mint test USDC from the Portfolio page.",
+        "Next: you land in Chat and can say what you want in plain words. Get test USDC from Overview.",
       ),
     );
     body.replaceChildren(...parts);

@@ -52,11 +52,20 @@ class FakeEl {
   addEventListener(t, f) {
     (this.listeners[t] = this.listeners[t] || []).push(f);
   }
+  focus() {
+    globalThis.document.activeElement = this;
+  }
+  querySelectorAll() {
+    return [];
+  }
+  remove() {}
 }
 globalThis.document = {
   createElement: (t) => new FakeEl(t),
   getElementById: () => null,
   querySelectorAll: () => [],
+  body: new FakeEl("body"),
+  activeElement: null,
 };
 globalThis.location = { search: "", hash: "" };
 
@@ -86,7 +95,9 @@ const { createApi, ROUTES } = await imp("api.js");
 const { makeCtx, describeError, pollDelay } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
 const setup = await imp("views/setup.js");
-const portfolio = await imp("views/portfolio.js");
+const funds = await imp("views/funds.js");
+const withdrawView = await imp("views/withdraw.js");
+const rulesView = await imp("views/rules.js");
 const activity = await imp("views/activity.js");
 const approvals = await imp("views/approvals.js");
 const activate = await imp("views/activate.js");
@@ -222,6 +233,17 @@ function server(script = {}) {
         ips: { limits: { per_tx_usd: "100.00", per_day_usd: "200.00" }, approval: { escalate_above_usd: "50.00" } },
       });
     }
+    if (key === "GET /limits") {
+      return reply(200, {
+        per_order_usd: "100.00",
+        per_day_usd: "200.00",
+        used_today_usd: state.spent ?? "40.00",
+        approval_threshold_usd: "50.00",
+        protocols: ["aave_v3"],
+        emergency_stop: state.stopped ? "stopped" : "ready",
+        as_of: "2026-10-15T12:00:00Z",
+      });
+    }
     if (key === "POST /emergency-stop") {
       state.stopped = true;
       return reply(200, { outcome: "executed" });
@@ -340,33 +362,35 @@ const out = {};
   };
 }
 
-// 3. mint, run, hostile run and withdraw are jobs; progress comes from GET /jobs/{id}
+// 3. mint (Add funds dialog), the hostile demo (Rules) and withdraw (dialog) are jobs; progress
+// comes from GET /jobs/{id}
 {
   const { srv, ctx, sleeps } = make({ state: { signedIn: true } });
   await ctx.refreshSession();
-  const d = portfolio.render(ctx);
-  await tick(60);
-  out.dashboardText = d.textContent;
+  const agent = await ctx.api.agent();
+  const primary = (root, text) =>
+    find(root, (n) => n.tagName === "BUTTON" && n.className === "primary" && n.textContent.includes(text))[0];
   srv.state.jobPolls = 0;
-  await click(button(d, "Mint test USDC"));
+  const f = funds.openFunds(ctx, { agent, tab: "usdc" });
+  await click(primary(f.body, "Get test USDC"));
   out.mint = {
-    text: d.textContent,
+    text: f.body.textContent,
     polls: srv.calls.filter((c) => c.url === "/jobs/" + JOB).length,
     sleeps: sleeps.slice(),
-    links: find(d, (n) => n.tagName === "A").map((n) => n.attrs.href),
+    links: find(f.body, (n) => n.tagName === "A").map((n) => n.attrs.href),
   };
   srv.state.jobPolls = 0;
-  await click(button(d, "Run the agent"));
-  out.run = { body: srv.state.lastRun, text: d.textContent };
-  srv.state.jobPolls = 0;
-  await click(button(d, "Try a hostile note"));
+  const rl = rulesView.render(ctx);
+  await tick(60);
+  await click(button(rl, "Run the demo"));
   out.hostile = {
     body: srv.state.lastRun,
-    text: d.textContent,
-    injected: find(d, (n) => ["IMG", "SCRIPT"].includes(n.tagName)).length,
+    text: rl.textContent,
+    injected: find(rl, (n) => ["IMG", "SCRIPT"].includes(n.tagName)).length,
   };
   srv.state.jobPolls = 0;
-  await click(button(d, "Withdraw to my wallet"));
+  const wd = withdrawView.openWithdraw(ctx, { agent, portfolio: null });
+  await click(primary(wd.body, "Withdraw 1 USDC"));
   const w = srv.calls.find((c) => c.url === "/agent/withdraw");
   const su = srv.calls.find((c) => c.url === "/auth/step-up");
   out.withdraw = {
@@ -503,7 +527,7 @@ const out = {};
   const after = await ctx.refreshSession();
   out.afterActivateMe = after && after.tier;
   // activated: lowering needs no signature
-  const d2 = portfolio.render(ctx);
+  const d2 = rulesView.render(ctx);
   await tick(60);
   out.activatedDashboard = d2.textContent;
   const n = srv.calls.length;

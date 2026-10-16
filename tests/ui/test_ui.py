@@ -177,9 +177,9 @@ def test_header_has_the_four_tabs_chips_pill_and_stop_in_contract_order() -> Non
     header = html[html.index("<header") : html.index("</header>")]
     nav = html[html.index("<nav") : html.index("</nav>")]
     hrefs = re.findall(r'href="(#/[a-z]+)"', nav)
-    assert hrefs == ["#/chat", "#/portfolio", "#/activity", "#/rules"]
+    assert hrefs == ["#/chat", "#/overview", "#/activity", "#/rules"]
     labels = re.findall(r">([A-Za-z]+)</a>", nav)
-    assert labels == ["Chat", "Portfolio", "Activity", "Rules"]
+    assert labels == ["Chat", "Overview", "Activity", "Rules"]
     order = [
         header.index(i)
         for i in (
@@ -202,6 +202,34 @@ def test_layout_guards_for_375px_are_in_the_stylesheet() -> None:
     assert css.count("min-width: 0") >= 5 and "overflow-wrap: anywhere" in css
     assert "overflow-x: scroll" not in css and "width: 100vw" not in css
     assert "max-width: 1280px" in css and "--gutter: 32px" in css
+    assert "body.screen-chat" in css and "max-width: 1600px" in css and "100dvh" in css
+    phone = _block_after(css, "@media (max-width: 900px)")
+    assert re.search(r"\.tabs \{[^}]*position: fixed", phone, re.S)
+    assert "min-height: 44px" in phone
+
+
+def _block_after(css: str, query: str) -> str:
+    start = css.index(query)
+    end = css.find("@media", start + len(query))
+    return css[start : end if end != -1 else len(css)]
+
+
+def test_wallet_strip_is_built_by_side_js_and_hidden_on_desktop() -> None:
+    side = (UI / "views" / "side.js").read_text(encoding="utf-8")
+    css = (UI / "style.css").read_text(encoding="utf-8")
+    assert "wallet-strip" in side and "aria-expanded" in side
+    assert ".wallet-strip" in css and "display: none" in css
+
+
+def test_chat_screen_is_a_single_scroll_region_and_declares_color_scheme() -> None:
+    css = (UI / "style.css").read_text(encoding="utf-8")
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    assert "color-scheme: light dark" in css
+    assert 'name="color-scheme" content="light dark"' in html
+    rule = re.search(r"body\.screen-chat \{([^}]*)\}", css)
+    assert rule is not None and "overflow: hidden" in rule.group(1)
+    assert "text-transform: uppercase" not in css
+    assert "font-size: 11px" not in css
 
 
 @pytest.mark.parametrize("name", UI_FILES)
@@ -317,8 +345,8 @@ def test_page_works_from_fixtures() -> None:
     assert h["signedOut"]["hasConnectButton"]
     assert h["afterConnect"]["me"] is True
     assert "0x9a8b7c6d5e4f30211203f4e5d6c7b8a998877665" in h["afterConnect"]["text"]
-    assert "USDC (in wallet)" in h["dashboard"] and "98" in h["dashboard"]
-    assert "ETH (gas)" in h["dashboard"] and "Reference price" in h["dashboard"]
+    assert "USD Coin" in h["dashboard"] and "98" in h["dashboard"]
+    assert "ETH for fees" in h["dashboard"] and "Reference price" in h["dashboard"]
     assert "Today's limit" in h["side"] and "$2.00 of $300.00 used" in h["side"]
     assert "chain verified" in h["side"] and "enough" in h["side"]
     for phrase in ("Per order", "Per day", "Ask me first above", "Where money may go"):
@@ -351,8 +379,8 @@ def test_setup_is_shown_for_t0_and_not_after_activation() -> None:
     r = harness()["routing"]
     assert r["signedOut"] == "setup" and r["t0"] == "setup" and r["t0Portfolio"] == "setup"
     assert r["t2Default"] == "chat" and r["t2Setup"] == "chat"  # activated: land in Chat
-    assert r["t1Setup"] == "setup" and r["t2Portfolio"] == "portfolio"
-    assert r["alias"] == ["portfolio", "activity", "portfolio", "chat"]  # old hashes still work
+    assert r["t1Setup"] == "setup" and r["t2Portfolio"] == "overview"  # #/portfolio is Overview now
+    assert r["alias"] == ["overview", "activity", "overview", "chat"]  # old hashes still work
     assert r["unknown"] == "chat" and r["tierUnknown"] == "rules"
     p = harness()["pills"]
     assert p["t0"] == "Read only" and p["t2"].endswith("Agent active") and p["stopped"] == "Stopped"
@@ -417,22 +445,20 @@ def test_top_up_sends_eth_to_agent_registers_hash_and_polls() -> None:
 def test_mint_job_is_polled_and_its_record_links_to_basescan() -> None:
     m = flows()["mint"]
     assert m["polls"] == 3
-    assert m["sleeps"] == [2000, 3000]  # poll every 2 s, backing off toward 5 s
+    assert m["sleeps"] == [750, 750]  # the fast first polls (see pollDelay)
     assert "Executed" in m["text"] and "Minted 1000 USDC" in m["text"]
     external = [u for u in m["links"] if u.startswith("http")]
     assert external == [f"https://sepolia.basescan.org/tx/{TX}"]
 
 
 @needs_node
-def test_poll_interval_starts_at_2s_and_caps_at_5s() -> None:
-    assert flows()["polling"] == [2000, 3000, 4000, 5000, 5000, 5000]
+def test_poll_interval_is_fast_at_first_then_backs_off() -> None:
+    assert flows()["polling"] == [750, 750, 750, 750, 750, 1500]
 
 
 @needs_node
-def test_run_shows_planner_label_and_hostile_run_shows_the_blocked_decision() -> None:
+def test_the_safety_demo_on_rules_shows_the_blocked_decision() -> None:
     f = flows()
-    assert f["run"]["body"] == {"planner": "auto"}
-    assert "fallback" in f["run"]["text"]
     assert f["hostile"]["body"]["planner"] == "scripted_hostile"
     text = f["hostile"]["text"]
     assert "Blocked" in text and "minting and withdrawing are owner actions" in text
@@ -524,7 +550,7 @@ def test_setup_has_three_steps_and_wallet_prompt_disclosures() -> None:
         "Activate agent",
         "Wallet prompt: send test ETH (pays gas)",
         "Wallet prompt: one free signature to raise the tier",
-        "Mint test USDC from the Portfolio page",
+        "Get test USDC from Overview",
     ):
         assert phrase in text, phrase
 
@@ -703,7 +729,7 @@ def test_chat_is_the_first_tab_and_a_view() -> None:
     main = (UI / "main.js").read_text(encoding="utf-8")
     assert "const VIEWS = { chat," in main and "export function routeFor" in main
     assert 'asked === "setup"' in main and ': "chat";' in main  # Chat is the default once active
-    for view in ("chat", "portfolio", "activity", "rules", "setup"):
+    for view in ("chat", "overview", "activity", "rules", "setup"):
         assert (UI / "views" / f"{view}.js").is_file(), view
     for gone in ("dashboard", "feed", "onboard"):
         assert not (UI / "views" / f"{gone}.js").exists(), gone
@@ -717,17 +743,22 @@ def test_rules_tab_reads_the_limits_route() -> None:
 
 
 @needs_node
-def test_chat_send_with_enter_shows_typing_then_step_cards() -> None:
+def test_chat_send_with_enter_shows_progress_then_step_cards() -> None:
     f = chat_flows()
     assert "No messages yet." in f["emptyText"]
     assert f["counterTyped"] == "27 / 500"
     assert f["postsAfterShiftEnter"] == 0  # Shift+Enter is a newline
     s = f["send"]
     assert s["body"] == {"message": "Put 10 USDC to work in Aave"} and s["csrf"] == "1"
-    # The live step card replaces the old typing line; a phase the page does not know is "Working".
-    assert s["live"] == ["…Getting readyWaiting to start"] * 2 + ["…Working"]
-    assert s["typingHiddenAfter"] is True and s["composerCleared"] is True
-    assert s["sleeps"] == [2000, 3000]  # the poll cadence of the other jobs
+    # The progress card is in the log before the POST resolves; an unknown phase is "Working".
+    assert s["pre"] == [["Sending your message"]]
+    assert s["live"] == [
+        ["Message received"],
+        ["Message received", "Waiting to start"],
+        ["Message received", "Waiting to start", "Working on your request"],
+    ]
+    assert s["composerCleared"] is True
+    assert s["sleeps"] == [750, 750]  # the fast first polls (see pollDelay)
     assert s["bubbles"] == ["bubble user", "bubble agent"]
     assert s["cards"] == 2 and s["saysChips"] == 1
     assert "Approved 10 USDC for the Aave pool." in s["text"] and "Executed" in s["text"]
@@ -798,24 +829,17 @@ TX_CHAT = "0x" + "cd" * 32
 
 
 @needs_node
-def test_chat_phase_strip_and_stop_button() -> None:
+def test_chat_progress_card_and_stop_button() -> None:
     p = chat_flows()["phases"]
-    titles = [x["title"] for x in p["seen"]]
-    assert titles == [
-        "Getting ready",
-        "Getting ready",
-        "Checking your rules",
-        "Sent to Base Sepolia",
+    assert p["seen"][-1]["rows"] == [
+        "Message received",
+        "Waiting to start",
+        "Working on your request",
+        "Sending to Base Sepolia",
         "Confirming on Base Sepolia",
     ]
-    assert all(x["stop"] for x in p["seen"])  # Send is Stop while the job is queued or running
-    assert p["seen"][2]["chips"][0].startswith("current:")
-    assert [c.split(":")[0] for c in p["seen"][4]["chips"]] == [
-        "passed",
-        "passed",
-        "current",
-        "ahead",
-    ]
+    # Send is Stop while the job is queued or running, and the card has its own Stop button
+    assert all(x["stop"] and x["cardStop"] == 1 for x in p["seen"])
     assert p["cancelPosts"] == 1 and p["csrf"] == "1"
     assert p["sendLabelAfter"] == ["Send"]  # back to Send once the job ended
     assert p["skipped"] == 1 and p["skipText"] is True
@@ -837,7 +861,7 @@ def test_chat_limit_line_and_quick_fixes_never_send_on_their_own() -> None:
     assert q["composer"] == "Put 50 USDC to work in Aave" and q["postsAfterTry"] == 0
     assert q["asked"] == {"message": "Why is this blocked?"}
     assert q["composerAfter"] == q["composer"]  # the question did not touch the composer
-    assert q["unknownPhase"][-1].endswith("Working")
+    assert q["unknownPhase"][-1] == "Working on your request"
 
 
 @needs_node

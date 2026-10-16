@@ -3,7 +3,8 @@
 // Every API string is written with textContent. "Agent says" text is the model's own words and
 // is labelled as such; the step cards, not the prose, are the record of what happened.
 import { cta, frozenCard } from "../gauges.js";
-import { ACTIVE_PHASES, runningCard, stepCard, uncertainCard } from "./cards.js";
+import { ACTIVE_PHASES, stepCard, uncertainCard } from "./cards.js";
+import { createProgress } from "./progress.js";
 import { historyRail, sidePanel } from "./side.js";
 
 export const MESSAGE_MAX = 500;
@@ -17,6 +18,7 @@ const SUGGESTIONS_MAX = 4;
 // /limits is read once per render of the log; a few seconds of cache covers a burst of renders.
 const LIMITS_TTL_MS = 5000;
 const TOO_LATE = "Too late to stop: this order is already sent.";
+const ENDED_STATUS = new Set(["succeeded", "denied", "failed", "interrupted"]);
 // Transaction hashes are shown only as BaseScan links on the step cards, not in the prose.
 const TX_LIST = /\s*Transactions?: 0x[0-9a-f]{64}(?:, 0x[0-9a-f]{64})*\.?/g;
 
@@ -76,11 +78,8 @@ export function render(ctx) {
   const log = el("ol", "chat-log");
   log.setAttribute("aria-live", "polite");
   log.setAttribute("aria-label", "Conversation");
-  const typing = el("p", "typing", "");
-  typing.setAttribute("role", "status");
-  typing.hidden = true;
   const scroll = el("div", "chat-scroll");
-  scroll.append(notice, log, typing);
+  scroll.append(notice, log);
   const status = el("p", "msg", "");
   status.setAttribute("role", "status");
 
@@ -132,7 +131,7 @@ export function render(ctx) {
   let cancelling = false;
   let limitsAt = 0;
   let limitsCache = null;
-  let liveSlot = null;
+  let live = null; // {li, prog} while this view shows the progress card of a job
 
   function updateCounter() {
     const n = input.value.length;
@@ -200,10 +199,10 @@ export function render(ctx) {
     try {
       const page = await api.chat(50, threadId);
       const all = Array.isArray(page.items) ? page.items : [];
-      const live = all.filter((m) => m.role === "agent" && ACTIVE_PHASES.has(m.phase) && m.job_id);
-      const items = all.filter((m) => !live.includes(m));
+      const running = all.filter((m) => m.role === "agent" && ACTIVE_PHASES.has(m.phase) && m.job_id);
+      const items = all.filter((m) => !running.includes(m));
       showHistory(items, await getLimits());
-      const last = live[live.length - 1];
+      const last = running[running.length - 1];
       if (resume && last && !activeJob && /^[0-9a-f]{32}$/.test(last.job_id)) follow(last.job_id);
     } catch (e) {
       status.className = "msg error";
@@ -240,27 +239,21 @@ export function render(ctx) {
     lock();
   }
 
-  function typingOn(text) {
-    typing.hidden = false;
-    typing.textContent = text;
+  // The live progress card of the job this view follows. It sits under a bubble of its own.
+  function startLive() {
+    const li = el("li", "bubble agent live");
+    const prog = createProgress(el, { onStop: stop });
+    li.append(prog.node);
+    log.append(li);
+    scroll.scrollTop = scroll.scrollHeight;
+    return { li, prog };
   }
 
-  function typingOff() {
-    typing.hidden = true;
-    typing.textContent = "";
-  }
-
-  // The agent's live step: the phase strip under a bubble of its own.
-  function paintLive() {
-    if (!activeJob) return;
-    if (!liveSlot) {
-      const li = el("li", "bubble agent live");
-      liveSlot = el("ol", "steps");
-      li.append(liveSlot);
-      log.append(li);
-      if (typeof li.scrollIntoView === "function") li.scrollIntoView({ block: "end" });
-    }
-    liveSlot.replaceChildren(runningCard(ctx, activeJob.phase));
+  function dropLive() {
+    if (!live) return;
+    live.prog.destroy();
+    live.li.remove();
+    live = null;
   }
 
   function refreshAround() {
@@ -271,23 +264,30 @@ export function render(ctx) {
   async function follow(jobId) {
     activeJob = { id: jobId, phase: "queued" };
     cancelling = false;
-    liveSlot = null;
+    if (!live) {
+      // No card yet: the page was reloaded mid-run, or another thread was opened.
+      live = startLive();
+      live.prog.setReceived();
+    }
     let sent = false;
-    typingOff();
     lock();
-    paintLive();
     let job = null;
     try {
       job = await ctx.pollJob(jobId, (j) => {
         const phase = typeof j.phase === "string" ? j.phase : j.status === "queued" ? "queued" : "working";
         activeJob.phase = phase;
         if (phase === "sent" || phase === "confirming") sent = true;
-        paintLive();
+        // A finished job has no stage left: never draw a "Working" row for it.
+        if (phase !== "done" && !ENDED_STATUS.has(j.status) && live) {
+          const near = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+          live.prog.setPhase(phase);
+          if (near) scroll.scrollTop = scroll.scrollHeight; // never pull the owner off older lines
+        }
       });
     } finally {
       activeJob = null;
       cancelling = false;
-      liveSlot = null;
+      dropLive();
     }
     limitsAt = 0;
     await loadHistory();
@@ -318,6 +318,7 @@ export function render(ctx) {
     status.textContent = "";
     try {
       await api.cancelJob(activeJob.id);
+      if (live) live.prog.setCancelling();
       status.textContent = "Stopping. Steps not sent yet will be skipped.";
     } catch (e) {
       cancelling = false;
@@ -413,12 +414,14 @@ export function render(ctx) {
       input.value = "";
       updateCounter();
     }
-    typingOn("Agent is getting ready…");
+    // The progress card appears before the request leaves, so the owner sees the agent at once.
+    live = startLive();
     try {
       const accepted = await api.chatSend(text, threadId);
+      live.prog.setReceived();
       await follow(accepted.job_id);
     } catch (e) {
-      typingOff();
+      dropLive();
       status.className = "msg error";
       status.textContent = ctx.describeError(e);
       const active = e && e.problem && e.problem.job_id;

@@ -9,7 +9,7 @@ import { isUserRejection } from "./wallet/adapter.js";
 import { TestWallet } from "./wallet/test.js";
 import * as chat from "./views/chat.js";
 import * as setup from "./views/setup.js";
-import * as portfolio from "./views/portfolio.js";
+import * as overview from "./views/overview.js";
 import * as activity from "./views/activity.js";
 import * as rules from "./views/rules.js";
 import { renderAccountControl } from "./views/account.js";
@@ -38,10 +38,9 @@ export function describeError(err) {
 }
 
 const TERMINAL = new Set(["succeeded", "denied", "failed", "interrupted"]);
-// Design section 10: poll every 2 s, backing off to 5 s.
-export const POLL_START_MS = 2000;
-export const POLL_MAX_MS = 5000;
-export const pollDelay = (attempt) => Math.min(POLL_START_MS + attempt * 1000, POLL_MAX_MS);
+// The owner should see a change within a second, so poll fast at first: 750 ms for the first
+// seven polls, 1.5 s until about 28 s, then 3 s. The loop in pollJob stops after about five minutes.
+export const pollDelay = (attempt) => (attempt < 7 ? 750 : attempt < 22 ? 1500 : 3000);
 
 export function makeCtx({ api, wallet, sleep }) {
   const state = { me: null, tier: null };
@@ -62,7 +61,7 @@ export function makeCtx({ api, wallet, sleep }) {
     // `onUpdate` sees every poll result so a view can show "queued" and "running".
     async pollJob(jobId, onUpdate) {
       let job = null;
-      for (let i = 0; i < 80; i++) {
+      for (let i = 0; i < 120; i++) {
         job = await api.job(jobId);
         if (onUpdate) onUpdate(job);
         if (TERMINAL.has(job.status)) return job;
@@ -118,9 +117,9 @@ export function makeCtx({ api, wallet, sleep }) {
   return ctx;
 }
 
-const VIEWS = { chat, portfolio, activity, rules, setup };
+const VIEWS = { chat, overview, activity, rules, setup };
 // Old hashes keep working.
-const ALIASES = { dashboard: "portfolio", feed: "activity", approvals: "portfolio", onboard: "setup" };
+const ALIASES = { portfolio: "overview", dashboard: "overview", approvals: "overview", feed: "activity", onboard: "setup" };
 
 // Which screen to show. Chat is home once the agent is activated; Setup is shown until then
 // (always for a signed-out visitor and for tier T0). Pure, so the tests can call it.
@@ -229,7 +228,7 @@ function boot() {
       if (a.getAttribute("href") === "#/" + name) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     }
-    document.body.className = name === "setup" ? "screen-setup" : "";
+    document.body.className = "screen-" + name;
     if (!force && name === current) return;
     current = name;
     root.replaceChildren(VIEWS[name].render(ctx));

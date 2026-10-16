@@ -127,7 +127,7 @@ const out = {};
   out.rules = {
     text: view.textContent,
     rows: find(view, (n) => n.dataset && n.dataset.rule).map((n) => n.dataset.rule),
-    chips: find(view, (n) => n.className.startsWith("chip ")).map((n) => n.textContent),
+    chips: find(view, (n) => n.className.startsWith("chip ") && !n.className.includes("proto-chip")).map((n) => n.textContent),
   };
   out.usd = ["50.00", "1000.00", "0.50", "12.30", "abc", null].map((v) => limits.usd(v));
 }

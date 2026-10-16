@@ -3,6 +3,7 @@
    font stack only: no web fonts, no CDN. No shadows: surfaces are separated by a hairline.
    Dark mode redefines the same names (ink and canvas swap). */
 :root {
+  color-scheme: light dark;
   /* DESIGN.md tokens */
   --canvas: #ffffff;
   --canvas-soft: #fbf9f8;
@@ -184,6 +185,8 @@ main { flex: 1 0 auto; width: 100%; max-width: 1280px; margin: 0 auto; padding: 
 main:focus { outline: none; }
 .foot { max-width: 1280px; width: 100%; margin: 0 auto; padding: 0 var(--gutter) 16px; font-size: 12px; color: var(--faint); }
 
+.chat-scroll, .rail, .side { scrollbar-width: thin; scrollbar-color: var(--field) transparent; }
+
 /* ---- common ---- */
 h1 { font: 400 28px/1.2 var(--font-display); margin: 0 0 4px; }
 h2 { font-size: 16px; line-height: 1.3; margin: 0; }
@@ -191,7 +194,7 @@ h2 { font-size: 16px; line-height: 1.3; margin: 0; }
 .note { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
 .faint { color: var(--faint); }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); padding: 20px; min-width: 0; }
-.label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.label { font-size: 12px; color: var(--muted); }
 .big { font-family: var(--font-display); font-size: 32px; font-weight: 400; margin-top: 6px; overflow-wrap: anywhere; }
 .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
@@ -228,7 +231,7 @@ label { display: block; margin: 12px 0 4px; font-size: 13px; font-weight: 600; }
 label.inline { display: inline; font-weight: 400; }
 .chip {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   padding: 3px 8px;
   border-radius: 999px;
   background: var(--chip);
@@ -290,7 +293,7 @@ label.inline { display: inline; font-weight: 400; }
 .step-meta { font-size: 12px; color: var(--faint); margin: 4px 0 0; }
 .step-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 45%; text-align: right; font-size: 12px; }
 .step-side a { color: var(--link); }
-.state-word { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.state-word { font-size: 12px; font-weight: 700; color: var(--muted); }
 .step-card.done { background: var(--done-bg); border-color: var(--done-border); }
 .step-card.done .step-icon { background: var(--green); }
 .step-card.blocked, .step-card.fail { background: var(--red-bg); border-color: var(--red-border); }
@@ -314,7 +317,7 @@ label.inline { display: inline; font-weight: 400; }
 .rail-new { flex: 1 1 auto; text-align: left; }
 .rail-close { display: none; }
 .rail-list { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.rail-group { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-top: 10px; }
+.rail-group { font-size: 12px; color: var(--muted); margin-top: 10px; }
 .rail-row {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
   padding: 10px 12px; border-radius: var(--r-card); border-color: transparent; background: transparent;
@@ -326,12 +329,13 @@ label.inline { display: inline; font-weight: 400; }
 .rail-row:disabled { background: transparent; border-color: transparent; color: var(--faint); }
 .rail-title { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-meta { font-size: 12px; color: var(--muted); }
-.rail-meta.bad { color: var(--red); }
+.rail-meta.bad { color: var(--ink); }
+.rail-meta.bad::before { content: "✕ "; color: var(--red); }
 .rail-row.active .rail-meta { color: var(--on-accent); }
 .rail-backdrop { position: fixed; inset: 0; background: rgba(22, 21, 19, 0.45); z-index: 40; }
 .rail-backdrop[hidden] { display: none; }
 .phase-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.phase-chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--chip); color: var(--faint); }
+.phase-chip { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--chip); color: var(--faint); }
 .phase-chip.passed { background: var(--green-bg); color: var(--green); }
 .phase-chip.current { background: var(--accent-gold-soft); color: var(--on-accent); font-weight: 600; }
 .step-card.running { background: var(--chip); }
@@ -402,7 +406,7 @@ label.inline { display: inline; font-weight: 400; }
 .frozen-card p { margin: 2px 0 0; font-size: 14px; }
 .notice-card { background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: var(--r-step); padding: 12px 16px; font-size: 14px; }
 .notice-card p { margin: 0 0 8px; }
-.side .card { padding: 20px; border-radius: var(--r-stat); }
+.side .card { padding: 20px; border-radius: var(--r-card); }
 .side .small-line { font-size: 13px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
 .side .gas-line { font-size: 15px; margin-top: 6px; }
 
@@ -426,7 +430,7 @@ label.inline { display: inline; font-weight: 400; }
 .job-panel { margin-top: 16px; background: var(--ground); }
 
 /* ---- activity ---- */
-.verdict { border: 1px solid var(--border); border-left-width: 6px; border-radius: var(--r-step); padding: 10px 14px; margin: 12px 0; background: var(--card); }
+.verdict { border: 1px solid var(--border); border-radius: var(--r-step); padding: 10px 14px; margin: 12px 0; background: var(--card); }
 .verdict.ok { border-left-color: var(--green); }
 .verdict.ok strong { color: var(--green); }
 .verdict.bad { border-left-color: var(--red); }
@@ -445,6 +449,8 @@ label.inline { display: inline; font-weight: 400; }
 .rule-used { font-size: 13px; font-weight: 600; margin-top: 2px; }
 .rule-value { font-family: var(--font-display); font-size: 22px; text-align: right; overflow-wrap: anywhere; max-width: 40%; }
 .rule-row .chip { flex: 0 0 auto; }
+.proto-chip { display: inline-flex; align-items: center; gap: 6px; }
+.rules-extra { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
 
 /* ---- account, modal ---- */
 .account-slot:empty { display: none; }
@@ -517,10 +523,45 @@ button.solid-danger:hover { filter: brightness(0.92); }
 .setup-card button.primary { border-radius: var(--r-ctl); padding: 12px 20px; font-size: 15px; min-height: 46px; }
 .setup-card button.primary:disabled { background: var(--chip); color: var(--faint); }
 
+/* ---- desktop (901px and up): one row header; the chat screen fits the viewport ---- */
+@media (min-width: 901px) {
+  .hdr { flex-wrap: nowrap; gap: 8px 16px; min-height: 63px; }
+  .hdr-right { flex-wrap: nowrap; gap: 8px; }
+  .hdr-right .pill { white-space: nowrap; }
+  body.screen-chat .hdr { max-width: 1600px; }
+  .pill.addr { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  body.screen-chat { height: 100dvh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+  body.screen-chat main { max-width: 1600px; min-height: 0; overflow: hidden; padding-bottom: 0; }
+  body.screen-chat .foot { max-width: 1600px; padding-top: 6px; }
+  body.screen-chat .chat-layout { height: 100%; min-height: 0; align-items: stretch; grid-template-columns: 240px minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr); }
+  body.screen-chat .rail, body.screen-chat .side { min-height: 0; overflow-y: auto; }
+  body.screen-chat .chat-card { height: 100%; min-height: 0; max-height: none; }
+  body.screen-chat .chat-scroll > * { width: 100%; max-width: 760px; margin-inline: auto; }
+  body.screen-chat .chat-scroll > .typing { width: auto; margin-inline: 0 auto; }
+  body.screen-chat .chat-scroll > div:first-child:not(:empty) { position: sticky; top: 0; z-index: 2; background: var(--card); padding-bottom: 12px; }
+}
+@media (min-width: 901px) and (max-width: 1100px) {
+  body.screen-chat .chat-layout { grid-template-columns: 200px minmax(0, 1fr) 260px; }
+}
 @media (max-width: 900px) {
   :root { --gutter: 16px; }
   .hdr { gap: 8px 12px; }
-  .tabs { order: 3; flex: 1 1 100%; }
+  .hdr-right { display: contents; }
+  #mode-chip, #addr-chip, #account-slot { order: 1; }
+  .brand { font-size: 0; }
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; height: 60px;
+    display: flex; gap: 0; flex: none; min-width: 0; overflow-x: auto;
+    background: var(--card); border-top: 1px solid var(--border);
+  }
+  .tabs a {
+    flex: 1 1 0; display: flex; align-items: center; justify-content: center; min-height: 44px;
+    padding: 0 6px; border: 0; border-top: 4px solid transparent; border-radius: 0;
+  }
+  .tabs a[aria-current="page"] { border-top-color: var(--primary); }
+  main { padding-bottom: 76px; }
+  .foot { margin-bottom: 60px; }
   .chat-layout { grid-template-columns: minmax(0, 1fr); }
   .history-toggle { display: inline-flex; align-items: center; }
   .rail {
@@ -531,7 +572,7 @@ button.solid-danger:hover { filter: brightness(0.92); }
   .rail.open { visibility: visible; transform: none; }
   .rail-close { display: inline-flex; }
   .chat-card { max-height: none; min-height: 0; }
-  .chat-scroll { max-height: 60vh; min-height: 220px; padding: 16px; }
+  .chat-scroll { max-height: none; min-height: 0; padding: 12px; }
   .composer-box { padding: 12px 16px; }
   .chat-card > header { padding: 12px 16px; }
   .grid-2, .grid-eq { grid-template-columns: minmax(0, 1fr); }
@@ -546,7 +587,8 @@ button.solid-danger:hover { filter: brightness(0.92); }
   .setup h1 { font-size: 24px; }
   .setup-steps { flex-direction: column; }
   .setup-card { padding: 16px; }
-  .composer { flex-direction: column; align-items: stretch; }
+  .composer { flex-direction: row; align-items: flex-end; }
+  .composer button { min-width: 72px; }
   .big { font-size: 28px; }
   .pill.addr, .pill.net { max-width: 100%; }
 }
@@ -559,6 +601,51 @@ button.solid-danger:hover { filter: brightness(0.92); }
 }
 @media (prefers-reduced-motion: reduce) {
   .sk { animation: none !important; }
+
   * { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
 .addr-box button { flex: 0 0 auto; white-space: nowrap; }
+
+/* ---- phone (900px and below): Chat is one scroll region with a pinned composer; wallet sheet ---- */
+@media (max-width: 900px) {
+  body.screen-chat { height: 100dvh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+  body.screen-chat main { min-height: 0; overflow: hidden; padding: 8px 12px 0; }
+  body.screen-chat .chat-layout { height: 100%; grid-template-rows: auto minmax(0, 1fr); }
+  body.screen-chat .side { grid-row: 1; }
+  body.screen-chat .chat-card { grid-row: 2; height: 100%; min-height: 0; max-height: none; }
+  .suggest { flex-wrap: nowrap; overflow-x: auto; }
+  .prompt-chip { flex: 0 0 auto; }
+  button, .btn, .prompt-chip, .rail-row { min-height: 44px; }
+  .wallet-strip {
+    display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 44px;
+    padding: 8px 16px; border: 1px solid var(--border); border-radius: var(--r-card);
+    background: var(--card); color: var(--ink); font: 600 15px/1.2 var(--font); text-align: left;
+  }
+  .side .card { display: none; }
+  .side.open {
+    position: fixed; inset: 0 0 60px 0; z-index: 30; overflow-y: auto; padding: 16px;
+    background: var(--ground); display: flex; flex-direction: column; gap: 16px;
+  }
+  .side.open > .card { display: flex; flex-direction: column; }
+}
+@media (min-width: 901px) {
+  .wallet-strip { display: none; }
+}
+
+/* ---- phone header: row one is the logo, status, Emergency stop and Log out; the two chips sit on a thin second row ---- */
+@media (max-width: 520px) {
+  .hdr { gap: 6px 8px; padding-top: 6px; padding-bottom: 6px; }
+  .hdr-right { display: contents; }
+  .brand { order: 0; }
+  #status-pill { order: 1; margin-left: auto; padding: 6px 10px; }
+  button.logout { padding: 8px 2px; }
+  #btn-stop { order: 2; padding: 8px 10px; font-size: 13px; }
+  #account-slot { order: 3; }
+  #mode-chip, #net-chip { order: 4; font-size: 12px; padding: 2px 8px; }
+  /* A phone has no Shift+Enter: keep only the counter, and give the room to the conversation. */
+  .composer-meta { justify-content: flex-end; }
+  .composer-meta > span:first-child { display: none; }
+}
+@media (max-width: 900px) {
+  .btn-stop, button.logout, .history-toggle { min-height: 44px; }
+}

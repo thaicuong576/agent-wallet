@@ -7,18 +7,44 @@ import { topUpButton } from "./topup.js";
 export function sidePanel(ctx) {
   const { el, api } = ctx;
   const node = el("div", "stack side");
+  node.id = "chat-side";
   let agent = null;
+  let walletTotal = "";
 
+  const strip = el("button", "wallet-strip");
+  strip.type = "button";
+  strip.setAttribute("aria-controls", node.id);
   const wallet = el("div", "card");
   const limit = el("div", "card");
   const gas = el("div", "card stack");
   const audit = el("div", "card");
   audit.className = "card small-line";
-  node.append(wallet, limit, gas, audit);
+  node.append(strip, wallet, limit, gas, audit);
+
+  // Phone only: the strip is the whole column until it is opened as a sheet.
+  let isOpen = false;
+  function paintStrip() {
+    strip.textContent = isOpen ? "Close ▴" : "Wallet" + walletTotal + " ▾";
+    strip.setAttribute("aria-expanded", String(isOpen));
+  }
+  function setOpen(on) {
+    isOpen = on;
+    node.className = on ? "stack side open" : "stack side";
+    paintStrip();
+  }
+  strip.addEventListener("click", () => setOpen(!isOpen));
+  node.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !isOpen) return;
+    setOpen(false);
+    strip.focus();
+  });
+  paintStrip();
 
   const top = topUpButton(ctx, { getAgent: () => agent, cls: "" });
 
   function paintWallet(a, p) {
+    walletTotal = p && p.total_value_usd ? " · $" + p.total_value_usd : "";
+    paintStrip();
     wallet.replaceChildren(el("div", "label", "Agent wallet"));
     if (!a) {
       wallet.append(el("p", "note", "Balances are not available right now."));
