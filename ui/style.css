@@ -631,3 +631,18 @@ button.solid-danger:hover { filter: brightness(0.92); }
 @media (min-width: 901px) {
   .wallet-strip { display: none; }
 }
+
+/* ---- phone header: row one is the logo, status, Emergency stop and Log out; the two chips sit on a thin second row ---- */
+@media (max-width: 520px) {
+  .hdr { gap: 6px 8px; padding-top: 6px; padding-bottom: 6px; }
+  .hdr-right { display: contents; }
+  .brand { order: 0; }
+  #status-pill { order: 1; margin-left: auto; padding: 6px 10px; }
+  button.logout { padding: 8px 2px; }
+  #btn-stop { order: 2; padding: 8px 10px; font-size: 13px; }
+  #account-slot { order: 3; }
+  #mode-chip, #net-chip { order: 4; font-size: 12px; padding: 2px 8px; }
+}
+@media (max-width: 900px) {
+  .btn-stop, button.logout, .history-toggle { min-height: 44px; }
+}
