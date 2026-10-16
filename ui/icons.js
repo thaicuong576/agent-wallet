@@ -35,7 +35,6 @@ export const PROTOCOL_META = {
 };
 
 const PX = { xs: 20, sm: 22, md: 32 };
-const LETTER_BADGE = { WETH: "W" };
 
 function symbolOf(symbol) {
   return typeof symbol === "string" && symbol !== "" ? symbol : "?";
@@ -91,27 +90,28 @@ export function tokenAvatar(el, symbol, opts) {
     img.setAttribute("alt", "");
     img.setAttribute("width", String(PX[size]));
     img.setAttribute("height", String(PX[size]));
-    span.appendChild(img);
+    span.append(img);
   } else {
     const letter = el("span", "token-letter", sym.charAt(0).toUpperCase());
     letter.style.background = fallbackColor(sym);
-    span.appendChild(letter);
+    span.append(letter);
   }
 
-  if (LETTER_BADGE[sym]) {
-    const badge = el("span", "token-letter-badge", LETTER_BADGE[sym]);
+  // Wrapped ether shares ETH's image, so a "W" keeps the two apart.
+  if (sym === "WETH") {
+    const badge = el("span", "token-letter-badge", "W");
     badge.setAttribute("title", "Wrapped");
-    span.appendChild(badge);
+    span.append(badge);
   }
 
   if (o.testnet !== false) {
     const mark = el("span", "testnet-mark", "T");
     mark.setAttribute("title", "Test token on Base Sepolia. Not the real asset.");
     mark.setAttribute("aria-hidden", "true");
-    span.appendChild(mark);
+    span.append(mark);
   }
 
-  if (o.protocol) span.appendChild(protocolBadge(el, o.protocol));
+  if (o.protocol) span.append(protocolBadge(el, o.protocol));
   return span;
 }
 

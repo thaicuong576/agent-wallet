@@ -92,7 +92,6 @@
   box-sizing: border-box;
   border-radius: 4px;
   border: 2px solid var(--canvas);
-  box-shadow: none;
   color: #ffffff;
   font-size: 9px;
   font-weight: 700;
