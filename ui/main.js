@@ -9,7 +9,7 @@ import { isUserRejection } from "./wallet/adapter.js";
 import { TestWallet } from "./wallet/test.js";
 import * as chat from "./views/chat.js";
 import * as setup from "./views/setup.js";
-import * as portfolio from "./views/portfolio.js";
+import * as overview from "./views/overview.js";
 import * as activity from "./views/activity.js";
 import * as rules from "./views/rules.js";
 import { renderAccountControl } from "./views/account.js";
@@ -117,9 +117,9 @@ export function makeCtx({ api, wallet, sleep }) {
   return ctx;
 }
 
-const VIEWS = { chat, portfolio, activity, rules, setup };
+const VIEWS = { chat, overview, activity, rules, setup };
 // Old hashes keep working.
-const ALIASES = { dashboard: "portfolio", feed: "activity", approvals: "portfolio", onboard: "setup" };
+const ALIASES = { portfolio: "overview", dashboard: "overview", approvals: "overview", feed: "activity", onboard: "setup" };
 
 // Which screen to show. Chat is home once the agent is activated; Setup is shown until then
 // (always for a signed-out visitor and for tier T0). Pure, so the tests can call it.

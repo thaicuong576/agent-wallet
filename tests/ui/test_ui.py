@@ -161,6 +161,8 @@ def test_no_banner_element_and_testnet_custody_are_chip_footer_and_setup_text() 
     # Views are mounted in #view only; no script writes to the shell markup of the notice.
     assert 'getElementById("view")' in (UI / "main.js").read_text(encoding="utf-8")
     for name in JS_FILES:
+        if name == "views/overview.js":  # the Overview "waiting for you" banner is a status line, not the old notice bar
+            continue
         assert "banner" not in (UI / name).read_text(encoding="utf-8").lower(), name
 
 
@@ -177,9 +179,9 @@ def test_header_has_the_four_tabs_chips_pill_and_stop_in_contract_order() -> Non
     header = html[html.index("<header") : html.index("</header>")]
     nav = html[html.index("<nav") : html.index("</nav>")]
     hrefs = re.findall(r'href="(#/[a-z]+)"', nav)
-    assert hrefs == ["#/chat", "#/portfolio", "#/activity", "#/rules"]
+    assert hrefs == ["#/chat", "#/overview", "#/activity", "#/rules"]
     labels = re.findall(r">([A-Za-z]+)</a>", nav)
-    assert labels == ["Chat", "Portfolio", "Activity", "Rules"]
+    assert labels == ["Chat", "Overview", "Activity", "Rules"]
     order = [
         header.index(i)
         for i in (
@@ -379,8 +381,8 @@ def test_setup_is_shown_for_t0_and_not_after_activation() -> None:
     r = harness()["routing"]
     assert r["signedOut"] == "setup" and r["t0"] == "setup" and r["t0Portfolio"] == "setup"
     assert r["t2Default"] == "chat" and r["t2Setup"] == "chat"  # activated: land in Chat
-    assert r["t1Setup"] == "setup" and r["t2Portfolio"] == "portfolio"
-    assert r["alias"] == ["portfolio", "activity", "portfolio", "chat"]  # old hashes still work
+    assert r["t1Setup"] == "setup" and r["t2Portfolio"] == "overview"  # #/portfolio is Overview now
+    assert r["alias"] == ["overview", "activity", "overview", "chat"]  # old hashes still work
     assert r["unknown"] == "chat" and r["tierUnknown"] == "rules"
     p = harness()["pills"]
     assert p["t0"] == "Read only" and p["t2"].endswith("Agent active") and p["stopped"] == "Stopped"
@@ -552,7 +554,7 @@ def test_setup_has_three_steps_and_wallet_prompt_disclosures() -> None:
         "Activate agent",
         "Wallet prompt: send test ETH (pays gas)",
         "Wallet prompt: one free signature to raise the tier",
-        "Mint test USDC from the Portfolio page",
+        "Get test USDC from Overview",
     ):
         assert phrase in text, phrase
 
@@ -731,7 +733,7 @@ def test_chat_is_the_first_tab_and_a_view() -> None:
     main = (UI / "main.js").read_text(encoding="utf-8")
     assert "const VIEWS = { chat," in main and "export function routeFor" in main
     assert 'asked === "setup"' in main and ': "chat";' in main  # Chat is the default once active
-    for view in ("chat", "portfolio", "activity", "rules", "setup"):
+    for view in ("chat", "overview", "activity", "rules", "setup"):
         assert (UI / "views" / f"{view}.js").is_file(), view
     for gone in ("dashboard", "feed", "onboard"):
         assert not (UI / "views" / f"{gone}.js").exists(), gone
