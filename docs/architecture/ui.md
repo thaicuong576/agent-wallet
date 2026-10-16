@@ -88,7 +88,7 @@ Within 100 ms of Send the owner's bubble and a progress card are in the conversa
 | "Sending to Base Sepolia" | `sent` |
 | "Confirming on Base Sepolia" | `confirming` (documented, not emitted by the backend today) |
 
-A row shows its elapsed time once it has lasted 2 s; the head shows the total ("Working on it · 7 s"). Notes appear under the rows at 10 s ("Still working. The model can take up to 30 seconds."), 30 s and 60 s. Screen readers hear stage changes, not the ticking counter (`aria-live` on the rows, the times are `aria-hidden`). The card's own Stop is disabled until the server has answered and once an order is sent. A finished job never draws a row. Jobs are polled every 750 ms for the first seven polls, then every 1.5 s until about 20 s, then every 3 s, for about five minutes (`pollDelay` in `main.js`).
+A row shows its elapsed time once it has lasted 2 s; the head shows the total ("Working on it · 7 s"). Notes appear under the rows at 10 s ("Still working. The model can take up to 30 seconds."), 30 s and 60 s. Screen readers hear stage changes, not the ticking counter (`aria-live` on the rows, the times are `aria-hidden`). The card's own Stop is disabled until the server has answered and once an order is sent. A finished job never draws a row. Jobs are polled every 750 ms for the first seven polls, then every 1.5 s until about 28 s, then every 3 s, for about five minutes (`pollDelay` in `main.js`).
 
 ```mermaid
 sequenceDiagram

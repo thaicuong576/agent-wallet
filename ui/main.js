@@ -39,7 +39,7 @@ export function describeError(err) {
 
 const TERMINAL = new Set(["succeeded", "denied", "failed", "interrupted"]);
 // The owner should see a change within a second, so poll fast at first: 750 ms for the first
-// seven polls, 1.5 s until about 20 s, then 3 s. The loop in pollJob stops after about five minutes.
+// seven polls, 1.5 s until about 28 s, then 3 s. The loop in pollJob stops after about five minutes.
 export const pollDelay = (attempt) => (attempt < 7 ? 750 : attempt < 22 ? 1500 : 3000);
 
 export function makeCtx({ api, wallet, sleep }) {
