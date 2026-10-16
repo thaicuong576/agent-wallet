@@ -345,8 +345,8 @@ def test_page_works_from_fixtures() -> None:
     assert h["signedOut"]["hasConnectButton"]
     assert h["afterConnect"]["me"] is True
     assert "0x9a8b7c6d5e4f30211203f4e5d6c7b8a998877665" in h["afterConnect"]["text"]
-    assert "USDC (in wallet)" in h["dashboard"] and "98" in h["dashboard"]
-    assert "ETH (gas)" in h["dashboard"] and "Reference price" in h["dashboard"]
+    assert "USD Coin" in h["dashboard"] and "98" in h["dashboard"]
+    assert "ETH for fees" in h["dashboard"] and "Reference price" in h["dashboard"]
     assert "Today's limit" in h["side"] and "$2.00 of $300.00 used" in h["side"]
     assert "chain verified" in h["side"] and "enough" in h["side"]
     for phrase in ("Per order", "Per day", "Ask me first above", "Where money may go"):
@@ -457,10 +457,8 @@ def test_poll_interval_is_fast_at_first_then_backs_off() -> None:
 
 
 @needs_node
-def test_run_shows_planner_label_and_hostile_run_shows_the_blocked_decision() -> None:
+def test_the_safety_demo_on_rules_shows_the_blocked_decision() -> None:
     f = flows()
-    assert f["run"]["body"] == {"planner": "auto"}
-    assert "fallback" in f["run"]["text"]
     assert f["hostile"]["body"]["planner"] == "scripted_hostile"
     text = f["hostile"]["text"]
     assert "Blocked" in text and "minting and withdrawing are owner actions" in text

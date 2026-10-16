@@ -114,7 +114,7 @@ const { createApi, ROUTES } = await imp("api.js");
 const { makeCtx, describeError, routeFor } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
 const setup = await imp("views/setup.js");
-const portfolio = await imp("views/portfolio.js");
+const overview = await imp("views/overview.js");
 const activity = await imp("views/activity.js");
 const rules = await imp("views/rules.js");
 const cards = await imp("views/cards.js");
@@ -152,7 +152,7 @@ function mk({ demo = true, override = {}, wallet } = {}) {
   const { ctx } = mk({ override: { decisions: rec, agent, ips, limits } });
   await ctx.refreshSession();
   const f = activity.render(ctx);
-  const d = portfolio.render(ctx);
+  const d = overview.render(ctx);
   const rulesView = rules.render(ctx);
   const s = side.sidePanel(ctx).node;
   const u = setup.render(ctx);
@@ -163,7 +163,9 @@ function mk({ demo = true, override = {}, wallet } = {}) {
   let injected = 0;
   for (const root of all) {
     walk(root, (n) => {
-      if (["IMG", "SCRIPT", "IFRAME", "SVG"].includes(n.tagName)) injected++;
+      // A token icon is a local, fixed image (ui/icons.js); any other image is injected markup.
+      const localIcon = n.tagName === "IMG" && n.className === "token-img" && /^assets\/tokens\/[a-z]+\.svg$/.test(n.attrs.src || "");
+      if (["IMG", "SCRIPT", "IFRAME", "SVG"].includes(n.tagName) && !localIcon) injected++;
       if (n.tagName === "A") {
         anchors++;
         if ((n.attrs.href || "").includes("<")) injected++;
@@ -195,7 +197,7 @@ function mk({ demo = true, override = {}, wallet } = {}) {
 {
   const { ctx } = mk({ demo: true });
   await ctx.refreshSession();
-  const d = portfolio.render(ctx);
+  const d = overview.render(ctx);
   const f = activity.render(ctx);
   const sp = side.sidePanel(ctx);
   const rl = rules.render(ctx);
