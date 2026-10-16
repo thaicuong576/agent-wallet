@@ -146,7 +146,7 @@ def test_protocols_lists_registry_entries_the_ips_enables(world):
                 "id": "aave-v3",
                 "name": "Aave v3",
                 "category": "lending",
-                "tokens": ["USDC"],
+                "tokens": ["USDC", "USDT"],
                 "functions": ["approve", "supply", "withdraw"],
                 "paper": False,
             }

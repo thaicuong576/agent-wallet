@@ -45,6 +45,8 @@ class PositionReader(Protocol):
 
     def address_for(self, key: str, default: str) -> str: ...
 
+    def call(self, to: str, data: str) -> str: ...
+
 
 @dataclass(frozen=True)
 class ProtocolSpec:
@@ -98,6 +100,7 @@ def register(spec: ProtocolSpec) -> None:
 def _ensure_loaded() -> None:
     # Adapters register themselves when imported.
     import core.protocols.aave  # noqa: F401
+    import core.protocols.aave_stata  # noqa: F401
 
 
 def get(protocol_id: str) -> ProtocolSpec | None:

@@ -790,7 +790,10 @@
           "then": {
             "properties": {
               "token": {
-                "const": "USDC"
+                "enum": [
+                  "USDC",
+                  "USDT"
+                ]
               },
               "recipient": {
                 "const": "self"
@@ -973,6 +976,28 @@
             "properties": {
               "protocol": {
                 "const": "morpho-blue"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "protocol": {
+                "const": "aave-stata"
+              }
+            },
+            "required": [
+              "protocol"
+            ]
+          },
+          "then": {
+            "properties": {
+              "token": {
+                "enum": [
+                  "USDC",
+                  "USDT"
+                ]
               }
             }
           }

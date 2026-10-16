@@ -131,6 +131,32 @@ class PortfolioReader:
         overrides = {"USDC": self.usdc_address, "aUSDC": self.ausdc_address}
         return overrides.get(key, default)
 
+    def call(self, to: str, data: str) -> str:
+        """Generic read-only call (PositionReader protocol)."""
+        try:
+            res = self.rpc("eth_call", [{"to": to, "data": data}, "latest"])
+        except Exception as exc:
+            raise PortfolioUnavailable(f"RPC eth_call failed for {to}: {exc}") from exc
+
+        if isinstance(res, dict) and "error" in res:
+            raise PortfolioUnavailable(f"RPC returned error for {to}: {res['error']}")
+        if isinstance(res, dict) and "result" in res:
+            res = res["result"]
+        if res is None or res in ("", "0x"):
+            raise PortfolioUnavailable(f"RPC returned empty response for {to}")
+        return str(res)
+
+    def convert_to_assets(self, vault_address: str, shares: int) -> int:
+        """Read convertToAssets(shares) for an ERC-4626 vault."""
+        calldata = "0x07a2d13a" + eth_abi.encode(["uint256"], [shares]).hex()
+        raw = self.call(vault_address, calldata)
+        try:
+            return int(raw, 16) if isinstance(raw, str) else int(raw)
+        except Exception as exc:
+            raise PortfolioUnavailable(
+                f"Failed to decode convertToAssets from {vault_address}: {exc}"
+            ) from exc
+
     def _call_balance_of(self, token_address: str) -> int:
         calldata = "0x70a08231" + eth_abi.encode(["address"], [self.wallet]).hex()
         try:

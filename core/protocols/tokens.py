@@ -74,7 +74,9 @@ def _wire() -> None:
         TokenSpec("USDC", "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f", 6, "stable", enabled=True)
     )
     register_token(TokenSpec("ETH", None, 18, "unavailable"))
-    register_token(TokenSpec("USDT", "0x0a215D8ba66387DCA84B284D18c3B4ec3de6E54a", 6, "stable"))
+    register_token(
+        TokenSpec("USDT", "0x0a215D8ba66387DCA84B284D18c3B4ec3de6E54a", 6, "stable", enabled=True)
+    )
     register_token(
         TokenSpec("WETH", "0x4200000000000000000000000000000000000006", 18, "aave_oracle")
     )
