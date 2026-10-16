@@ -37,11 +37,12 @@ export function maxWithdraw(agent, symbol) {
   return text || "0";
 }
 
-// "98.00" -> 9800n. Anything unreadable counts as 0n.
+// "98.00" -> 9800n. The API may send up to six decimals; cents keep the first two. Anything
+// unreadable counts as 0n.
 function centsOf(value) {
-  const m = /^([0-9]{1,12})(?:\.([0-9]{1,2}))?$/.exec(String(value ?? "").trim());
+  const m = /^([0-9]{1,12})(?:\.([0-9]{1,6}))?$/.exec(String(value ?? "").trim());
   if (!m) return 0n;
-  return BigInt(m[1]) * 100n + BigInt((m[2] || "").padEnd(2, "0"));
+  return BigInt(m[1]) * 100n + BigInt((m[2] || "").padEnd(2, "0").slice(0, 2));
 }
 
 // The note for USDC or ETH lent out or held in vaults, which a direct withdraw cannot reach.
@@ -166,6 +167,7 @@ export function openWithdraw(ctx, { agent, portfolio }) {
     status.className = "msg";
     status.textContent = "Waiting for your wallet…";
     let progress = null;
+    let done = false;
     try {
       const header = await ctx.stepUp("withdraw", { token: sym, amount });
       status.textContent = "Withdrawing " + shownAmount + "…";
@@ -177,6 +179,7 @@ export function openWithdraw(ctx, { agent, portfolio }) {
         if (!SETTLED.has(j.status) && j.phase !== "done") progress.setPhase(j.phase);
       });
       if (job.status === "succeeded") {
+        done = true; // the balances above are stale now, so a second click would be a guess
         status.className = "msg ok";
         status.textContent = shownAmount + " is back in your wallet.";
         try {
@@ -197,7 +200,7 @@ export function openWithdraw(ctx, { agent, portfolio }) {
     } finally {
       if (progress) progress.destroy();
       slot.replaceChildren();
-      go.disabled = false;
+      go.disabled = done;
     }
   }
   go.addEventListener("click", () => submit());
