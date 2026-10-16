@@ -14,6 +14,7 @@ import jsonschema
 from web3 import Web3
 
 from core.protocols.addresses import AAVE_V3_USDC
+from core.protocols.tokens import get_token
 from core.risk.provider import (
     ReferenceData,
     RpcCallError,
@@ -81,17 +82,27 @@ class OnchainAaveRiskProvider:
         data_provider_address: str = AAVE_V3_DATA_PROVIDER,
         reference_data: ReferenceData | None = None,
         max_data_age_seconds: int | None = None,
-        sources: list[str] | None = None,
+        sources: list[str] | dict[str, Any] | None = None,
     ) -> None:
         self.rpc_callable = rpc_callable
         self.rpc_url = rpc_url
         self.data_provider_address = Web3.to_checksum_address(data_provider_address)
         self.reference_data = reference_data or ReferenceData()
         self.max_data_age_seconds = max_data_age_seconds
-        self.sources = list(sources) if sources is not None else ["rpc_aave_pool"]
+        if sources is not None:
+            self.sources = dict(sources) if isinstance(sources, dict) else list(sources)
+        else:
+            self.sources = ["rpc_aave_pool"]
 
+        usdt_spec = get_token("USDT")
+        usdt_addr = (
+            usdt_spec.address
+            if usdt_spec and usdt_spec.address
+            else "0x0a215D8ba66387DCA84B284D18c3B4ec3de6E54a"
+        )
         self._token_addresses = {
             "USDC": Web3.to_checksum_address(AAVE_V3_USDC),
+            "USDT": Web3.to_checksum_address(usdt_addr),
         }
 
     def _build_calldata(self, token_address: str) -> str:
@@ -175,10 +186,10 @@ class OnchainAaveRiskProvider:
         now: datetime | None = None,
     ) -> dict[str, Any]:
         """Fetch on-chain risk inputs for Aave V3 reserve."""
-        if protocol != "aave-v3":
+        if protocol not in ("aave-v3", "aave-stata"):
             raise UnsupportedProtocolError(
                 f"Protocol '{protocol}' is not supported by OnchainAaveRiskProvider. "
-                "Expected 'aave-v3'"
+                "Expected 'aave-v3' or 'aave-stata'"
             )
 
         if token not in self._token_addresses:
@@ -199,6 +210,9 @@ class OnchainAaveRiskProvider:
         total_variable_debt: int = vals[4]
         last_update_timestamp: int = vals[11]
 
+        tok_spec = get_token(token)
+        token_decimals = tok_spec.decimals if tok_spec else 6
+
         (
             utilization_bps,
             pool_tvl_usd,
@@ -208,7 +222,7 @@ class OnchainAaveRiskProvider:
             total_atoken=total_atoken,
             total_stable_debt=total_stable_debt,
             total_variable_debt=total_variable_debt,
-            decimals=6,
+            decimals=token_decimals,
         )
 
         # Normalize now timestamp

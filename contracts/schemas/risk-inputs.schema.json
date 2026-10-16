@@ -29,18 +29,30 @@
       "$ref": "#/$defs/UtcTimestamp"
     },
     "sources": {
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "enum": [
-          "defillama_yields",
-          "defillama_stablecoins",
-          "rpc_aave_pool",
-          "rpc_uniswap_pool"
-        ]
-      }
+      "anyOf": [
+        {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "defillama_yields",
+              "defillama_stablecoins",
+              "rpc_aave_pool",
+              "rpc_uniswap_pool",
+              "rpc_morpho_pool",
+              "reference"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      ]
     },
     "protocol": {
       "$ref": "#/$defs/Protocol"
@@ -109,7 +121,9 @@
       "type": "string",
       "enum": [
         "aave-v3",
-        "uniswap-v3"
+        "uniswap-v3",
+        "morpho-blue",
+        "aave-stata"
       ]
     },
     "SchemaVersion": {
@@ -121,7 +135,10 @@
       "type": "string",
       "enum": [
         "USDC",
-        "WETH"
+        "WETH",
+        "USDT",
+        "WBTC",
+        "cbETH"
       ]
     },
     "UsdString": {

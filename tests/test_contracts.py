@@ -213,11 +213,16 @@ def test_presets_validate_against_ips_schema():
         assert not errors, f"preset {path} failed schema validation: {errors}"
 
 
-def test_conservative_preset_hash_unchanged():
+def test_conservative_preset_matches_the_example_except_testnet_liquidity():
+    """The preset is the example IPS with one calibrated threshold: Aave on Base Sepolia holds
+    about 33 million USD of USDC, so the mainnet-sized 50 million minimum would deny every order
+    now that risk inputs are read from chain. The pinned hash makes any other drift visible."""
     from core.policy.ips import compute_ips_hash
 
     example = load(f"{C}/examples/ips.valid.json")
     conservative = load(f"{C}/presets/conservative.json")
-    expected_hash = "5d2a59943f97d6706d28bb583c2e5f17ec02d03fff357125973260f05b21060e"
+    assert conservative["risk"]["min_pool_tvl_usd"] == "10000000"
+    example["risk"]["min_pool_tvl_usd"] = "10000000"
     assert compute_ips_hash(conservative) == compute_ips_hash(example)
+    expected_hash = "bf296cc2e0d1c0bdc440154936f7ad1d46731af352bbd3e0364e445964dbead0"
     assert compute_ips_hash(conservative) == expected_hash

@@ -5,7 +5,7 @@
       "preset_id": "conservative",
       "title": "Conservative: Aave USDC lending",
       "summary": "Keeps capital in stablecoins and lends it on Aave. Each transaction is capped at 100 USD and each day at 300 USD.",
-      "ips_hash": "5d2a59943f97d6706d28bb583c2e5f17ec02d03fff357125973260f05b21060e",
+      "ips_hash": "bf296cc2e0d1c0bdc440154936f7ad1d46731af352bbd3e0364e445964dbead0",
       "limits": {
         "per_tx_usd": "100",
         "per_day_usd": "300",
@@ -16,7 +16,7 @@
       "preset_id": "diversified",
       "title": "Diversified: lending, vaults, Morpho and swaps (testnet)",
       "summary": "Lends on Aave, deposits in Stata vaults, supplies to Morpho Blue, and swaps on Uniswap v3. Each transaction is capped at 100 USD and each day at 300 USD.",
-      "ips_hash": "b3a7999abbe90e1fd4826267276af7cbb56050e607911f25ed9df34832473730",
+      "ips_hash": "282861f33056147b9659da01c0457865f69dfce4311142db4e23055aeafba9ae",
       "limits": {
         "per_tx_usd": "100",
         "per_day_usd": "300",

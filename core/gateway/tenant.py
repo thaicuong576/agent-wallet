@@ -152,7 +152,7 @@ class TenantSettings:
     keystore_secret: str | None = None  # unset or short: reads work, create and sign fail closed
     kdf: str = "scrypt"
     simulator: Any = None
-    risk_inputs: Callable[[], Mapping[str, Any] | None] | None = None
+    risk_inputs: Callable[..., Mapping[str, Any] | None] | None = None
     sender: Callable[[bytes], Any] | None = None  # broadcast hook handed to the signer
     live: bool = False  # live: no gas-estimate fallback in the tx builder
     clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
