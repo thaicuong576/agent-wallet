@@ -736,7 +736,7 @@ def test_chat_send_with_enter_shows_progress_then_step_cards() -> None:
     assert f["postsAfterShiftEnter"] == 0  # Shift+Enter is a newline
     s = f["send"]
     assert s["body"] == {"message": "Put 10 USDC to work in Aave"} and s["csrf"] == "1"
-    # The progress card is in the log before the POST resolves; a phase the page does not know is "Working".
+    # The progress card is in the log before the POST resolves; an unknown phase is "Working".
     assert s["pre"] == [["Sending your message"]]
     assert s["live"] == [
         ["Message received"],

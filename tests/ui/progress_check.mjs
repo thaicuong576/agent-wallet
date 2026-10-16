@@ -159,11 +159,13 @@ try {
   out.stop_with_handler = stopsOf(w.node).length;
   out.stop_disabled_pending = stopsOf(w.node)[0].disabled;
   stopsOf(w.node)[0].click();
-  out.stop_calls_after_click = calls;
+  out.stop_calls_while_pending = calls;
   clock = 1000;
   w.setReceived();
   w.setPhase("queued");
   out.stop_disabled_queued = stopsOf(w.node)[0].disabled;
+  stopsOf(w.node)[0].click();
+  out.stop_calls_after_click = calls;
   clock = 6000;
   w.setPhase("sent");
   out.stop_disabled_sent = stopsOf(w.node)[0].disabled;

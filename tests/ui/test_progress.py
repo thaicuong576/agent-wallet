@@ -123,6 +123,7 @@ def test_stop_button_rules() -> None:
     assert p["stop_disabled_pending"] is True  # nothing to stop until the server has answered
     assert p["stop_disabled_queued"] is False
     assert p["stop_disabled_sent"] is True
+    assert p["stop_calls_while_pending"] == 0  # a disabled button does nothing
     assert p["stop_calls_after_click"] == 1
     assert p["stop_calls_when_sent"] == 1
     assert p["cancel_disabled"] is True
