@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-16T17:25:00Z",
+  "price_source": "mainnet_reference",
+  "positions": [
+    {
+      "token": "USDC",
+      "location": "wallet",
+      "balance": {
+        "value": "75000000",
+        "decimals": 6
+      },
+      "price_usd": "1.00",
+      "value_usd": "75.00",
+      "weight_bps": 8929
+    },
+    {
+      "token": "USDC",
+      "location": "aave-stata",
+      "balance": {
+        "value": "5000000",
+        "decimals": 6
+      },
+      "price_usd": "1.00",
+      "value_usd": "5.00",
+      "weight_bps": 595
+    },
+    {
+      "token": "USDC",
+      "location": "morpho-blue",
+      "balance": {
+        "value": "4000000",
+        "decimals": 6
+      },
+      "price_usd": "1.00",
+      "value_usd": "4.00",
+      "weight_bps": 476
+    }
+  ],
+  "total_value_usd": "84.00",
+  "spent_24h_usd": "10.00",
+  "tx_count_1h": 2
+}
