@@ -382,7 +382,7 @@ def build_calls(
         recipient = ctx.wallet
         max_slippage = int(order_dict["max_slippage_bps"])
 
-        rpc_caller = rpc or getattr(ctx, "rpc", None) or order_dict.get("_rpc") or _default_rpc
+        rpc_caller = rpc or getattr(ctx, "rpc", None) or _default_rpc
 
         amount_out_min = compute_amount_out_minimum(
             token_in=token,

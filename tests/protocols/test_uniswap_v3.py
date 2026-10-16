@@ -11,7 +11,6 @@ import eth_abi
 import jsonschema
 import pytest
 
-from core.gateway.txbuilder import build_calls
 from core.protocols import registry
 from core.protocols.registry import BuildContext
 from core.protocols.tokens import PriceUnavailable
@@ -214,9 +213,8 @@ def test_build_calls_exact_input_single_via_registry():
         token_out="WBTC",
         amount={"value": "10000000", "decimals": 6},
         max_slippage_bps=50,
-        _rpc=rpc,
     )
-    calls = build_calls(o, WALLET)
+    calls = _uni_build(o, BuildContext(WALLET), rpc=rpc)
     assert len(calls) == 1
     call = calls[0]
     assert call.to.lower() == SWAP_ROUTER_02.lower()
@@ -245,9 +243,8 @@ def test_build_calls_usdc_to_weth_fee_tier_3000():
         token_out="WETH",
         amount={"value": "10000000", "decimals": 6},
         max_slippage_bps=100,
-        _rpc=rpc,
     )
-    calls = build_calls(o, WALLET)
+    calls = _uni_build(o, BuildContext(WALLET), rpc=rpc)
     (decoded,) = eth_abi.decode(
         ["(address,address,uint24,address,uint256,uint256,uint160)"],
         bytes.fromhex(calls[0].data[10:]),
@@ -440,3 +437,6 @@ def test_schema_invalid_swap_missing_token_out():
     if p_invalid.exists():
         data = json.loads(p_invalid.read_text(encoding="utf-8"))
         assert list(ORDER_VALIDATOR.iter_errors(data))
+
+
+from core.protocols.uniswap_v3 import build_calls as _uni_build  # noqa: E402
