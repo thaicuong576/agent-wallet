@@ -89,23 +89,40 @@ def _sentence(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
+def _protocol_label(order: Mapping[str, Any]) -> str | None:
+    """Where the money goes, in words, for every protocol except Aave v3 (kept as before)."""
+    pid = str(order.get("protocol") or "")
+    if pid in ("", "aave-v3", "wallet"):
+        return None
+    from core.protocols import registry
+
+    spec = registry.get(pid)
+    label = spec.name if spec is not None else pid
+    market = order.get("market")
+    if market:
+        label += f" ({str(market).upper().replace('-', '/')} market)"
+    return label
+
+
 def action_phrase(order: Mapping[str, Any], *, past: bool) -> str:
     """'approved 10 USDC for the Aave pool' or, with past=False, 'approve 10 USDC ...'."""
     func = str(order.get("function"))
     amount = _units(order.get("amount"))
     token = str(order.get("token") or "")
     qty = f"{amount} {token}".strip() if amount else token or "tokens"
-    where = RECIPIENT_LABELS.get(str(order.get("recipient")), "the recipient")
+    proto = _protocol_label(order)
+    where = proto or RECIPIENT_LABELS.get(str(order.get("recipient")), "the recipient")
     if func == "approve":
         return f"{'approved' if past else 'approve'} {qty} for {where}"
     if func == "supply":
-        return f"{'supplied' if past else 'supply'} {qty} to Aave"
+        return f"{'supplied' if past else 'supply'} {qty} to {proto or 'Aave'}"
     if func == "withdraw":
-        return f"{'withdrew' if past else 'withdraw'} {qty} from Aave"
+        return f"{'withdrew' if past else 'withdraw'} {qty} from {proto or 'Aave'}"
     if func == "exactInputSingle":
         out = order.get("token_out")
         tail = f" for {out}" if out else ""
-        return f"{'swapped' if past else 'swap'} {qty}{tail}"
+        on = f" on {proto}" if proto else ""
+        return f"{'swapped' if past else 'swap'} {qty}{tail}{on}"
     if func == "mint":
         return f"{'minted' if past else 'mint'} {qty}"
     return f"{'ran' if past else 'run'} {func} on {qty}"
