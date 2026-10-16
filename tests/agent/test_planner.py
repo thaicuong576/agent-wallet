@@ -6,7 +6,7 @@ import json
 import uuid
 
 from core.agent.client import ScriptedClient
-from core.agent.planner import PLANNER_SYSTEM_PROMPT, Planner
+from core.agent.planner import PLANNER_SYSTEM_PROMPT, Planner, render_system_prompt
 from core.agent.reader import ReaderFacts
 from core.policy.engine import evaluate as evaluate_policy
 from core.policy.ips import parse_ips
@@ -441,3 +441,71 @@ def test_planner_replaces_a_malformed_order_id_but_keeps_financial_fields_strict
 
     bad = run({**base, "amount": {"value": "-5", "decimals": 6}})
     assert bad.is_no_action
+
+
+def test_render_system_prompt_under_diversified_ips():
+    """render_system_prompt under diversified IPS lists protocols, functions, and markets."""
+    with open("contracts/presets/diversified.json", encoding="utf-8") as f:
+        diversified_ips = json.load(f)
+
+    prompt = render_system_prompt(diversified_ips)
+
+    # Protocols
+    assert '"aave-v3"' in prompt
+    assert '"aave-stata"' in prompt
+    assert '"morpho-blue"' in prompt
+    assert '"uniswap-v3"' in prompt
+
+    # Functions
+    assert '"approve"' in prompt
+    assert '"supply"' in prompt
+    assert '"withdraw"' in prompt
+    assert '"exactInputSingle"' in prompt
+
+    # Tokens
+    assert '"USDC"' in prompt
+    assert '"USDT"' in prompt
+    assert '"WBTC"' in prompt
+    assert '"WETH"' in prompt
+
+    # Markets
+    assert '"usdc-wbtc"' in prompt
+    assert '"usdc-cbeth"' in prompt
+    assert '"market": "usdc-cbeth" | "usdc-wbtc"' in prompt
+
+    # Extra fields for swap
+    assert '"token_out"' in prompt
+    assert '"max_slippage_bps"' in prompt
+
+
+def test_render_system_prompt_under_conservative_ips():
+    """render_system_prompt under conservative IPS with Aave USDC lists only Aave USDC."""
+    # Under conservative Aave-only IPS
+    prompt = render_system_prompt(SAMPLE_IPS_DATA)
+
+    assert '"aave-v3"' in prompt
+    assert '"USDC"' in prompt
+    assert '"morpho-blue"' not in prompt
+    assert '"aave-stata"' not in prompt
+    assert '"uniswap-v3"' not in prompt
+    assert '"USDT"' not in prompt
+    assert '"WBTC"' not in prompt
+    assert '"usdc-wbtc"' not in prompt
+    assert '"usdc-cbeth"' not in prompt
+    assert '"market"' not in prompt
+    assert '"exactInputSingle"' not in prompt
+    assert '"token_out"' not in prompt
+
+    # Also check contracts/presets/conservative.json
+    with open("contracts/presets/conservative.json", encoding="utf-8") as f:
+        conservative_preset = json.load(f)
+
+    prompt_preset = render_system_prompt(conservative_preset)
+    # Does not include morpho-blue or aave-stata or markets
+    assert '"morpho-blue"' not in prompt_preset
+    assert '"aave-stata"' not in prompt_preset
+    assert '"usdc-wbtc"' not in prompt_preset
+    assert '"usdc-cbeth"' not in prompt_preset
+    assert '"market"' not in prompt_preset
+    assert '"USDT"' not in prompt_preset
+    assert '"WBTC"' not in prompt_preset

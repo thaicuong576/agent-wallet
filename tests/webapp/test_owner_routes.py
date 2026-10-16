@@ -489,3 +489,24 @@ def test_a_stop_pressed_with_the_session_only_halts_the_next_run(world, alice):
     job = alice.finish(alice.post("/runs", {}))
     assert (job["status"], job["error_code"]) == ("denied", "TIER.EMERGENCY_STOP")
     assert world.env.sent == []
+
+
+def test_choosing_a_preset_needs_a_signature_bound_to_that_preset(world, alice):
+    def put_with_preset(header: str | None):
+        headers = dict(HEADERS)
+        if header is not None:
+            headers["X-Step-Up"] = header
+        body = {"schema_version": 1, "tier": "T1", "preset_id": "diversified"}
+        return alice.client.put("/tier", json=body, headers=headers)
+
+    assert put_with_preset(None).status_code == 401
+    tier_only = step_up(alice.client, alice.wallet, "tier_raise", {"tier": "T1"})
+    assert put_with_preset(tier_only).status_code == 401  # not bound to the preset
+    other = step_up(
+        alice.client, alice.wallet, "tier_raise", {"tier": "T1", "preset_id": "conservative"}
+    )
+    assert put_with_preset(other).status_code == 401  # bound to a different preset
+    bound = step_up(
+        alice.client, alice.wallet, "tier_raise", {"tier": "T1", "preset_id": "diversified"}
+    )
+    assert put_with_preset(bound).status_code == 200

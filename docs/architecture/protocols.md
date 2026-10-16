@@ -37,6 +37,17 @@ Every USD value goes through the token registry (`usd_value`, with `core.runner.
 - `txbuilder.build_calls` dispatches to the spec. Only the gateway builds calls and only the gateway reaches the signer.
 - Approvals name only spender addresses declared by the spec (`spec.spenders`) and the exact order amount.
 
+## Presets
+
+Shipped as versioned contract files under `contracts/presets/`, served by `GET /presets` (`api/wallet.py::list_presets`), and chosen by the owner at agent activation:
+
+| Preset ID | Objective | Universe (Protocols & Tokens) | Allocation & Risk Limits |
+| :--- | :--- | :--- | :--- |
+| `conservative` (default) | Keep capital stable, earn yield from stablecoin lending | `aave-v3`, `uniswap-v3`; USDC, WETH | Min 60% stable weight, max 40% volatile weight. Same canonical hash as existing default (`5d2a5994...`). |
+| `diversified` | Diversified yield from lending, vaults, Morpho Blue, and Uniswap v3 swaps | `aave-v3`, `aave-stata`, `morpho-blue`, `uniswap-v3`; USDC, USDT, WBTC, WETH | Min 60% stable weight, max 20% per volatile asset, max slippage 100 bps (1%). Per-tx $100, escalate above $100. |
+
+Activation via `PUT /tier` accepts optional `preset_id` (defaulting to `conservative`). The owner's activation step-up signature covers the chosen preset's IPS hash, ensuring cryptographic authorization before the policy engine enforces the wider universe.
+
 ## Planner
 
 `render_system_prompt(enabled_protocols)` builds the system prompt from the registry: enabled protocols, planner-visible functions (owner functions such as `mint` and `transfer` never appear), tokens with decimals, recipients, one-line summaries and the `paper` flag. The planner still returns enums only; it never supplies an address, spender or calldata field.
