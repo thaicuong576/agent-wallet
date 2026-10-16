@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 
 from core.agent.client import ScriptedClient
 from core.agent.planner import PLANNER_SYSTEM_PROMPT, Planner, render_system_prompt
@@ -509,3 +510,37 @@ def test_render_system_prompt_under_conservative_ips():
     assert '"market"' not in prompt_preset
     assert '"USDT"' not in prompt_preset
     assert '"WBTC"' not in prompt_preset
+
+
+class _CaptureClient:
+    def __init__(self) -> None:
+        self.system = ""
+        self.user = ""
+
+    def complete(self, *, system: str, user: str, schema: dict) -> str:
+        self.system, self.user = system, user
+        return '{"action": "no_action", "reason": "test", "reply": "ok"}'
+
+
+def test_owner_instruction_does_not_show_limits_to_the_model():
+    """The policy engine judges an owner request; the model must not refuse it on its own."""
+    state = json.loads(Path("contracts/examples/portfolio-state.valid.json").read_text("utf-8"))
+    ips = json.loads(Path("contracts/presets/diversified.json").read_text("utf-8"))
+    client = _CaptureClient()
+    Planner(client=client).plan(state, ips, None, None, owner_instruction="Lend 5 USDC")
+    payload = json.loads(client.user)
+    assert "owner_instruction" in payload
+    assert set(payload["ips_summary"]) == {"universe"}
+    assert "propose it" in client.system.lower() or "PROPOSE it" in client.system
+    # A rebalancing run (no owner instruction) still sees the limits and allocation weights.
+    client2 = _CaptureClient()
+    Planner(client=client2).plan(state, ips, None, None)
+    assert {"universe", "allocation", "limits"} <= set(json.loads(client2.user)["ips_summary"])
+
+
+def test_system_prompt_gives_exact_field_rules_per_protocol():
+    ips = json.loads(Path("contracts/presets/diversified.json").read_text("utf-8"))
+    prompt = render_system_prompt(ips)
+    assert "Exact field rules per protocol" in prompt
+    assert "- morpho-blue:" in prompt and "REQUIRED on supply and withdraw" in prompt
+    assert "- aave-stata:" in prompt and "no market field" in prompt
