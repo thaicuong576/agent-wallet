@@ -48,8 +48,10 @@ export function render(ctx) {
     const pending = records ? pendingOf(records) : [];
     const approvals = pending.length ? approvalsCard(ctx) : null;
     const parts = [];
-    if (approvals) parts.push(waitingNote(pending.length, approvals));
     if (tier && tier.emergency_stop) parts.push(frozenCard(el));
+    // An order that waits for the owner is the one thing that needs action, so it sits on top of
+    // the main column with room to read it (the side column is too narrow for a step card).
+    if (approvals) parts.push(waitingNote(pending.length, approvals), approvals);
     if (p.status !== "fulfilled") {
       parts.push(failureCard(p.reason));
     } else {
@@ -59,14 +61,13 @@ export function render(ctx) {
     }
     main.replaceChildren(...parts);
     side.replaceChildren(
-      ...(approvals ? [approvals] : []),
       safely("Your wallet", () => walletCard(agent)),
       safely("Today's limit", () => limitCard(l.status === "fulfilled" ? l.value : null)),
       safely("Recent activity", () => recentCard(records)),
     );
   }
 
-  // Shown above the main column while orders wait. Review scrolls to the approvals card on the side.
+  // Shown above the main column while orders wait. Review scrolls to the approvals card below it.
   function waitingNote(n, approvals) {
     const box = el("div", "waiting-note");
     box.setAttribute("role", "status");
