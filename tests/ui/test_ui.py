@@ -202,6 +202,18 @@ def test_layout_guards_for_375px_are_in_the_stylesheet() -> None:
     assert css.count("min-width: 0") >= 5 and "overflow-wrap: anywhere" in css
     assert "overflow-x: scroll" not in css and "width: 100vw" not in css
     assert "max-width: 1280px" in css and "--gutter: 32px" in css
+    assert "body.screen-chat" in css and "max-width: 1600px" in css and "100dvh" in css
+
+
+def test_chat_screen_is_a_single_scroll_region_and_declares_color_scheme() -> None:
+    css = (UI / "style.css").read_text(encoding="utf-8")
+    html = (UI / "index.html").read_text(encoding="utf-8")
+    assert "color-scheme: light dark" in css
+    assert 'name="color-scheme" content="light dark"' in html
+    rule = re.search(r"body\.screen-chat \{([^}]*)\}", css)
+    assert rule is not None and "overflow: hidden" in rule.group(1)
+    assert "text-transform: uppercase" not in css
+    assert "font-size: 11px" not in css
 
 
 @pytest.mark.parametrize("name", UI_FILES)
