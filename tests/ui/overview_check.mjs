@@ -152,9 +152,21 @@ async function click(node) {
 }
 
 // api answers the real fixtures; any other call (the dialogs make some) resolves to an empty object.
+// fixtures: true makes loadRecords and getLimits take their fixture branch. Records come from opts.records
+// (none by default); limits from opts.limits (none by default, so the limit card says it is not available).
 function makeCtx(opts) {
   const calls = { agent: 0, portfolio: 0, tier: 0 };
   const base = {
+    fixtures: true,
+    decisions: async () => {
+      if (opts.recordsError) throw opts.recordsError;
+      return { items: opts.records || [] };
+    },
+    fixtureFile: async (name) => {
+      if (opts.limitsError) throw opts.limitsError;
+      if (name !== "limits" || !opts.limits) throw new Error("no " + name + " fixture in this check");
+      return { ...opts.limits };
+    },
     agent: async () => {
       calls.agent += 1;
       if (opts.agentError) throw opts.agentError;
@@ -189,7 +201,7 @@ async function mount(opts = {}) {
   const { ctx, calls } = makeCtx(opts);
   const root = render(ctx);
   await settle();
-  return { root, main: root.children[0], calls };
+  return { root, main: root.children[0], side: root.children[1], calls };
 }
 
 const out = {};
@@ -285,7 +297,111 @@ const out = {};
   out.actions = { add: r1, withdraw: r2, titles: titles() };
 }
 
-// (8) no innerHTML was read or written while rendering all of the above.
+const LIMITS = FIXTURE("limits.json");
+const DECISIONS = FIXTURE("decisions.json").items;
+const full = () => ({ portfolio: portfolioFixture, limits: LIMITS, records: DECISIONS });
+const sideTitles = (side) => side.children.map((c) => textOf(find(c, (n) => n.tag === "h2")[0]));
+
+// (8) one pending order: the waiting note is the first child of the main column, the approvals card right after it.
+{
+  const { main } = await mount(full());
+  const note = main.children[0];
+  const approvals = main.children[1];
+  const none = await mount({ portfolio: portfolioFixture, records: [] });
+  out.waiting = {
+    noteClass: note.className,
+    noteText: textOf(note.children[0]),
+    review: buttonNamed(note, "Review") !== undefined,
+    afterNote: approvals ? textOf(approvals.children[0]) : null,
+    noneNotes: withClass(none.root, "waiting-note").length,
+    noneApprovals: textOf(none.root).includes("Waiting for your approval"),
+  };
+}
+
+// (9) the side column: three cards in order, each under its own heading.
+{
+  const { side } = await mount(full());
+  out.sideTitles = sideTitles(side);
+}
+
+// (10) wallet card: the short address and the network; Add funds opens the funds dialog; no agent disables it.
+{
+  const { side } = await mount(full());
+  const wallet = side.children[0];
+  const add = buttonNamed(wallet, "Add funds");
+  doc.body.children = [];
+  const clicked = await click(add);
+  await settle();
+  const strong = find(wallet, (n) => n.tag === "strong")[0];
+  out.wallet = {
+    short: textOf(strong),
+    network: textOf(wallet).includes("Base Sepolia"),
+    dialog: clicked,
+    titles: titles(),
+  };
+  const off = await mount({ ...full(), agentError: new Error("agent down") });
+  const offAdd = buttonNamed(off.side.children[0], "Add funds");
+  out.walletNoAgent = { disabled: offAdd.disabled === true, title: offAdd.getAttribute("title") || "" };
+}
+
+// (11) limit card: 10 of 300 dollars, a progress bar at 3 (3.3 percent rounded), a link to the rules; no limit data says so.
+{
+  const { side } = await mount(full());
+  const card = side.children[1];
+  const bar = withClass(card, "bar")[0];
+  const rules = find(card, (n) => n.attrs.href === "#/rules")[0];
+  const text = textOf(card);
+  out.limit = {
+    spent: text.includes("$10.00"),
+    limit: text.includes("$300.00"),
+    role: bar.attrs.role,
+    valuenow: bar.attrs["aria-valuenow"],
+    rules: rules ? [textOf(rules), rules.attrs.href] : null,
+  };
+  const off = await mount({ ...full(), limitsError: new Error("limits down") });
+  out.limitNoData = textOf(off.side.children[1]).includes("The limit is not available right now.");
+}
+
+// (12) recent activity: the last three records, newest first, each line as recordLine renders it.
+{
+  const { side } = await mount(full());
+  const { recordLine } = await import(pathToFileURL(path.join(COPY, "views", "cards.js")).href);
+  const lines = find(side.children[2], (n) => n.tag === "li").map(textOf);
+  const want = [4, 3, 2].map((i) => {
+    const x = recordLine(DECISIONS[i]);
+    return (x.icon + " " + x.text + " " + x.when).replace(/\s+/g, " ").trim();
+  });
+  out.recent = {
+    count: lines.length,
+    newestFirst: JSON.stringify(lines) === JSON.stringify(want),
+    lines: lines.map((s) => s.slice(0, 50)),
+  };
+  const empty = await mount({ portfolio: portfolioFixture, records: [], limits: LIMITS });
+  out.recentEmpty = textOf(empty.side.children[2]).includes("Nothing yet. Ask the agent something in Chat.");
+  const bad = await mount({ ...full(), recordsError: new Error("jobs down") });
+  out.recentNoData = textOf(bad.side.children[2]).includes("Recent activity is not available right now.");
+  out.recentNoDataLimitOk = textOf(bad.side.children[1]).includes("$300.00");
+}
+
+// (13) each side card failing alone leaves the other two rendered.
+out.isolation = {};
+for (const [name, extra] of Object.entries({
+  wallet: { agentError: new Error("agent down") },
+  limit: { limitsError: new Error("limits down") },
+  recent: { recordsError: new Error("jobs down") },
+})) {
+  const { side } = await mount({ ...full(), ...extra });
+  const [w, l, r] = side.children;
+  out.isolation[name] = {
+    titles: sideTitles(side),
+    walletShows: textOf(w).includes("Base Sepolia"),
+    limitShows: textOf(l).includes("$300.00"),
+    recentLines: find(r, (n) => n.tag === "li").length,
+    fallback: textOf(side).includes("Not available right now."),
+  };
+}
+
+// (14) no innerHTML was read or written while rendering all of the above.
 out.innerHTMLTouches = innerHTMLTouches;
 
 fs.rmSync(COPY, { recursive: true, force: true });
