@@ -16,6 +16,7 @@ from core.risk.provider import (
     compute_reserve_metrics,
     format_usd,
 )
+from core.risk.router import SOURCES_MAPPING, RiskRouter
 
 __all__ = [
     "AAVE_V3_DATA_PROVIDER",
@@ -25,7 +26,9 @@ __all__ = [
     "RiskDataUnavailableError",
     "RiskProvider",
     "RiskProviderError",
+    "RiskRouter",
     "RpcCallError",
+    "SOURCES_MAPPING",
     "StaleDataError",
     "UnsupportedProtocolError",
     "UnsupportedTokenError",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -35,7 +36,7 @@ class EnginePolicy:
         self,
         ips: LoadedIps | Mapping[str, Any],
         get_state: Callable[[], Mapping[str, Any]],
-        get_risk_inputs: Callable[[], Mapping[str, Any] | None] | None = None,
+        get_risk_inputs: Callable[..., Mapping[str, Any] | None] | None = None,
         clock: Any = None,
     ) -> None:
         self.ips = ips
@@ -48,6 +49,31 @@ class EnginePolicy:
             self.ips_hash = ips.hash
         else:
             self.ips_hash = compute_ips_hash(ips)
+
+    def _fetch_risk_inputs(self, order: dict[str, Any]) -> Mapping[str, Any] | None:
+        if self.get_risk_inputs is None:
+            return None
+        try:
+            sig = inspect.signature(self.get_risk_inputs)
+            has_pos = any(
+                p.kind
+                in (
+                    inspect.Parameter.POSITIONAL_ONLY,
+                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    inspect.Parameter.VAR_POSITIONAL,
+                )
+                for p in sig.parameters.values()
+            )
+            if has_pos:
+                return self.get_risk_inputs(order)
+            return self.get_risk_inputs()
+        except (ValueError, TypeError):
+            try:
+                return self.get_risk_inputs(order)
+            except TypeError:
+                return self.get_risk_inputs()
+        except Exception:
+            return None
 
     def evaluate(
         self,
@@ -63,7 +89,7 @@ class EnginePolicy:
         `origin`, `tier` and the stops are set by the gateway (code), never read from the order.
         """
         state = self.get_state()
-        risk_inputs = self.get_risk_inputs() if self.get_risk_inputs is not None else None
+        risk_inputs = self._fetch_risk_inputs(order)
         now: datetime | None = None
         if self.clock is not None:
             c = self.clock() if callable(self.clock) else self.clock

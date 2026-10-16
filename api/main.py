@@ -155,13 +155,21 @@ def build_webapp(
         raise ValueError(f"Unknown preset_id: {preset}")
 
     secret = env.get("AGENT_WALLET_KEYSTORE_SECRET")
+    risk_source = env.get("AGENT_WALLET_RISK_SOURCE", "onchain").strip().lower()
+    if risk_source == "reference":
+        risk_inputs_fn: Callable[..., Any] = reference_risk_inputs
+    else:
+        from core.risk.router import RiskRouter
+
+        risk_inputs_fn = RiskRouter(rpc_callable=rpc, rpc_url=rpc_url)
+
     settings = TenantSettings(
         data_dir=data_dir,
         ips_for=ips_for,
         keystore_secret=secret if secret and len(secret.encode()) >= 32 else None,
         kdf=env.get("AGENT_WALLET_KEYSTORE_KDF", "scrypt"),
         simulator=RpcSimulator(rpc_url),
-        risk_inputs=reference_risk_inputs,
+        risk_inputs=risk_inputs_fn,
         sender=lambda raw: rpc("eth_sendRawTransaction", ["0x" + raw.hex().removeprefix("0x")]),
         live=True,
     )
