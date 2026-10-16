@@ -137,7 +137,7 @@ def test_shapes_match_the_openapi_contract(world):
 
 
 def test_protocols_lists_registry_entries_the_ips_enables(world):
-    """The default preset lists aave-v3 and uniswap-v3; only aave-v3 has an adapter."""
+    """The default preset lists aave-v3 and uniswap-v3; both now have adapters."""
     owner = real_owner(world)
     body = owner.get("/protocols").json()
     assert body == {
@@ -149,7 +149,15 @@ def test_protocols_lists_registry_entries_the_ips_enables(world):
                 "tokens": ["USDC", "USDT"],
                 "functions": ["approve", "supply", "withdraw"],
                 "paper": False,
-            }
+            },
+            {
+                "id": "uniswap-v3",
+                "name": "Uniswap v3",
+                "category": "dex",
+                "tokens": ["USDC", "WBTC", "WETH"],
+                "functions": ["approve", "exactInputSingle"],
+                "paper": False,
+            },
         ]
     }
     assert "0x" not in str(body)

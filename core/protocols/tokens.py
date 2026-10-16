@@ -93,6 +93,8 @@ def _wire() -> None:
 
 
 _wire()
+enable_token("WETH")
+enable_token("WBTC")
 
 
 def _oracle_price(spec: TokenSpec, rpc: RpcCall) -> Decimal:
@@ -139,7 +141,9 @@ def unit_price_usd(
         return peg
     if spec.usd_source == "aave_oracle":
         if rpc is None:
-            raise PriceUnavailable(f"no oracle reader available to price '{token}'")
+            raise PriceUnavailable(
+                f"No reference price available for token '{token}': no oracle reader available"
+            )
         return _oracle_price(spec, rpc)
     raise PriceUnavailable(f"No reference price available for token '{token}'")
 
