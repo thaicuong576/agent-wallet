@@ -26,3 +26,17 @@ Header 64 px, white, bottom border: logo mark and name, tabs **Chat · Portfolio
 - No `localStorage`, no external URL except BaseScan and the wallet, no new dependency.
 - The previous full-width warning banner is gone; the tests that asserted it are replaced by tests that assert the chip, the footer line and the Setup text.
 - Screenshots of the built screens are committed next to the mockups for side-by-side review.
+
+## Changes in UI v3 (built on `feat/ui-refactor`, for the owner to confirm)
+The approved text above is unchanged. The v3 work ([`ui-v3-plan.md`](ui-v3-plan.md)) changes these points; the screens and principles not named here stay as approved. Details of the built version: [`docs/architecture/ui.md`](../../architecture/ui.md).
+
+| Topic | v3 | Contract text it changes |
+| :--- | :--- | :--- |
+| Tabs | **Chat · Overview · Activity · Rules**. Overview replaces Portfolio; `#/portfolio` still opens it. | Shell, Screens table (Portfolio row) |
+| Overview | Total value, allocation bar, and every holding grouped by what the money is doing (idle, lent on Aave, Aave vaults, Morpho, swapped), with token and protocol marks, value and share; Add funds and Withdraw open focused dialogs; Mint is "Get test USDC" inside Add funds. The old Run form and "Try a hostile note" button are gone from this screen. | Portfolio row; Setup row ("Mint test USDC lives on Portfolio") |
+| Rules | Also holds the agent-permission control (lower to propose-only or read-only) and the scripted **Safety demo**, which runs the same scripted hostile run and says it is a demo, not the live model. | Rules row |
+| Chat while the agent works | A staged progress card with named stages and elapsed time replaces the typing line and the four-chip phase strip. | Chat row ("Typing state while a job runs") |
+| Layout | Chat is one scroll region with the composer pinned (the page never scrolls) and a 1600 px cap; under 900 px the tabs are a fixed bottom bar and the wallet panel is a sheet. | Shell ("Content max width 1280 px ... the right column stacks under the chat") |
+| Type | Labels are sentence case; no 11 px text. | Principle 2 (Georgia titles and numbers are unchanged) |
+
+Not changed on purpose: the "Agent says" label and the rule that step cards come from the audit log only (principle 5); the header network chip, the footer line and the Setup text (principle 3); no dark theme by default.

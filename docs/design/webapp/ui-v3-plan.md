@@ -1,6 +1,40 @@
 # UI v3 plan: audit, structure, progress model, data contract and delivery order
 
-Status: **proposal for the owner. Nothing in this plan is built.** Written 2026-10-16 on branch `feat/ui-refactor`. The submission deadline is 2026-10-20 23:59 Beijing time, so section 9 orders the work as small PRs that can each be merged alone, with the most speculative one last.
+Status (2026-10-17): **the front-end part of this plan is built on `feat/ui-refactor`; the backend contract (section 7) is not.** Written 2026-10-16. What was built, what was measured and what is left is in "Status of the build" right below. The rest of the document is the plan as it was proposed.
+
+## Status of the build
+
+### Built (maps to the delivery order in section 9)
+| Plan item | State |
+| :--- | :--- |
+| PR 1 Shell fits the viewport | Done. Chat is one scroll region with a pinned composer; 1600 px cap; `color-scheme` declared; one-row header from 901 px; phone: bottom tab bar, two-row header, wallet sheet, 44 px targets; sentence-case labels, 12 px minimum text, one card radius, contrast fix (D2, D10, D11, D15, D16, D18) |
+| PR 2 Never silent | Done, front-end only: the progress card, 750 ms first polls, long-wait notes, Stop in the card (D1). Stages that need backend support (`reading_wallet`, `planning`, step i of n) are not shown because the backend does not report them |
+| PR 3 Chat copy and inline approval | **Not done.** The approval card moved to the top of Overview instead of into the chat; the repeated sentences and the "Agent says" label are unchanged (decision 4 is not applied) |
+| PR 4 Overview and money dialogs | Done: Overview with grouped holdings, Add funds and Withdraw dialogs, Mint inside Add funds, permission control and Safety demo on Rules, the Run form and the loose hostile button removed (D3 to D9, D19) |
+| PR 5 Icons | Done: five CC0 token images, WETH and cbETH per option 1, protocol monograms, testnet mark, deterministic fallback, licence note (D6) |
+| PR 6 Activity and Rules polish, Setup fixes | **Not done** (Activity grouping and filters, Setup preset radios and the gas sentence: D12, D13). Rules got the permission control and protocol marks |
+| Backend items B1 to B4 | **Not built, as agreed in the brief** (read-only contract awaiting the owner's approval). Overview therefore shows what `GET /portfolio` reports: see the known gaps |
+
+### Measured in Chrome (fixtures mode, the same method as the audit)
+| Check | Result |
+| :--- | :--- |
+| Chat, 1280x800, 1440x900, 1920x1080, light and dark | `document height == viewport height`; the only scroller is the conversation; no horizontal overflow; header 64 px; the composer is inside the viewport; at 1920 px the layout is 1536 px wide with 192 px margins on both sides and the header lines up with it |
+| Progress card after Send | Fully inside the conversation viewport at 5 ms; Send becomes Stop at about 140 ms; rows "Message received", "Waiting to start", "Working on your request", "Sending to Base Sepolia" follow in order in the demo; the card is removed when the answer arrives (the audit measured 1 px visible for the whole run) |
+| Chat, 375x812, light and dark | document height equals viewport height; no horizontal overflow; header 86 px; tab bar fixed, 60 px tall, bottom edge at 812; the wallet strip toggles the sheet and `aria-expanded`; no button, chip or tab under 44 px |
+| Overview, Activity, Rules, Setup at 375, 1280 and 1440 px | no horizontal overflow; Overview is 2384 px tall at 375 px (the old Portfolio was 2904 px) |
+Not measured: the hosted app (it needs a wallet signature a headless browser cannot give), real latencies, screen-reader behaviour, and the 1920 px width for the screens other than Chat.
+
+### Differences from the plan
+- The approvals card is in the main column of Overview, not the side column (a step card does not fit 340 px).
+- The "Your wallet" card shows the address and Add funds only; the owner's own balance needs the `GET /me/wallet` route of section 7.
+- Add funds has two tabs, "Send ETH for gas" and "Get test USDC". Sending USDC from the owner's wallet is not offered because nothing in the app builds an ERC-20 transfer today.
+- The account menu of section 2 is not built: the network chip must stay visible in the header (contract principle 3), so only the layout of the header changed.
+- Section 3's "to come" rows are not shown, on purpose: a question never sends anything, so the card lists only stages that happened.
+
+### Known gaps (all backend-side, see section 7)
+Swapped assets (WETH, WBTC) are dropped by the portfolio reader and idle USDT is not read, so the Swapped group stays empty; both Morpho markets arrive as one position; no interest rate; no owner wallet balance. Decision 8 (the policy engine reads the same state) is still open.
+
+ The submission deadline is 2026-10-20 23:59 Beijing time, so section 9 orders the work as small PRs that can each be merged alone, with the most speculative one last.
 
 What the owner asked for, in one sentence: the person using this wallet wants to know what the agent is doing with their money and to stay in control, so every screen has to serve that.
 

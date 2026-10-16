@@ -642,6 +642,9 @@ button.solid-danger:hover { filter: brightness(0.92); }
   #btn-stop { order: 2; padding: 8px 10px; font-size: 13px; }
   #account-slot { order: 3; }
   #mode-chip, #net-chip { order: 4; font-size: 12px; padding: 2px 8px; }
+  /* A phone has no Shift+Enter: keep only the counter, and give the room to the conversation. */
+  .composer-meta { justify-content: flex-end; }
+  .composer-meta > span:first-child { display: none; }
 }
 @media (max-width: 900px) {
   .btn-stop, button.logout, .history-toggle { min-height: 44px; }
