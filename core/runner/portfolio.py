@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -202,24 +203,60 @@ class PortfolioReader:
 
     def read(self, now: datetime) -> WalletSnapshot:
         """Read portfolio state as of `now`. Never caches balances across calls."""
-        eth_wei = self._call_get_balance()
+        specs = registry.all_specs()
+        max_workers = min(8, 1 + len(specs) + len(self.extra_tokens))
 
-        raw_positions: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            eth_fut = executor.submit(self._call_get_balance)
+            spec_futs = [(s, executor.submit(s.positions, self.wallet, self)) for s in specs]
+            extra_futs = [
+                (
+                    token_symbol,
+                    executor.submit(self._call_balance_of, Web3.to_checksum_address(token_addr)),
+                )
+                for token_symbol, token_addr in self.extra_tokens.items()
+            ]
 
-        # Positions come from each registered protocol spec (wallet first, then Aave).
-        for spec in registry.all_specs():
-            for leg in spec.positions(self.wallet, self):
-                pos = _make_raw_position(leg.token, leg.location, leg.balance, leg.decimals)
-                if pos is not None:
-                    raw_positions.append(pos)
+            try:
+                eth_wei = eth_fut.result()
+            except PortfolioUnavailable:
+                raise
+            except Exception as exc:
+                raise PortfolioUnavailable(f"RPC eth_getBalance failed: {exc}") from exc
 
-        # Optional extra tokens (e.g. WETH or test tokens)
-        for token_symbol, token_addr in self.extra_tokens.items():
-            bal = self._call_balance_of(Web3.to_checksum_address(token_addr))
-            decimals = 18 if token_symbol == "WETH" else 6
-            extra_pos = _make_raw_position(token_symbol, "wallet", bal, decimals)
-            if extra_pos is not None:
-                raw_positions.append(extra_pos)
+            raw_positions: list[dict[str, Any]] = []
+
+            # Positions come from each registered protocol spec (wallet first, then Aave).
+            for spec, fut in spec_futs:
+                try:
+                    legs = fut.result()
+                except PortfolioUnavailable:
+                    raise
+                except Exception as exc:
+                    raise PortfolioUnavailable(
+                        f"Failed reading positions for {spec.id}: {exc}"
+                    ) from exc
+
+                for leg in legs:
+                    pos = _make_raw_position(leg.token, leg.location, leg.balance, leg.decimals)
+                    if pos is not None:
+                        raw_positions.append(pos)
+
+            # Optional extra tokens (e.g. WETH or test tokens)
+            for token_symbol, fut in extra_futs:
+                try:
+                    bal = fut.result()
+                except PortfolioUnavailable:
+                    raise
+                except Exception as exc:
+                    raise PortfolioUnavailable(
+                        f"Failed reading balance for extra token {token_symbol}: {exc}"
+                    ) from exc
+
+                decimals = 18 if token_symbol == "WETH" else 6
+                extra_pos = _make_raw_position(token_symbol, "wallet", bal, decimals)
+                if extra_pos is not None:
+                    raw_positions.append(extra_pos)
 
         positions, total_value = _finalize_positions(raw_positions)
 

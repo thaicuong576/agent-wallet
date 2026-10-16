@@ -268,3 +268,85 @@ def test_price_source_labelled_mainnet_reference() -> None:
     # Schema only accepts "mainnet_reference"
     allowed_sources = PORTFOLIO_VALIDATOR.schema["properties"]["price_source"]["enum"]
     assert allowed_sources == ["mainnet_reference"]
+
+
+def test_portfolio_reader_concurrent_under_serial_time_and_identical_state() -> None:
+    """Fake RPC sleeping 50ms per call finishes well under serial time with identical state."""
+    import time
+
+    from core.protocols import registry
+    from core.runner.portfolio import _finalize_positions, _make_raw_position
+
+    call_delay = 0.05  # 50 ms
+    specs = registry.all_specs()
+    assert len(specs) == 5
+
+    def fake_rpc(method: str, params: list[Any]) -> Any:
+        time.sleep(call_delay)
+        if method == "eth_getBalance":
+            return hex(2 * 10**18)
+        if method == "eth_call":
+            call_obj = params[0]
+            to_addr = call_obj.get("to", "").lower()
+            from core.protocols.addresses import AAVE_V3_A_USDC, AAVE_V3_USDC
+
+            if to_addr == AAVE_V3_USDC.lower():
+                return hex(500_000_000)
+            if to_addr == AAVE_V3_A_USDC.lower():
+                return hex(300_000_000)
+            return "0x" + "00" * 64
+        return hex(0)
+
+    ledger = FakeLedger(spent_24h=Decimal("45.50"), count_1h=3)
+    reader = PortfolioReader(rpc=fake_rpc, wallet=TEST_WALLET, ledger=ledger)
+    now = datetime(2026, 10, 16, 8, 59, 0, tzinfo=UTC)
+
+    # 1. Build serial reference directly using sequential execution
+    t0_serial = time.perf_counter()
+    ref_eth_wei = reader._call_get_balance()
+    ref_raw_positions: list[dict[str, Any]] = []
+    for spec in specs:
+        for leg in spec.positions(reader.wallet, reader):
+            pos = _make_raw_position(leg.token, leg.location, leg.balance, leg.decimals)
+            if pos is not None:
+                ref_raw_positions.append(pos)
+    for token_symbol, token_addr in reader.extra_tokens.items():
+        bal = reader._call_balance_of(token_addr)
+        decimals = 18 if token_symbol == "WETH" else 6
+        extra_pos = _make_raw_position(token_symbol, "wallet", bal, decimals)
+        if extra_pos is not None:
+            ref_raw_positions.append(extra_pos)
+    ref_positions, ref_total_value = _finalize_positions(ref_raw_positions)
+    serial_elapsed = time.perf_counter() - t0_serial
+
+    # 2. Run concurrent PortfolioReader.read
+    t0_concurrent = time.perf_counter()
+    concurrent_snapshot = reader.read(now)
+    concurrent_elapsed = time.perf_counter() - t0_concurrent
+
+    # Proves it finishes in well under the serial time
+    assert serial_elapsed >= 0.40
+    assert concurrent_elapsed < serial_elapsed * 0.6
+
+    # Returns byte-identical state
+    assert concurrent_snapshot.eth_wei == ref_eth_wei
+    assert concurrent_snapshot.state["positions"] == ref_positions
+    assert concurrent_snapshot.state["total_value_usd"] == f"{ref_total_value:.2f}"
+    PORTFOLIO_VALIDATOR.validate(concurrent_snapshot.state)
+
+
+def test_portfolio_reader_concurrent_failed_read_raises_portfolio_unavailable() -> None:
+    """Failed RPC read during concurrent execution raises PortfolioUnavailable."""
+
+    def failing_rpc(method: str, params: list[Any]) -> Any:
+        if method == "eth_call":
+            call_obj = params[0]
+            from core.protocols.addresses import AAVE_V3_USDC
+
+            if call_obj.get("to", "").lower() == AAVE_V3_USDC.lower():
+                raise RuntimeError("simulated node failure")
+        return hex(10**18)
+
+    reader = PortfolioReader(rpc=failing_rpc, wallet=TEST_WALLET, ledger=FakeLedger())
+    with pytest.raises(PortfolioUnavailable):
+        reader.read(datetime.now(UTC))

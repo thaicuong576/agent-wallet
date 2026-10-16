@@ -65,7 +65,7 @@ Protocols plug in through one registry ([`docs/architecture/protocols.md`](docs/
 The LLM proposes and code decides; the LLM never holds a key. Only the gateway can reach the signer, and every outcome is written to a hash-chained log. Details: [`docs/technical-documentation.md`](docs/technical-documentation.md).
 
 ## Runner
-`core.runner.runner.Runner.run_once(untrusted_text, now)` runs one cycle: the Reader extracts facts, the Planner proposes orders, the portfolio reader supplies state and ledger limits, and each order goes through `Gateway.propose`. A planner `no_action` is recorded through `Gateway.record_no_action`. The runner never imports the signer, the owner controls or the intent store. Design note: [`docs/architecture/runner.md`](docs/architecture/runner.md).
+`core.runner.runner.Runner.run_once(untrusted_text, now)` runs one cycle: the Reader extracts facts, the Planner proposes orders, the portfolio reader supplies state and ledger limits, and each order goes through `Gateway.propose`. A planner `no_action` is recorded through `Gateway.record_no_action`. The runner never imports the signer, the owner controls or the intent store. Design note: [`docs/architecture/runner.md`](docs/architecture/runner.md); RPC concurrency note: [`docs/architecture/rpc-latency.md`](docs/architecture/rpc-latency.md).
 
 ## Make targets
 | Target | What it does |
