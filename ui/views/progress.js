@@ -7,9 +7,9 @@ const SHOW_TIME_MS = 2000;
 const TICK_MS = 1000;
 
 export const LONG_NOTES = [
-  { at: 10000, text: "Still working. This can take a little while." },
-  { at: 30000, text: "Still working. The network can be slow at times." },
-  { at: 60000, text: "Still working. You can stop until an order is sent." },
+  { at: 10000, text: "Still working. The model can take up to 30 seconds." },
+  { at: 30000, text: "This is taking longer than usual. You can stop the request." },
+  { at: 60000, text: "This has taken over a minute. You can stop it, or check Activity later." },
 ];
 
 const POST_SLOW_SUB = "Waking up the server. Your message is safe.";
