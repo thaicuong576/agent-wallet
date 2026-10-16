@@ -39,7 +39,14 @@ class FakeEl {
     throw new Error("innerHTML must not be used");
   }
   append(...nodes) {
-    for (const n of nodes) this.children.push(typeof n === "string" ? { textContent: n } : n);
+    for (const n of nodes) {
+      if (typeof n !== "string") n.parent = this;
+      this.children.push(typeof n === "string" ? { textContent: n } : n);
+    }
+  }
+  remove() {
+    if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this);
+    this.parent = null;
   }
   replaceChildren(...nodes) {
     this.children = [];

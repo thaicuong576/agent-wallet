@@ -199,10 +199,10 @@ export function render(ctx) {
     try {
       const page = await api.chat(50, threadId);
       const all = Array.isArray(page.items) ? page.items : [];
-      const live = all.filter((m) => m.role === "agent" && ACTIVE_PHASES.has(m.phase) && m.job_id);
-      const items = all.filter((m) => !live.includes(m));
+      const running = all.filter((m) => m.role === "agent" && ACTIVE_PHASES.has(m.phase) && m.job_id);
+      const items = all.filter((m) => !running.includes(m));
       showHistory(items, await getLimits());
-      const last = live[live.length - 1];
+      const last = running[running.length - 1];
       if (resume && last && !activeJob && /^[0-9a-f]{32}$/.test(last.job_id)) follow(last.job_id);
     } catch (e) {
       status.className = "msg error";

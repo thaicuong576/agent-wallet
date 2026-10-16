@@ -127,7 +127,8 @@ export function createProgress(el, opts = {}) {
     if (stop) {
       const cur = current();
       const late = cur !== null && (cur.id === "sent" || cur.id === "confirming");
-      stop.disabled = cancelling || late;
+      // Until the server has answered there is no job to stop.
+      stop.disabled = cancelling || late || pendingRow !== null;
     }
   }
 
