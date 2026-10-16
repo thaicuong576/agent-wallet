@@ -112,7 +112,9 @@ export function createApi({
   // In a real browser the fixture jobs advance one phase per poll so the phase strip and Stop can
   // be seen; under node (the tests) there is no `window` and they answer at once.
   const paced = fixtures && typeof globalThis.window !== "undefined";
+  // A run that sends an order walks all five; a question or a blocked order never reaches "sent".
   const PHASES = ["queued", "rules_check", "rules_check", "sent", "confirming"];
+  const QUIET_PHASES = ["queued", "rules_check", "rules_check"];
 
   async function file(name) {
     if (!fx.cache.has(name)) {
@@ -391,12 +393,13 @@ export function createApi({
   // that walk is in progress.
   function jobPhase(j) {
     if (!j.live) return "done";
-    return PHASES[Math.min(j.polls, PHASES.length - 1)];
+    const phases = j.phases || PHASES;
+    return phases[Math.min(j.polls, phases.length - 1)];
   }
   function jobView(j) {
     if (!j.live) return j;
     const phase = jobPhase(j);
-    const finished = j.polls >= PHASES.length;
+    const finished = j.polls >= (j.phases || PHASES).length;
     j.polls += 1;
     if (j.cancelled) {
       finishCancelled(j);
@@ -498,7 +501,8 @@ export function createApi({
       row.status = status === "denied" ? "blocked" : "done";
     }
     fx.jobs.push({
-      live: paced && steps.some((s) => s.outcome === "executed"),
+      live: paced,
+      phases: steps.some((s) => s.outcome === "executed") ? PHASES : QUIET_PHASES,
       polls: 0,
       job_id: jobId,
       kind: "chat",
