@@ -1039,7 +1039,13 @@ def create_app(
                 )
 
         tier_val = str(body["tier"])
-        if scope.tenant is not None and TIER_RANK[tier_val] > TIER_RANK.get(
+        if scope.tenant is not None and preset_id is not None:
+            # Choosing a preset changes the universe the agent may act in: the owner's fresh
+            # signature must be bound to the tier and to the exact preset chosen.
+            _require_step_up(
+                request, scope, "tier_raise", {"tier": tier_val, "preset_id": str(preset_id)}
+            )
+        elif scope.tenant is not None and TIER_RANK[tier_val] > TIER_RANK.get(
             scope.tier_view.current(), 0
         ):
             # Raising widens authority, so it needs a fresh signature bound to the new tier.

@@ -8,7 +8,7 @@ export const TIER_NAMES = { T0: "read only", T1: "propose only", T2: "may act in
 
 // POST /auth/step-up, wallet signature, then PUT /tier with X-Step-Up.
 export async function activateAgent(ctx, tier = ACTIVATE_TIER, presetId = undefined) {
-  const header = await ctx.stepUp("tier_raise", { tier });
+  const header = await ctx.stepUp("tier_raise", presetId ? { tier, preset_id: presetId } : { tier });
   const res = await ctx.api.setTier(tier, header, presetId);
   ctx.state.tier = { tier: res.tier, emergency_stop: Boolean(res.emergency_stop) };
   ctx.state.justActivated = true;
