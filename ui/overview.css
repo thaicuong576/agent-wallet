@@ -1,1 +1,44 @@
-/* Overview, funds and withdraw dialogs. Owned by the overview work; tokens come from style.css. */
+/* Funds and withdraw dialogs (ui/views/dialog.js, funds.js, withdraw.js). Colours, radii and
+   spacing come from the tokens in style.css. */
+.dlg { max-width: 460px; }
+.dlg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.dlg-head .modal-title { flex: 1 1 auto; min-width: 0; }
+.dlg-close { flex: none; }
+.dlg-body, .dlg-panel { display: flex; flex-direction: column; gap: 14px; }
+.dlg-panel[hidden] { display: none; }
+
+.dlg-tabs, .seg-switch { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-card); }
+.dlg-tabs button[role="tab"], .seg-switch button {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--r-ctl);
+  background: transparent;
+  color: var(--ink);
+}
+.dlg-tabs button[role="tab"][aria-selected="true"],
+.seg-switch button[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--canvas);
+}
+
+.flow { display: flex; align-items: stretch; gap: 10px; padding: 12px; background: var(--canvas-soft); border: 1px solid var(--border); border-radius: var(--r-card); }
+.flow-cell { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.flow-arrow { flex: none; align-self: center; color: var(--faint); }
+.flow-label { margin: 0; font-size: 13px; color: var(--muted); }
+.flow-value { margin: 0; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+.flow-note { margin: 0; font-size: 13px; color: var(--muted); }
+
+.dlg .amount-row { display: flex; align-items: center; gap: 8px; }
+.dlg .amount-row input { flex: 1 1 auto; min-width: 0; }
+.dlg .amount-row button { min-height: 44px; }
+.dlg-link { margin: 0; font-size: 14px; }
+.dlg-link:empty { display: none; }
+
+@media (max-width: 519px) {
+  .modal-scrim.dlg-scrim { align-items: flex-end; padding: 0; }
+  .dlg { max-width: none; border-radius: 12px 12px 0 0; max-height: 92dvh; overflow-y: auto; }
+  .flow { flex-direction: column; }
+  .flow-arrow { align-self: flex-start; }
+}
