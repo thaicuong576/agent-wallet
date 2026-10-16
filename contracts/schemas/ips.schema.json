@@ -195,7 +195,10 @@
       "type": "string",
       "enum": [
         "aave-v3",
-        "uniswap-v3"
+        "uniswap-v3",
+        "morpho-blue",
+        "moonwell",
+        "aave-stata"
       ]
     },
     "Recipient": {
@@ -215,7 +218,12 @@
       "type": "string",
       "enum": [
         "USDC",
-        "WETH"
+        "WETH",
+        "USDT",
+        "WBTC",
+        "cbETH",
+        "LINK",
+        "USDbC"
       ]
     },
     "UsdString": {

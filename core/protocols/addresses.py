@@ -31,22 +31,36 @@ AAVE_V3_A_USDC: Final[str] = "0x10F1A9D11CDf50041f3f8cB7191CBE2f31750ACC"
 # Source: https://github.com/bgd-labs/aave-address-book/blob/main/src/MiscBaseSepolia.sol#L12-L13
 AAVE_V3_FAUCET: Final[str] = "0xD9145b5F45Ad4519c7ACcD6E0A4A82e83bB8A6Dc"
 
-# Protocol enum to address mapping
-PROTOCOL_ADDRESSES: Final[dict[str, str]] = {
-    "aave-v3": AAVE_V3_POOL,
-}
-
-# Token enum to address mapping
-TOKEN_ADDRESSES: Final[dict[str, str]] = {
-    "USDC": AAVE_V3_USDC,
-}
-
-SUPPORTED_PROTOCOLS: Final[frozenset[str]] = frozenset({"aave-v3", "wallet"})
-SUPPORTED_TOKENS: Final[frozenset[str]] = frozenset({"USDC", "ETH"})
-SUPPORTED_FUNCTIONS: Final[frozenset[str]] = frozenset(
-    {"approve", "supply", "withdraw", "mint", "transfer"}
-)
 SUPPORTED_RECIPIENTS: Final[frozenset[str]] = frozenset({"self", "aave_pool", "owner"})
+
+_DERIVED = (
+    "PROTOCOL_ADDRESSES",
+    "TOKEN_ADDRESSES",
+    "SUPPORTED_PROTOCOLS",
+    "SUPPORTED_TOKENS",
+    "SUPPORTED_FUNCTIONS",
+)
+
+
+def __getattr__(name: str):  # PEP 562: derived from the registry on first use
+    """`PROTOCOL_ADDRESSES` and friends are derived from the protocol registry."""
+    if name not in _DERIVED:
+        raise AttributeError(name)
+    from core.protocols import registry
+    from core.protocols.tokens import get_token
+
+    specs = registry.all_specs()
+    if name == "PROTOCOL_ADDRESSES":
+        # The contract each protocol's calls target (first declared spender).
+        return {s.id: sorted(s.spenders)[0] for s in specs if s.spenders}
+    if name == "SUPPORTED_PROTOCOLS":
+        return frozenset(s.id for s in specs)
+    if name == "SUPPORTED_FUNCTIONS":
+        return frozenset(f for s in specs for f in s.functions)
+    tokens = {t for s in specs for t in s.tokens}
+    if name == "SUPPORTED_TOKENS":
+        return frozenset(tokens)
+    return {t: spec.address for t in sorted(tokens) if (spec := get_token(t)) and spec.address}
 
 
 def resolve_recipient(recipient: str, wallet_address: str, owner_address: str | None = None) -> str:

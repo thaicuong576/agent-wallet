@@ -611,6 +611,14 @@
         "transfer"
       ]
     },
+    "Market": {
+      "type": "string",
+      "enum": [
+        "usdc-wbtc",
+        "usdc-cbeth"
+      ],
+      "description": "Morpho Blue market, chosen from a fixed list. The market id lives in code, never in an order."
+    },
     "Order": {
       "title": "Order",
       "description": "A proposed on-chain action. Contains enum values and amounts only: never an address, never free text.",
@@ -668,6 +676,10 @@
         "recipient": {
           "$ref": "#/$defs/Recipient",
           "description": "Who receives the effect: the spender for approve, self for supply, withdraw and swap output."
+        },
+        "market": {
+          "$ref": "#/$defs/Market",
+          "description": "Only for morpho-blue: which market. Never an address or a market id."
         }
       },
       "allOf": [
@@ -835,6 +847,135 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "token": {
+                "const": "USDT"
+              }
+            },
+            "required": [
+              "token"
+            ]
+          },
+          "then": {
+            "properties": {
+              "amount": {
+                "properties": {
+                  "decimals": {
+                    "const": 6
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "token": {
+                "const": "WBTC"
+              }
+            },
+            "required": [
+              "token"
+            ]
+          },
+          "then": {
+            "properties": {
+              "amount": {
+                "properties": {
+                  "decimals": {
+                    "const": 8
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "token": {
+                "const": "cbETH"
+              }
+            },
+            "required": [
+              "token"
+            ]
+          },
+          "then": {
+            "properties": {
+              "amount": {
+                "properties": {
+                  "decimals": {
+                    "const": 18
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "token": {
+                "const": "LINK"
+              }
+            },
+            "required": [
+              "token"
+            ]
+          },
+          "then": {
+            "properties": {
+              "amount": {
+                "properties": {
+                  "decimals": {
+                    "const": 18
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "token": {
+                "const": "USDbC"
+              }
+            },
+            "required": [
+              "token"
+            ]
+          },
+          "then": {
+            "properties": {
+              "amount": {
+                "properties": {
+                  "decimals": {
+                    "const": 6
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "market"
+            ]
+          },
+          "then": {
+            "properties": {
+              "protocol": {
+                "const": "morpho-blue"
+              }
+            }
+          }
         }
       ]
     },
@@ -863,7 +1004,10 @@
       "enum": [
         "aave-v3",
         "uniswap-v3",
-        "wallet"
+        "wallet",
+        "morpho-blue",
+        "moonwell",
+        "aave-stata"
       ]
     },
     "Reason": {
@@ -938,7 +1082,12 @@
       "enum": [
         "USDC",
         "WETH",
-        "ETH"
+        "ETH",
+        "USDT",
+        "WBTC",
+        "cbETH",
+        "LINK",
+        "USDbC"
       ]
     },
     "TxHash": {

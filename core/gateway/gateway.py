@@ -30,6 +30,7 @@ from core.gateway.globalstop import file_flag
 from core.gateway.intents import IntentStore
 from core.gateway.lock import GatewayLock
 from core.gateway.policy import DEFAULT_IPS_HASH, DenyAllPolicy, Policy
+from core.protocols import registry
 from core.signer import Signer
 from core.simulate import Simulator
 
@@ -204,6 +205,20 @@ class Gateway:
                 }
             ],
             "reason": f"Owner function '{order['function']}' requires owner origin.",
+            "ips_hash": self.ips_hash,
+            "decided_at": self._now_iso(),
+        }
+
+    def _registry_denial(
+        self, order: dict[str, Any], rules_hit: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Protocol not registered or market not listed: denied before policy, nothing built."""
+        return {
+            "schema_version": 1,
+            "order_id": order["order_id"],
+            "decision": "deny",
+            "rules_hit": rules_hit,
+            "reason": "Order targets a protocol or market that is not enabled.",
             "ips_hash": self.ips_hash,
             "decided_at": self._now_iso(),
         }
@@ -636,6 +651,12 @@ class Gateway:
                 raw_decision = self._owner_only_denial(order, origin)
             else:
                 raw_decision = self._evaluate_policy(order, origin, current_tier, emergency_stop)
+            # The registry never widens what the policy allowed: an allow or escalate for a
+            # protocol with no adapter, or a market the adapter does not list, becomes a deny.
+            if isinstance(raw_decision, dict) and raw_decision.get("decision") != "deny":
+                registry_hits = registry.preflight(order)
+                if registry_hits:
+                    raw_decision = self._registry_denial(order, registry_hits)
             if not isinstance(raw_decision, dict):
                 raise GatewayError("Policy evaluate must return a dictionary")
 

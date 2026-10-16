@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Request
 from api.wallet import current_tenant, get_webapp
 from core.gateway.tenant import Tenant
 from core.policy.ips import _to_plain_data
+from core.protocols import registry
 from core.protocols.addresses import AAVE_V3_A_USDC, AAVE_V3_USDC
 
 log = logging.getLogger("agent_wallet.limits")
@@ -98,6 +99,29 @@ def suggestions_for(request: Request, tenant: Tenant) -> list[dict[str, str]]:
     if funded is None:
         return SUGGESTIONS["unknown"]
     return SUGGESTIONS["funded" if funded else "no_funds"]
+
+
+def protocols_view(tenant: Tenant) -> dict[str, Any]:
+    """Registry entries the owner's IPS enables. No addresses: those live in code."""
+    enabled = set((_active_ips(tenant).get("universe") or {}).get("protocols") or [])
+    items = [
+        {
+            "id": spec.id,
+            "name": spec.name,
+            "category": spec.category,
+            "tokens": sorted(spec.tokens),
+            "functions": sorted(spec.planner_functions),
+            "paper": spec.paper,
+        }
+        for spec in registry.all_specs()
+        if spec.id in enabled and spec.planner_functions
+    ]
+    return {"items": items}
+
+
+@router.get("/protocols", tags=["state"])
+def get_protocols(tenant: Annotated[Tenant, Depends(current_tenant)]) -> dict[str, Any]:
+    return protocols_view(tenant)
 
 
 @router.get("/limits", tags=["state"])

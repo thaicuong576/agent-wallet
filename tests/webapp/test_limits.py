@@ -134,3 +134,29 @@ def test_shapes_match_the_openapi_contract(world):
     assert shape("ChatMessage")  # spec loads; the two new paths are declared with a session scheme
     for path in ("/limits", "/chat/suggestions"):
         assert SPEC["paths"][path]["get"]["security"]
+
+
+def test_protocols_lists_registry_entries_the_ips_enables(world):
+    """The default preset lists aave-v3 and uniswap-v3; only aave-v3 has an adapter."""
+    owner = real_owner(world)
+    body = owner.get("/protocols").json()
+    assert body == {
+        "items": [
+            {
+                "id": "aave-v3",
+                "name": "Aave v3",
+                "category": "lending",
+                "tokens": ["USDC"],
+                "functions": ["approve", "supply", "withdraw"],
+                "paper": False,
+            }
+        ]
+    }
+    assert "0x" not in str(body)
+
+
+def test_protocols_requires_a_session(world):
+    owner = real_owner(world)
+    assert (
+        TestClient(world.app, base_url=owner.client.base_url).get("/protocols").status_code == 401
+    )

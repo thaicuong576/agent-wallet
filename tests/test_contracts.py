@@ -130,6 +130,9 @@ def test_rule_codes_are_append_only():
         "ACCESS.OWNER_ONLY_FUNCTION",
         "TIER.GLOBAL_STOP",
         "TIER.POLICY_CHANGED",
+        "ACCESS.PROTOCOL_NOT_ENABLED",
+        "ACCESS.MARKET_NOT_ALLOWED",
+        "RISK.PRICE_UNAVAILABLE",
     ]
 
 
@@ -151,6 +154,7 @@ NEW_VALID_ORDER_EXAMPLES = [
     "order.valid.mint.json",
     "order.valid.transfer-usdc.json",
     "order.valid.transfer-eth.json",
+    "order.valid.morpho-market.json",
 ]
 
 NEW_INVALID_ORDER_EXAMPLES = [
@@ -158,6 +162,8 @@ NEW_INVALID_ORDER_EXAMPLES = [
     "order.invalid.transfer-recipient-self.json",
     "order.invalid.eth-decimals.json",
     "order.invalid.mint-token-out.json",
+    "order.invalid.market-wrong-protocol.json",
+    "order.invalid.market-raw-id.json",
 ]
 
 

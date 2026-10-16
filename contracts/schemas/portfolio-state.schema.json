@@ -116,7 +116,12 @@
       "type": "string",
       "enum": [
         "USDC",
-        "WETH"
+        "WETH",
+        "USDT",
+        "WBTC",
+        "cbETH",
+        "LINK",
+        "USDbC"
       ]
     },
     "UsdString": {

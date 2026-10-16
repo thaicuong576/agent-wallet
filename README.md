@@ -59,6 +59,8 @@ flowchart LR
   E -- deny or escalate --> L[Audit log with reason]
   S --> L
 ```
+Protocols plug in through one registry ([`docs/architecture/protocols.md`](docs/architecture/protocols.md)): the tx builder, planner prompt, portfolio reader and `GET /protocols` all read it.
+
 The LLM proposes and code decides; the LLM never holds a key. Only the gateway can reach the signer, and every outcome is written to a hash-chained log. Details: [`docs/technical-documentation.md`](docs/technical-documentation.md).
 
 ## Runner

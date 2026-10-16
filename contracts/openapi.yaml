@@ -697,6 +697,34 @@ paths:
                   emergency_stop: { type: string, enum: [ready, stopped] }
                   as_of: { type: string, format: date-time }
         "401": { $ref: "#/components/responses/Problem" }
+  /protocols:
+    get:
+      tags: [state]
+      operationId: getProtocols
+      summary: The registered protocols the owner's IPS enables. Read-only; no addresses.
+      security: [{ SessionCookie: [] }]
+      responses:
+        "200":
+          description: Enabled protocols.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, category, tokens, functions, paper]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        category: { type: string }
+                        tokens: { type: array, items: { type: string } }
+                        functions: { type: array, items: { type: string } }
+                        paper: { type: boolean }
+        "401": { $ref: "#/components/responses/Problem" }
   /audit/verify:
     get:
       tags: [audit]

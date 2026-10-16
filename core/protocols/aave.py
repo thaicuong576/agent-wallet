@@ -7,23 +7,38 @@ Aave V3 supply, and Aave V3 withdraw from a validated Order contract.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Final, NamedTuple
+from typing import Any, Final
 
 import eth_abi
 import jsonschema
 from web3 import Web3
 
 from core.protocols.addresses import (
+    AAVE_V3_A_USDC,
     AAVE_V3_FAUCET,
     AAVE_V3_POOL,
     AAVE_V3_USDC,
-    SUPPORTED_FUNCTIONS,
-    SUPPORTED_PROTOCOLS,
-    SUPPORTED_RECIPIENTS,
-    SUPPORTED_TOKENS,
+    BASE_SEPOLIA_CHAIN_ID,
     resolve_recipient,
 )
+from core.protocols.registry import (
+    BuildContext,
+    Call,
+    PositionLeg,
+    PositionReader,
+    ProtocolSpec,
+    register,
+)
+
+# Allowed values for this adapter, as they were before the registry (zero behaviour change).
+SUPPORTED_PROTOCOLS: Final[frozenset[str]] = frozenset({"aave-v3", "wallet"})
+SUPPORTED_TOKENS: Final[frozenset[str]] = frozenset({"USDC", "ETH"})
+SUPPORTED_FUNCTIONS: Final[frozenset[str]] = frozenset(
+    {"approve", "supply", "withdraw", "mint", "transfer"}
+)
+SUPPORTED_RECIPIENTS: Final[frozenset[str]] = frozenset({"self", "aave_pool", "owner"})
 
 # Standard function selectors
 APPROVE_SELECTOR: Final[str] = "0x095ea7b3"
@@ -44,14 +59,6 @@ with open(SCHEMA_PATH, encoding="utf-8") as _schema_file:
 ORDER_VALIDATOR: Final[jsonschema.Draft202012Validator] = jsonschema.Draft202012Validator(
     ORDER_SCHEMA
 )
-
-
-class Call(NamedTuple):
-    """An executable Ethereum call object."""
-
-    to: str
-    data: str
-    value: int = 0
 
 
 class OrderValidationError(ValueError):
@@ -242,3 +249,72 @@ def build_calls(
 
 
 order_to_calls = build_calls
+
+
+# --- registry wiring ---------------------------------------------------------------------
+
+_USDC_ONLY: Final[frozenset[str]] = frozenset({"USDC"})
+
+
+def _build(order: Mapping[str, Any], ctx: BuildContext) -> list[Call]:
+    return build_calls(dict(order), ctx.wallet, owner_address=ctx.owner_address)
+
+
+def _wallet_positions(wallet: str, reader: PositionReader) -> list[PositionLeg]:
+    usdc = reader.address_for("USDC", AAVE_V3_USDC)
+    return [PositionLeg("USDC", "wallet", reader.balance_of(usdc), 6)]
+
+
+def _aave_positions(wallet: str, reader: PositionReader) -> list[PositionLeg]:
+    ausdc = reader.address_for("aUSDC", AAVE_V3_A_USDC)
+    return [PositionLeg("USDC", "aave-v3", reader.balance_of(ausdc), 6)]
+
+
+def _describe_aave(order: Mapping[str, Any]) -> str:
+    verb = {
+        "supply": "Supply",
+        "withdraw": "Withdraw",
+        "approve": "Approve the Aave pool to spend",
+    }.get(str(order.get("function")), str(order.get("function")))
+    return f"{verb} {order.get('token')} on Aave v3"
+
+
+def _describe_wallet(order: Mapping[str, Any]) -> str:
+    return f"{order.get('function')} {order.get('token')} in the wallet"
+
+
+register(
+    ProtocolSpec(
+        id="wallet",
+        name="Wallet",
+        category="wallet",
+        chain_id=BASE_SEPOLIA_CHAIN_ID,
+        functions=frozenset({"transfer"}),
+        tokens=SUPPORTED_TOKENS,
+        spenders=frozenset(),
+        build_calls=_build,
+        positions=_wallet_positions,
+        describe=_describe_wallet,
+        owner_functions=frozenset({"transfer"}),
+        recipients=frozenset({"owner"}),
+        summary="Idle balances held by the agent wallet",
+    )
+)
+
+register(
+    ProtocolSpec(
+        id="aave-v3",
+        name="Aave v3",
+        category="lending",
+        chain_id=BASE_SEPOLIA_CHAIN_ID,
+        functions=frozenset({"approve", "supply", "withdraw", "mint"}),
+        tokens=_USDC_ONLY,
+        spenders=frozenset({AAVE_V3_POOL}),
+        build_calls=_build,
+        positions=_aave_positions,
+        describe=_describe_aave,
+        owner_functions=frozenset({"mint"}),
+        recipients=frozenset({"self", "aave_pool"}),
+        summary="Supply and withdraw USDC on Aave v3 (Base Sepolia)",
+    )
+)

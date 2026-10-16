@@ -100,6 +100,7 @@ The wallet-session routes of design 12.2 are mounted by `create_app` on every st
 | `/chat/threads?limit=30` | `GET` | session | `api/chat.py` |
 | `/chat/threads` | `POST` | session (CSRF header as every write) | `api/chat.py` |
 | `/limits` | `GET` | session | `api/limits.py` (read model: IPS limits, rolling-24h spend, stop flag; contract C4) |
+| `/protocols` | `GET` | session | `api/limits.py` (registry entries the owner's IPS enables; see `protocols.md`) |
 | `/chat/suggestions` | `GET` | session | `api/limits.py` (prompts chosen by code from state, no LLM call; contract C5) |
 
 Rules enforced here: the owner address comes only from `require_session` (no route has an owner parameter or body field; extra body fields are `422`); a foreign `job_id` or `tx_hash` is `404`; problems use the 12.1 slugs (`job-in-progress` 409 with the active `job_id`, `rate-limited` 429 with `Retry-After`, `custody-unavailable` 503); `origin="owner"` appears only in `api/jobs.py`.
@@ -107,6 +108,8 @@ Rules enforced here: the owner address comes only from `require_session` (no rou
 | Claim | Proving check |
 | :--- | :--- |
 ### Limits and suggestions (ticket 124)
+
+`GET /protocols` answers `{items: [{id, name, category, tokens, functions, paper}]}`: the protocol registry entries (`docs/architecture/protocols.md`) that are in the owner's IPS `universe.protocols`. Read-only, owner-scoped, no addresses; owner-only functions are not listed.
 
 `GET /limits` answers `{per_order_usd, per_day_usd, used_today_usd, approval_threshold_usd, protocols, emergency_stop, as_of}`. Limits and `protocols` come from the owner's active IPS (`limits.per_tx_usd`, `limits.per_day_usd`, `approval.escalate_above_usd`, `universe.protocols` as written in the IPS); `used_today_usd` is the rolling 24 hour executed spend from the owner's ledger (approve, mint and transfer excluded); `emergency_stop` is `ready` or `stopped`. Money is a string with two decimals. Read-only: there is no write path and no limit editing.
 

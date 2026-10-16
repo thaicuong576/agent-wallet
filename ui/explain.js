@@ -13,6 +13,18 @@ export const RULES = {
     kind: "blocked",
     text: "Blocked: this order targets a protocol your policy does not list.",
   },
+  "ACCESS.PROTOCOL_NOT_ENABLED": {
+    kind: "blocked",
+    text: "Blocked: this protocol is not available in the agent yet.",
+  },
+  "ACCESS.MARKET_NOT_ALLOWED": {
+    kind: "blocked",
+    text: "Blocked: this market is not on the list of allowed markets.",
+  },
+  "RISK.PRICE_UNAVAILABLE": {
+    kind: "blocked",
+    text: "Blocked: the agent could not get a reliable price for this token.",
+  },
   "ACCESS.FUNCTION_NOT_ALLOWED": {
     kind: "blocked",
     text: "Blocked: this order calls an action your policy does not allow.",

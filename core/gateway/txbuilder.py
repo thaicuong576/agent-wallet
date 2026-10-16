@@ -6,13 +6,28 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from core.protocols.aave import build_calls
+from core.protocols import registry
+from core.protocols.registry import BuildContext
 
 RpcCall = Callable[[str, list[Any]], Any]
 
 
 class TxBuildError(Exception):
     """Raised when building a transaction fails."""
+
+
+def build_calls(
+    order: dict[str, Any], wallet_address: str, *, owner_address: str | None = None
+) -> list[Any]:
+    """Dispatch to the registered spec for the order's protocol.
+
+    The spec, not the order, supplies every address, spender and calldata layout. An order for a
+    protocol that is not registered cannot be built.
+    """
+    spec = registry.get(str(order.get("protocol")))
+    if spec is None:
+        raise TxBuildError(f"protocol '{order.get('protocol')}' is not enabled")
+    return spec.build_calls(order, BuildContext(wallet_address, owner_address))
 
 
 class AaveTxBuilder:

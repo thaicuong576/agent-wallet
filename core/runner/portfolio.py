@@ -18,6 +18,7 @@ import eth_abi
 import jsonschema
 from web3 import Web3
 
+from core.protocols import registry
 from core.protocols.addresses import AAVE_V3_A_USDC, AAVE_V3_USDC
 from core.runner.prices import PRICE_SOURCE, PriceUnavailable, price_usd
 
@@ -121,6 +122,15 @@ class PortfolioReader:
         self.ausdc_address = Web3.to_checksum_address(ausdc_address)
         self.extra_tokens = dict(extra_tokens) if extra_tokens is not None else {}
 
+    def balance_of(self, token_address: str) -> int:
+        """Wallet balance of an ERC-20 (PositionReader contract for registered specs)."""
+        return self._call_balance_of(token_address)
+
+    def address_for(self, key: str, default: str) -> str:
+        """Per-reader address overrides for the keys the Aave spec uses."""
+        overrides = {"USDC": self.usdc_address, "aUSDC": self.ausdc_address}
+        return overrides.get(key, default)
+
     def _call_balance_of(self, token_address: str) -> int:
         calldata = "0x70a08231" + eth_abi.encode(["address"], [self.wallet]).hex()
         try:
@@ -163,20 +173,15 @@ class PortfolioReader:
     def read(self, now: datetime) -> WalletSnapshot:
         """Read portfolio state as of `now`. Never caches balances across calls."""
         eth_wei = self._call_get_balance()
-        usdc_bal = self._call_balance_of(self.usdc_address)
-        ausdc_bal = self._call_balance_of(self.ausdc_address)
 
         raw_positions: list[dict[str, Any]] = []
 
-        # Position 1: USDC in wallet
-        pos_usdc = _make_raw_position("USDC", "wallet", usdc_bal, 6)
-        if pos_usdc is not None:
-            raw_positions.append(pos_usdc)
-
-        # Position 2: aUSDC in Aave V3 (represented as USDC at location aave-v3)
-        pos_ausdc = _make_raw_position("USDC", "aave-v3", ausdc_bal, 6)
-        if pos_ausdc is not None:
-            raw_positions.append(pos_ausdc)
+        # Positions come from each registered protocol spec (wallet first, then Aave).
+        for spec in registry.all_specs():
+            for leg in spec.positions(self.wallet, self):
+                pos = _make_raw_position(leg.token, leg.location, leg.balance, leg.decimals)
+                if pos is not None:
+                    raw_positions.append(pos)
 
         # Optional extra tokens (e.g. WETH or test tokens)
         for token_symbol, token_addr in self.extra_tokens.items():
