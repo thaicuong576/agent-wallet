@@ -66,7 +66,7 @@ export function render(ctx) {
       el(
         "p",
         "note faint",
-        "Next: you land in Chat and can say what you want in plain words. Mint test USDC from the Portfolio page.",
+        "Next: you land in Chat and can say what you want in plain words. Get test USDC from Overview.",
       ),
     );
     body.replaceChildren(...parts);

@@ -1,10 +1,15 @@
 // Overview: the main column of the agent wallet. The hero shows the total, the split between working
 // and idle money, the allocation bar and the Add funds and Withdraw buttons. Below it every holding is
-// grouped by what the money is doing. The right column is added by a later slice.
+// grouped by what the money is doing. The right column holds the approvals card, the wallet,
+// today's limit and recent activity.
 import { allocationSegments, groupHoldings } from "../holdings.js";
 import { displayName, protocolAvatar, tokenAvatar } from "../icons.js";
 import { formatAmount, formatWei } from "../explain.js";
-import { emptyState, frozenCard } from "../gauges.js";
+import { cta, emptyState, frozenCard, shortAddr, spendGauge } from "../gauges.js";
+import { getLimits, usd } from "../limits.js";
+import { approvalsCard, pendingOf } from "./approvals.js";
+import { recordLine } from "./cards.js";
+import { loadRecords } from "./jobs.js";
 import { openFunds } from "./funds.js";
 import { openWithdraw } from "./withdraw.js";
 import { topUpButton } from "./topup.js";
@@ -15,10 +20,12 @@ export function render(ctx) {
   const { el, api } = ctx;
   const root = el("section", "overview");
   const main = el("div", "overview-main");
-  root.append(main);
+  const side = el("div", "overview-side");
+  root.append(main, side);
 
   async function load() {
     main.replaceChildren(overviewSkeleton(el));
+    side.replaceChildren();
     const me = await ctx.refreshSession();
     if (!me) {
       const box = el("div", "card");
@@ -28,10 +35,20 @@ export function render(ctx) {
       main.replaceChildren(box);
       return;
     }
-    const [a, p, t] = await Promise.allSettled([api.agent(), api.portfolio(), api.tier()]);
+    const [a, p, t, r, l] = await Promise.allSettled([
+      api.agent(),
+      api.portfolio(),
+      api.tier(),
+      loadRecords(ctx, 200),
+      getLimits(api),
+    ]);
     const agent = a.status === "fulfilled" ? a.value : null;
     const tier = t.status === "fulfilled" ? t.value : null;
+    const records = r.status === "fulfilled" && Array.isArray(r.value) ? r.value : null;
+    const pending = records ? pendingOf(records) : [];
+    const approvals = pending.length ? approvalsCard(ctx) : null;
     const parts = [];
+    if (approvals) parts.push(waitingBanner(pending.length, approvals));
     if (tier && tier.emergency_stop) parts.push(frozenCard(el));
     if (p.status !== "fulfilled") {
       parts.push(failureCard(p.reason));
@@ -41,6 +58,109 @@ export function render(ctx) {
       if (!model.empty) parts.push(holdingsCard(model, agent));
     }
     main.replaceChildren(...parts);
+    side.replaceChildren(
+      ...(approvals ? [approvals] : []),
+      safely("Your wallet", () => walletCard(agent)),
+      safely("Today's limit", () => limitCard(l.status === "fulfilled" ? l.value : null)),
+      safely("Recent activity", () => recentCard(records)),
+    );
+  }
+
+  // Shown above the main column while orders wait. Review scrolls to the approvals card on the side.
+  function waitingBanner(n, approvals) {
+    const box = el("div", "banner");
+    box.setAttribute("role", "status");
+    box.append(el("span", "", n === 1 ? "1 order is waiting for you." : n + " orders are waiting for you."));
+    const review = el("button", "", "Review");
+    review.type = "button";
+    review.addEventListener("click", () => approvals.scrollIntoView({ block: "start" }));
+    box.append(review);
+    return box;
+  }
+
+  // Each side card builds from its own data. A throw leaves a note in that card only.
+  function safely(title, build) {
+    try {
+      return build();
+    } catch {
+      const box = el("div", "card");
+      box.append(el("h2", "", title), el("p", "note", "Not available right now."));
+      return box;
+    }
+  }
+
+  function walletCard(agent) {
+    const card = el("div", "card");
+    const addr = ctx.state.me.address;
+    const short = el("strong", "", shortAddr(addr));
+    short.setAttribute("title", addr);
+    const add = el("button", "", "Add funds");
+    add.type = "button";
+    add.addEventListener("click", () => openFunds(ctx, { agent }));
+    if (agent === null) {
+      add.disabled = true;
+      add.setAttribute("title", NO_AGENT);
+    }
+    card.append(
+      el("h2", "", "Your wallet"),
+      el("p", "", ""),
+      el("p", "note", "Your own balance is not shown here yet. Add funds sends test ETH for gas from this wallet."),
+      add,
+    );
+    card.children[1].append(short, " · Base Sepolia");
+    return card;
+  }
+
+  function limitCard(l) {
+    const card = el("div", "card");
+    card.append(el("h2", "", "Today's limit"));
+    const g = l ? spendGauge(l.used_today_usd, l.per_day_usd) : null;
+    if (!g || g.level === "unknown") {
+      card.append(el("p", "note", "The limit is not available right now. Nothing is shown rather than a guess."));
+      return card;
+    }
+    const line = el("div", "gas-line");
+    line.append(el("strong", "", "$" + g.spent), " of $" + g.limit + " used");
+    const fill = el("span", "");
+    fill.style.width = Math.max(g.pct, g.pct > 0 ? 1 : 0) + "%";
+    const bar = el("div", "bar spend " + g.level);
+    bar.setAttribute("role", "progressbar");
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", "100");
+    bar.setAttribute("aria-valuenow", String(Math.round(g.pct)));
+    bar.setAttribute("aria-label", "Spent in the last 24 hours against the daily limit");
+    bar.append(fill);
+    card.append(
+      line,
+      bar,
+      el("p", "note", "Rolling 24 hours. Orders above " + usd(l.approval_threshold_usd) + " wait for your approval."),
+      cta(el, "See rules", "#/rules", ""),
+    );
+    return card;
+  }
+
+  function recentCard(records) {
+    const card = el("div", "card");
+    card.append(el("h2", "", "Recent activity"));
+    if (!records) {
+      card.append(el("p", "note", "Recent activity is not available right now."));
+    } else if (!records.length) {
+      card.append(el("p", "note", "Nothing yet. Ask the agent something in Chat."));
+    } else {
+      const list = el("ul", "recent");
+      for (const rec of records.slice(-3).reverse()) {
+        const line = recordLine(rec);
+        const li = el("li", "");
+        li.append(
+          el("span", line.tone === "blocked" || line.tone === "fail" ? "bad" : "", line.icon + " " + line.text),
+          el("span", "when", line.when),
+        );
+        list.append(li);
+      }
+      card.append(list);
+    }
+    card.append(cta(el, "See all activity", "#/activity", ""));
+    return card;
   }
 
   // No numbers at all when /portfolio failed: a zero would look like a real balance.
