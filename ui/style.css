@@ -449,6 +449,8 @@ label.inline { display: inline; font-weight: 400; }
 .rule-used { font-size: 13px; font-weight: 600; margin-top: 2px; }
 .rule-value { font-family: var(--font-display); font-size: 22px; text-align: right; overflow-wrap: anywhere; max-width: 40%; }
 .rule-row .chip { flex: 0 0 auto; }
+.proto-chip { display: inline-flex; align-items: center; gap: 6px; }
+.rules-extra { display: flex; flex-direction: column; gap: 16px; margin-top: 16px; }
 
 /* ---- account, modal ---- */
 .account-slot:empty { display: none; }
