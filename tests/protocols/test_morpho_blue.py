@@ -349,3 +349,14 @@ def test_describe():
         amount={"value": "10000000", "decimals": 6},
     )
     assert describe(a_order) == "Approve Morpho Blue to spend 10 USDC"
+
+
+def test_preflight_approve_needs_no_market_but_supply_does() -> None:
+    from core.protocols import registry
+
+    base = {"protocol": "morpho-blue", "token": "USDC"}
+    assert registry.preflight({**base, "function": "approve"}) == []
+    assert registry.preflight({**base, "function": "supply"})[0]["code"] == (
+        "ACCESS.MARKET_NOT_ALLOWED"
+    )
+    assert registry.preflight({**base, "function": "supply", "market": "usdc-wbtc"}) == []

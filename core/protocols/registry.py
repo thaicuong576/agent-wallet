@@ -133,7 +133,9 @@ def preflight(order: Mapping[str, Any]) -> list[dict[str, Any]]:
             }
         ]
     market = order.get("market")
-    if (market is not None and market not in spec.markets) or (spec.markets and market is None):
+    if (market is not None and market not in spec.markets) or (
+        spec.markets and market is None and order.get("function") != "approve"
+    ):
         return [
             {
                 "code": "ACCESS.MARKET_NOT_ALLOWED",
