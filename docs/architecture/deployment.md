@@ -53,6 +53,7 @@ Only variable names are declared (values remain in `.env`, which is never commit
 | `OPENAI_API_KEY` | (unset) | API key for LLM Planner and Reader |
 | `BASE_SEPOLIA_RPC_URL` | `https://sepolia.base.org` | JSON-RPC provider for Base Sepolia |
 | `IPS_PATH` | `contracts/examples/ips.valid.json` | Path to active Investment Policy Statement |
+| `AGENT_WALLET_RISK_SOURCE` | `onchain` | Risk inputs source for policy evaluation: `onchain` (default, live reads via RiskRouter) or `reference` (static reference data for offline demos and tests) |
 
 ## Volume backup and restore
 
