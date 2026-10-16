@@ -96,3 +96,7 @@ erDiagram
 - **`api/app.py`**: `PUT /tier` handles optional `preset_id`, validates it against available presets, verifies owner step-up signature against the active IPS hash, and reloads tenant policy under gateway lock.
 - **`core/agent/planner.py`**: `render_system_prompt` formats protocol descriptions, allowed tokens, and Morpho markets dynamically based on the active IPS universe.
 - **`ui/`**: Setup view renders a 2-option radio selector and passes the selected preset to `setTier` upon activation.
+
+## Testnet liquidity calibration
+
+Risk inputs are read from chain per protocol (`core/risk/router.py`), so the IPS thresholds must fit what exists on Base Sepolia. Aave USDC holds about 33 million USD there, Morpho's USDC/WBTC market about 30 thousand, the Uniswap USDC/WBTC pool about 2 thousand. The mainnet-sized minimum of 50 million USD would deny every order, so `conservative` sets `risk.min_pool_tvl_usd` to 10,000,000 and `diversified` to 1,000. Everything else in the presets is unchanged: the utilization ceiling (90%), the data age limit (2 hours) and the per-transaction and daily caps still apply, which is why the Morpho USDC/cbETH market (93.56% utilization, stale data) stays denied. These are testnet calibrations, not claims about mainnet safety; a mainnet preset would use mainnet-sized values.
