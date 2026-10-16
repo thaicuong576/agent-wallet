@@ -228,9 +228,10 @@ const msg = (role, text, steps = []) => ({
 });
 const input = (root) => find(root, (n) => n.tagName === "TEXTAREA")[0];
 const bubbles = (root) => byClass(root, "bubble");
+const rowTitles = (root) => byClass(root, "progress-title").map((n) => n.textContent);
 const out = {};
 
-// 1. send: Enter submits, the typing indicator shows while the job runs, history is reloaded
+// 1. send: Enter submits, the progress card shows before the request leaves, history is reloaded
 {
   const { srv, ctx, sleeps } = make({
     onSend: (body) => ({
@@ -254,14 +255,17 @@ const out = {};
   await tick();
   out.emptyText = root.textContent;
   const box = input(root);
-  const typingEl = byClass(root, "typing")[0];
   const seenLive = [];
-  const seenTyping = [];
+  const preSend = [];
   const api = ctx.api;
+  const origSend = api.chatSend;
+  api.chatSend = async (...args) => {
+    preSend.push(rowTitles(root)); // the card is already in the log while the POST is pending
+    return origSend(...args);
+  };
   const origJob = api.job;
   api.job = async (id) => {
-    seenTyping.push(typingEl.hidden ? "" : typingEl.textContent);
-    seenLive.push(byClass(root, "live").map((n) => n.textContent).join("|"));
+    seenLive.push(rowTitles(root));
     return origJob(id);
   };
   box.value = "Put 10 USDC to work in Aave";
@@ -276,9 +280,8 @@ const out = {};
   out.send = {
     body: post && post.body,
     csrf: post && post.headers["X-AW-CSRF"],
-    typing: seenTyping,
+    pre: preSend,
     live: seenLive,
-    typingHiddenAfter: typingEl.hidden,
     composerCleared: box.value === "",
     sleeps,
     bubbles: bubbles(root).map((b) => b.className),
@@ -522,16 +525,14 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
   let stopClicked = null;
   const origJob = ctx.api.job;
   ctx.api.job = async (id) => {
-    const live = byClass(root, "live")[0];
-    const chips = live ? byClass(live, "phase-chip") : [];
     const sendBtn = find(root, (n) => n.className === "stop" || n.className === "primary")[0];
     seen.push({
-      title: live ? byClass(live, "step-title")[0].textContent : "",
-      chips: chips.map((c) => c.className.split(" ")[1] + ":" + c.textContent),
+      rows: rowTitles(root),
+      cardStop: byClass(root, "progress-stop").length,
       stop: Boolean(sendBtn && sendBtn.className === "stop" && sendBtn.textContent === "Stop"),
     });
     if (seen.length === 2) {
-      const stopBtn = find(root, (n) => n.className === "stop")[0];
+      const stopBtn = find(root, (n) => n.className === "btn progress-stop")[0];
       stopClicked = Promise.resolve(stopBtn.listeners.click[0]());
     }
     return origJob(id);
@@ -617,8 +618,7 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
   const seen = [];
   const origJob = ctx.api.job;
   ctx.api.job = async (id) => {
-    const live = byClass(root, "live")[0];
-    seen.push(live ? live.textContent : "");
+    seen.push(rowTitles(root).slice(-1)[0] || "");
     return origJob(id);
   };
   await fire(button(root, "Why is this blocked?"), "click");
