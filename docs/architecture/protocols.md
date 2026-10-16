@@ -21,6 +21,7 @@ flowchart LR
 | `TokenSpec`, `usd_value(token, amount)` | `core/protocols/tokens.py` | `usd_source`: `stable` (pegged, sanity band), `aave_oracle` (`AaveOracle.getAssetPrice`, read once per call), `unavailable` |
 | Aave v3 and wallet specs | `core/protocols/aave.py` | registered on import; USDC and USDT lending (supply, withdraw, approve) and wallet transfers |
 | Aave Stata vaults | `core/protocols/aave_stata.py` | registered on import; ERC-4626 static aToken vaults for USDC and USDT (supply/deposit, withdraw, approve) |
+| Morpho Blue lending spec | `core/protocols/morpho_blue.py` | registered on import; supply and withdraw on whitelisted USDC markets (`usdc-wbtc`, `usdc-cbeth`) |
 | Derived constants | `core/protocols/addresses.py` | `SUPPORTED_PROTOCOLS`, `SUPPORTED_TOKENS`, `SUPPORTED_FUNCTIONS`, `PROTOCOL_ADDRESSES`, `TOKEN_ADDRESSES` are computed from the registry on first access |
 
 ## Valuation

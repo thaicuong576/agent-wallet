@@ -146,6 +146,10 @@ class PortfolioReader:
             raise PortfolioUnavailable(f"RPC returned empty response for {to}")
         return str(res)
 
+    def eth_call(self, to: str, data: str) -> str:
+        """Alias for call() used by Morpho Blue and generic contract callers."""
+        return self.call(to, data)
+
     def convert_to_assets(self, vault_address: str, shares: int) -> int:
         """Read convertToAssets(shares) for an ERC-4626 vault."""
         calldata = "0x07a2d13a" + eth_abi.encode(["uint256"], [shares]).hex()

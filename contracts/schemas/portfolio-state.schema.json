@@ -50,7 +50,8 @@
             "enum": [
               "wallet",
               "aave-v3",
-              "aave-stata"
+              "aave-stata",
+              "morpho-blue"
             ]
           },
           "balance": {

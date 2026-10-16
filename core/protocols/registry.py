@@ -47,6 +47,8 @@ class PositionReader(Protocol):
 
     def call(self, to: str, data: str) -> str: ...
 
+    def eth_call(self, to: str, data: str) -> str: ...
+
 
 @dataclass(frozen=True)
 class ProtocolSpec:
@@ -101,6 +103,7 @@ def _ensure_loaded() -> None:
     # Adapters register themselves when imported.
     import core.protocols.aave  # noqa: F401
     import core.protocols.aave_stata  # noqa: F401
+    import core.protocols.morpho_blue  # noqa: F401
 
 
 def get(protocol_id: str) -> ProtocolSpec | None:
@@ -122,7 +125,7 @@ def preflight(order: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Registry-level checks that need no IPS or state. Returns rule hits (empty means pass).
 
     - protocol has no registered spec: ACCESS.PROTOCOL_NOT_ENABLED
-    - market present but not listed by the spec: ACCESS.MARKET_NOT_ALLOWED
+    - market present but not listed by the spec, or missing when required: ACCESS.MARKET_NOT_ALLOWED
     """
     spec = get(str(order.get("protocol")))
     if spec is None:
@@ -133,7 +136,9 @@ def preflight(order: Mapping[str, Any]) -> list[dict[str, Any]]:
             }
         ]
     market = order.get("market")
-    if market is not None and market not in spec.markets:
+    if (market is not None and market not in spec.markets) or (
+        spec.markets and market is None and order.get("function") != "approve"
+    ):
         return [
             {
                 "code": "ACCESS.MARKET_NOT_ALLOWED",
