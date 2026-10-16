@@ -143,3 +143,86 @@ def test_add_funds_and_withdraw_open_their_dialogs() -> None:
 @needs_node
 def test_no_innerhtml_touched() -> None:
     assert overview()["innerHTMLTouches"] == 0
+
+
+@needs_node
+def test_waiting_note_leads_the_main_column_and_approvals_follow() -> None:
+    d = overview()["waiting"]
+    assert d["noteClass"] == "waiting-note"
+    assert d["noteText"] == "1 order is waiting for you."
+    assert d["review"] is True
+    assert d["afterNote"] == "Waiting for your approval"
+
+
+@needs_node
+def test_no_pending_order_means_no_waiting_note_and_no_approvals_card() -> None:
+    d = overview()["waiting"]
+    assert d["noneNotes"] == 0
+    assert d["noneApprovals"] is False
+
+
+@needs_node
+def test_side_column_cards_come_in_order() -> None:
+    assert overview()["sideTitles"] == ["Your wallet", "Today's limit", "Recent activity"]
+
+
+@needs_node
+def test_wallet_card_shows_short_address_and_network_and_opens_add_funds() -> None:
+    d = overview()["wallet"]
+    assert d["short"] == "0x1111…1111"
+    assert d["network"] is True
+    assert d["dialog"] == "ok"
+    assert "Add funds" in d["titles"]
+
+
+@needs_node
+def test_wallet_add_funds_is_disabled_with_a_title_without_agent() -> None:
+    d = overview()["walletNoAgent"]
+    assert d["disabled"] is True
+    assert d["title"] != ""
+
+
+@needs_node
+def test_limit_card_shows_amounts_progress_and_rules_link() -> None:
+    d = overview()["limit"]
+    assert d["spent"] is True
+    assert d["limit"] is True
+    assert d["role"] == "progressbar"
+    assert d["valuenow"] == "3"
+    assert d["rules"] == ["See rules", "#/rules"]
+
+
+@needs_node
+def test_limit_card_says_not_available_when_limits_reject() -> None:
+    assert overview()["limitNoData"] is True
+
+
+@needs_node
+def test_recent_activity_lists_three_newest_first() -> None:
+    d = overview()["recent"]
+    assert d["count"] == 3
+    assert d["newestFirst"] is True
+
+
+@needs_node
+def test_recent_activity_empty_and_failed_states() -> None:
+    d = overview()
+    assert d["recentEmpty"] is True
+    assert d["recentNoData"] is True
+    assert d["recentNoDataLimitOk"] is True
+
+
+@needs_node
+def test_each_side_card_failing_alone_leaves_the_other_two_rendered() -> None:
+    d = overview()["isolation"]
+    for case in ("wallet", "limit", "recent"):
+        assert d[case]["titles"] == ["Your wallet", "Today's limit", "Recent activity"]
+        assert d[case]["fallback"] is False
+    assert d["wallet"]["limitShows"] is True
+    assert d["wallet"]["recentLines"] == 3
+    assert d["limit"]["walletShows"] is True
+    assert d["limit"]["limitShows"] is False
+    assert d["limit"]["recentLines"] == 3
+    assert d["recent"]["walletShows"] is True
+    assert d["recent"]["limitShows"] is True
+    assert d["recent"]["recentLines"] == 0
