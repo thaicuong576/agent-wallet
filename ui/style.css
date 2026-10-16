@@ -3,6 +3,7 @@
    font stack only: no web fonts, no CDN. No shadows: surfaces are separated by a hairline.
    Dark mode redefines the same names (ink and canvas swap). */
 :root {
+  color-scheme: light dark;
   /* DESIGN.md tokens */
   --canvas: #ffffff;
   --canvas-soft: #fbf9f8;
@@ -184,6 +185,8 @@ main { flex: 1 0 auto; width: 100%; max-width: 1280px; margin: 0 auto; padding: 
 main:focus { outline: none; }
 .foot { max-width: 1280px; width: 100%; margin: 0 auto; padding: 0 var(--gutter) 16px; font-size: 12px; color: var(--faint); }
 
+.chat-scroll, .rail, .side { scrollbar-width: thin; scrollbar-color: var(--field) transparent; }
+
 /* ---- common ---- */
 h1 { font: 400 28px/1.2 var(--font-display); margin: 0 0 4px; }
 h2 { font-size: 16px; line-height: 1.3; margin: 0; }
@@ -191,7 +194,7 @@ h2 { font-size: 16px; line-height: 1.3; margin: 0; }
 .note { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
 .faint { color: var(--faint); }
 .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); padding: 20px; min-width: 0; }
-.label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.label { font-size: 12px; color: var(--muted); }
 .big { font-family: var(--font-display); font-size: 32px; font-weight: 400; margin-top: 6px; overflow-wrap: anywhere; }
 .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
@@ -228,7 +231,7 @@ label { display: block; margin: 12px 0 4px; font-size: 13px; font-weight: 600; }
 label.inline { display: inline; font-weight: 400; }
 .chip {
   display: inline-block;
-  font-size: 11px;
+  font-size: 12px;
   padding: 3px 8px;
   border-radius: 999px;
   background: var(--chip);
@@ -290,7 +293,7 @@ label.inline { display: inline; font-weight: 400; }
 .step-meta { font-size: 12px; color: var(--faint); margin: 4px 0 0; }
 .step-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 45%; text-align: right; font-size: 12px; }
 .step-side a { color: var(--link); }
-.state-word { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.state-word { font-size: 12px; font-weight: 700; color: var(--muted); }
 .step-card.done { background: var(--done-bg); border-color: var(--done-border); }
 .step-card.done .step-icon { background: var(--green); }
 .step-card.blocked, .step-card.fail { background: var(--red-bg); border-color: var(--red-border); }
@@ -314,7 +317,7 @@ label.inline { display: inline; font-weight: 400; }
 .rail-new { flex: 1 1 auto; text-align: left; }
 .rail-close { display: none; }
 .rail-list { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.rail-group { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; margin-top: 10px; }
+.rail-group { font-size: 12px; color: var(--muted); margin-top: 10px; }
 .rail-row {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
   padding: 10px 12px; border-radius: var(--r-card); border-color: transparent; background: transparent;
@@ -326,12 +329,13 @@ label.inline { display: inline; font-weight: 400; }
 .rail-row:disabled { background: transparent; border-color: transparent; color: var(--faint); }
 .rail-title { font-size: 14px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-meta { font-size: 12px; color: var(--muted); }
-.rail-meta.bad { color: var(--red); }
+.rail-meta.bad { color: var(--ink); }
+.rail-meta.bad::before { content: "✕ "; color: var(--red); }
 .rail-row.active .rail-meta { color: var(--on-accent); }
 .rail-backdrop { position: fixed; inset: 0; background: rgba(22, 21, 19, 0.45); z-index: 40; }
 .rail-backdrop[hidden] { display: none; }
 .phase-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.phase-chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; background: var(--chip); color: var(--faint); }
+.phase-chip { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: var(--chip); color: var(--faint); }
 .phase-chip.passed { background: var(--green-bg); color: var(--green); }
 .phase-chip.current { background: var(--accent-gold-soft); color: var(--on-accent); font-weight: 600; }
 .step-card.running { background: var(--chip); }
@@ -402,7 +406,7 @@ label.inline { display: inline; font-weight: 400; }
 .frozen-card p { margin: 2px 0 0; font-size: 14px; }
 .notice-card { background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: var(--r-step); padding: 12px 16px; font-size: 14px; }
 .notice-card p { margin: 0 0 8px; }
-.side .card { padding: 20px; border-radius: var(--r-stat); }
+.side .card { padding: 20px; border-radius: var(--r-card); }
 .side .small-line { font-size: 13px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
 .side .gas-line { font-size: 15px; margin-top: 6px; }
 
@@ -426,7 +430,7 @@ label.inline { display: inline; font-weight: 400; }
 .job-panel { margin-top: 16px; background: var(--ground); }
 
 /* ---- activity ---- */
-.verdict { border: 1px solid var(--border); border-left-width: 6px; border-radius: var(--r-step); padding: 10px 14px; margin: 12px 0; background: var(--card); }
+.verdict { border: 1px solid var(--border); border-radius: var(--r-step); padding: 10px 14px; margin: 12px 0; background: var(--card); }
 .verdict.ok { border-left-color: var(--green); }
 .verdict.ok strong { color: var(--green); }
 .verdict.bad { border-left-color: var(--red); }
@@ -517,6 +521,27 @@ button.solid-danger:hover { filter: brightness(0.92); }
 .setup-card button.primary { border-radius: var(--r-ctl); padding: 12px 20px; font-size: 15px; min-height: 46px; }
 .setup-card button.primary:disabled { background: var(--chip); color: var(--faint); }
 
+/* ---- desktop (901px and up): one row header; the chat screen fits the viewport ---- */
+@media (min-width: 901px) {
+  .hdr { flex-wrap: nowrap; gap: 8px 16px; min-height: 63px; }
+  .hdr-right { flex-wrap: nowrap; gap: 8px; }
+  .hdr-right .pill { white-space: nowrap; }
+  body.screen-chat .hdr { max-width: 1600px; }
+  .pill.addr { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  body.screen-chat { height: 100dvh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+  body.screen-chat main { max-width: 1600px; min-height: 0; overflow: hidden; padding-bottom: 0; }
+  body.screen-chat .foot { max-width: 1600px; padding-top: 6px; }
+  body.screen-chat .chat-layout { height: 100%; min-height: 0; align-items: stretch; grid-template-columns: 240px minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr); }
+  body.screen-chat .rail, body.screen-chat .side { min-height: 0; overflow-y: auto; }
+  body.screen-chat .chat-card { height: 100%; min-height: 0; max-height: none; }
+  body.screen-chat .chat-scroll > * { width: 100%; max-width: 760px; margin-inline: auto; }
+  body.screen-chat .chat-scroll > .typing { width: auto; margin-inline: 0 auto; }
+  body.screen-chat .chat-scroll > div:first-child:not(:empty) { position: sticky; top: 0; z-index: 2; background: var(--card); padding-bottom: 12px; }
+}
+@media (min-width: 901px) and (max-width: 1100px) {
+  body.screen-chat .chat-layout { grid-template-columns: 200px minmax(0, 1fr) 260px; }
+}
 @media (max-width: 900px) {
   :root { --gutter: 16px; }
   .hdr { gap: 8px 12px; }

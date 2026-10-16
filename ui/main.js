@@ -229,7 +229,7 @@ function boot() {
       if (a.getAttribute("href") === "#/" + name) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     }
-    document.body.className = name === "setup" ? "screen-setup" : "";
+    document.body.className = "screen-" + name;
     if (!force && name === current) return;
     current = name;
     root.replaceChildren(VIEWS[name].render(ctx));
