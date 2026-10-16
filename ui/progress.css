@@ -1,1 +1,100 @@
 /* Staged progress card (ui/views/progress.js). Owned by the progress work; tokens come from style.css. */
+.progress-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  overflow: hidden;
+}
+.progress-head {
+  margin: 0;
+  padding: 12px 16px;
+  font-weight: 600;
+}
+.progress-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.progress-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-soft);
+}
+.progress-row.now {
+  background: var(--agent-bubble);
+}
+.progress-icon {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+}
+.progress-row.done .progress-icon {
+  background: var(--green);
+  color: var(--on-solid);
+}
+.progress-row.now .progress-icon {
+  background: var(--ink);
+  color: var(--canvas);
+}
+.progress-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.progress-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.progress-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.progress-sub:empty {
+  display: none;
+}
+.progress-time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--faint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.progress-note {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.progress-note:empty {
+  display: none;
+}
+.progress-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-soft);
+}
+.progress-hint {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--muted);
+}
+.progress-stop {
+  min-height: 36px;
+}
+@media (max-width: 900px) {
+  .progress-stop {
+    min-height: 44px;
+  }
+}
