@@ -544,3 +544,108 @@ def test_system_prompt_gives_exact_field_rules_per_protocol():
     assert "Exact field rules per protocol" in prompt
     assert "- morpho-blue:" in prompt and "REQUIRED on supply and withdraw" in prompt
     assert "- aave-stata:" in prompt and "no market field" in prompt
+
+
+def test_owner_instruction_prompt_and_payload_under_diversified_ips():
+    """Regression test: captures system prompt and user payload under diversified IPS
+    with realistic multi-protocol portfolio state, asserting what must and must not be present.
+    """
+    fixture_path = Path("tests/agent/fixtures/portfolio_state_multi_protocol.json")
+    state = json.loads(fixture_path.read_text("utf-8"))
+    ips = json.loads(Path("contracts/presets/diversified.json").read_text("utf-8"))
+
+    client = _CaptureClient()
+    instruction = "Withdraw 4 USDC from the Aave stata vault and 4 USDC from Morpho USDC/WBTC."
+    Planner(client=client).plan(
+        state,
+        ips,
+        None,
+        None,
+        owner_instruction=instruction,
+    )
+
+    payload = json.loads(client.user)
+    system = client.system
+
+    # 1. User payload assertions: what MUST be in user payload
+    assert "owner_instruction" in payload
+    assert (
+        payload["owner_instruction"]["text"]
+        == "Withdraw 4 USDC from the Aave stata vault and 4 USDC from Morpho USDC/WBTC."
+    )
+    assert payload["user_request"] == "Fulfill owner instruction."
+    assert set(payload["ips_summary"]) == {"universe"}
+
+    # Positions are preserved
+    positions = payload["portfolio_state"]["positions"]
+    locs = {p["location"] for p in positions}
+    assert {"wallet", "aave-stata", "morpho-blue"} <= locs
+
+    # 2. User payload assertions: what MUST NOT be in user payload
+    assert "limits" not in payload["ips_summary"]
+    assert "allocation" not in payload["ips_summary"]
+    assert "spent_24h_usd" not in payload["portfolio_state"]
+    assert "tx_count_1h" not in payload["portfolio_state"]
+    assert "Maintain target allocation" not in payload["user_request"]
+    for pos in positions:
+        assert "weight_bps" not in pos
+
+    # 3. System prompt assertions: what MUST be in system prompt
+    assert "morpho-blue" in system
+    assert "aave-stata" in system
+    assert "uniswap-v3" in system
+    assert 'Owner market names like "USDC/WBTC" map to "usdc-wbtc"' in system
+    assert '"Morpho" or "Morpho Blue" in owner requests maps to protocol "morpho-blue"' in system
+    assert '"Aave stata vault" or "stata" in owner requests maps to protocol "aave-stata"' in system
+    assert '"Uniswap" swap in owner requests maps to protocol "uniswap-v3"' in system
+    assert "A withdraw needs no approve" in system
+    assert "volatile" in system.lower()
+    assert "null" in system.lower()
+
+    # 4. System prompt assertions: what MUST NOT be in system prompt
+    assert "mint" not in system.lower()
+
+
+def test_candidate_order_null_fields_stripped_before_validation():
+    """Null values in candidate orders (e.g. optional fields returned as null) are stripped."""
+    canned_response = json.dumps(
+        {
+            "action": "propose",
+            "orders": [
+                {
+                    "schema_version": 1,
+                    "order_id": str(uuid.uuid4()),
+                    "created_at": "2026-10-16T12:00:00Z",
+                    "proposed_by": "planner",
+                    "protocol": "morpho-blue",
+                    "function": "approve",
+                    "token": "USDC",
+                    "amount": {"value": "5000000", "decimals": 6},
+                    "recipient": "self",
+                    "market": None,
+                },
+                {
+                    "schema_version": 1,
+                    "order_id": str(uuid.uuid4()),
+                    "created_at": "2026-10-16T12:00:00Z",
+                    "proposed_by": "planner",
+                    "protocol": "morpho-blue",
+                    "function": "supply",
+                    "token": "USDC",
+                    "amount": {"value": "5000000", "decimals": 6},
+                    "recipient": "self",
+                    "market": "usdc-wbtc",
+                },
+            ],
+        }
+    )
+    client = ScriptedClient(canned_response)
+    planner = Planner(client=client)
+    fix_path = Path("tests/agent/fixtures/portfolio_state_multi_protocol.json")
+    state = json.loads(fix_path.read_text("utf-8"))
+    ips = json.loads(Path("contracts/presets/diversified.json").read_text("utf-8"))
+    result = planner.plan(state, ips, None, owner_instruction="Lend 5 USDC on Morpho Blue")
+    assert not result.is_no_action
+    assert len(result.orders) == 2
+    assert "market" not in result.orders[0]
+    assert result.orders[1]["market"] == "usdc-wbtc"
