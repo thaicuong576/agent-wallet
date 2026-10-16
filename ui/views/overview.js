@@ -48,7 +48,7 @@ export function render(ctx) {
     const pending = records ? pendingOf(records) : [];
     const approvals = pending.length ? approvalsCard(ctx) : null;
     const parts = [];
-    if (approvals) parts.push(waitingBanner(pending.length, approvals));
+    if (approvals) parts.push(waitingNote(pending.length, approvals));
     if (tier && tier.emergency_stop) parts.push(frozenCard(el));
     if (p.status !== "fulfilled") {
       parts.push(failureCard(p.reason));
@@ -67,8 +67,8 @@ export function render(ctx) {
   }
 
   // Shown above the main column while orders wait. Review scrolls to the approvals card on the side.
-  function waitingBanner(n, approvals) {
-    const box = el("div", "banner");
+  function waitingNote(n, approvals) {
+    const box = el("div", "waiting-note");
     box.setAttribute("role", "status");
     box.append(el("span", "", n === 1 ? "1 order is waiting for you." : n + " orders are waiting for you."));
     const review = el("button", "", "Review");

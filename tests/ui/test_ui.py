@@ -161,8 +161,6 @@ def test_no_banner_element_and_testnet_custody_are_chip_footer_and_setup_text() 
     # Views are mounted in #view only; no script writes to the shell markup of the notice.
     assert 'getElementById("view")' in (UI / "main.js").read_text(encoding="utf-8")
     for name in JS_FILES:
-        if name == "views/overview.js":  # the Overview "waiting for you" banner is a status line, not the old notice bar
-            continue
         assert "banner" not in (UI / name).read_text(encoding="utf-8").lower(), name
 
 
