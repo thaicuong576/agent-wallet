@@ -104,6 +104,7 @@ def _ensure_loaded() -> None:
     import core.protocols.aave  # noqa: F401
     import core.protocols.aave_stata  # noqa: F401
     import core.protocols.morpho_blue  # noqa: F401
+    import core.protocols.uniswap_v3  # noqa: F401
 
 
 def get(protocol_id: str) -> ProtocolSpec | None:
