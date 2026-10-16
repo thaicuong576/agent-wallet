@@ -417,15 +417,15 @@ def test_top_up_sends_eth_to_agent_registers_hash_and_polls() -> None:
 def test_mint_job_is_polled_and_its_record_links_to_basescan() -> None:
     m = flows()["mint"]
     assert m["polls"] == 3
-    assert m["sleeps"] == [2000, 3000]  # poll every 2 s, backing off toward 5 s
+    assert m["sleeps"] == [750, 750]  # the fast first polls (see pollDelay)
     assert "Executed" in m["text"] and "Minted 1000 USDC" in m["text"]
     external = [u for u in m["links"] if u.startswith("http")]
     assert external == [f"https://sepolia.basescan.org/tx/{TX}"]
 
 
 @needs_node
-def test_poll_interval_starts_at_2s_and_caps_at_5s() -> None:
-    assert flows()["polling"] == [2000, 3000, 4000, 5000, 5000, 5000]
+def test_poll_interval_is_fast_at_first_then_backs_off() -> None:
+    assert flows()["polling"] == [750, 750, 750, 750, 750, 1500]
 
 
 @needs_node
@@ -717,17 +717,22 @@ def test_rules_tab_reads_the_limits_route() -> None:
 
 
 @needs_node
-def test_chat_send_with_enter_shows_typing_then_step_cards() -> None:
+def test_chat_send_with_enter_shows_progress_then_step_cards() -> None:
     f = chat_flows()
     assert "No messages yet." in f["emptyText"]
     assert f["counterTyped"] == "27 / 500"
     assert f["postsAfterShiftEnter"] == 0  # Shift+Enter is a newline
     s = f["send"]
     assert s["body"] == {"message": "Put 10 USDC to work in Aave"} and s["csrf"] == "1"
-    # The live step card replaces the old typing line; a phase the page does not know is "Working".
-    assert s["live"] == ["…Getting readyWaiting to start"] * 2 + ["…Working"]
-    assert s["typingHiddenAfter"] is True and s["composerCleared"] is True
-    assert s["sleeps"] == [2000, 3000]  # the poll cadence of the other jobs
+    # The progress card is in the log before the POST resolves; a phase the page does not know is "Working".
+    assert s["pre"] == [["Sending your message"]]
+    assert s["live"] == [
+        ["Message received"],
+        ["Message received", "Waiting to start"],
+        ["Message received", "Waiting to start", "Working on your request"],
+    ]
+    assert s["composerCleared"] is True
+    assert s["sleeps"] == [750, 750]  # the fast first polls (see pollDelay)
     assert s["bubbles"] == ["bubble user", "bubble agent"]
     assert s["cards"] == 2 and s["saysChips"] == 1
     assert "Approved 10 USDC for the Aave pool." in s["text"] and "Executed" in s["text"]
@@ -798,24 +803,17 @@ TX_CHAT = "0x" + "cd" * 32
 
 
 @needs_node
-def test_chat_phase_strip_and_stop_button() -> None:
+def test_chat_progress_card_and_stop_button() -> None:
     p = chat_flows()["phases"]
-    titles = [x["title"] for x in p["seen"]]
-    assert titles == [
-        "Getting ready",
-        "Getting ready",
-        "Checking your rules",
-        "Sent to Base Sepolia",
+    assert p["seen"][-1]["rows"] == [
+        "Message received",
+        "Waiting to start",
+        "Working on your request",
+        "Sending to Base Sepolia",
         "Confirming on Base Sepolia",
     ]
-    assert all(x["stop"] for x in p["seen"])  # Send is Stop while the job is queued or running
-    assert p["seen"][2]["chips"][0].startswith("current:")
-    assert [c.split(":")[0] for c in p["seen"][4]["chips"]] == [
-        "passed",
-        "passed",
-        "current",
-        "ahead",
-    ]
+    # Send is Stop while the job is queued or running, and the card has its own Stop button
+    assert all(x["stop"] and x["cardStop"] == 1 for x in p["seen"])
     assert p["cancelPosts"] == 1 and p["csrf"] == "1"
     assert p["sendLabelAfter"] == ["Send"]  # back to Send once the job ended
     assert p["skipped"] == 1 and p["skipText"] is True
@@ -837,7 +835,7 @@ def test_chat_limit_line_and_quick_fixes_never_send_on_their_own() -> None:
     assert q["composer"] == "Put 50 USDC to work in Aave" and q["postsAfterTry"] == 0
     assert q["asked"] == {"message": "Why is this blocked?"}
     assert q["composerAfter"] == q["composer"]  # the question did not touch the composer
-    assert q["unknownPhase"][-1].endswith("Working")
+    assert q["unknownPhase"][-1] == "Working on your request"
 
 
 @needs_node

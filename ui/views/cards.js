@@ -81,57 +81,10 @@ function addRuleChips(el, side, codes) {
   for (const code of codes) side.append(el("span", "chip code", code));
 }
 
-// ---- live job: phase strip and the cards around it ---------------------------------------
-// `phase` comes from GET /jobs/{id} and each agent message (contract C1). Unknown values are
-// tolerated: they show a plain "Working" line and no chips.
-export const PHASE_CHIPS = [
-  { phase: "rules_check", label: "Rules checked" },
-  { phase: "sent", label: "Sent" },
-  { phase: "confirming", label: "Confirming" },
-  { phase: "done", label: "Done" },
-];
-const PHASE_WORDS = {
-  queued: { title: "Getting ready", sub: "Waiting to start" },
-  rules_check: { title: "Checking your rules", sub: "Running · nothing has been sent yet" },
-  sent: { title: "Sent to Base Sepolia", sub: "Running · waiting for the network" },
-  confirming: { title: "Confirming on Base Sepolia", sub: "Running · waiting for the receipt" },
-  done: { title: "Done", sub: "Finished" },
-};
+// ---- live job: the cards around it ---------------------------------------------------------
+// The live progress card is ui/views/progress.js. `phase` comes from GET /jobs/{id} and each
+// agent message (contract C1).
 export const ACTIVE_PHASES = new Set(["queued", "rules_check", "sent", "confirming"]);
-
-// Chips Rules checked, Sent, Confirming, Done: green once passed, gold for the current one.
-export function phaseStrip(el, phase) {
-  const at = PHASE_CHIPS.findIndex((c) => c.phase === phase);
-  const strip = el("div", "phase-strip");
-  strip.setAttribute("role", "list");
-  strip.setAttribute("aria-label", "Progress of this order");
-  PHASE_CHIPS.forEach((c, i) => {
-    const state = phase === "done" || i < at ? "passed" : i === at ? "current" : "ahead";
-    const chip = el("span", "phase-chip " + state, (state === "passed" ? "✓ " : "") + c.label);
-    chip.setAttribute("role", "listitem");
-    if (state === "current") chip.setAttribute("aria-current", "step");
-    strip.append(chip);
-  });
-  return strip;
-}
-
-// The live card of a running job. `limit` is an optional node (the limit line).
-export function runningCard(ctx, phase, limit) {
-  const { el } = ctx;
-  const known = Object.prototype.hasOwnProperty.call(PHASE_WORDS, phase);
-  const words = known ? PHASE_WORDS[phase] : { title: "Working", sub: "" };
-  const li = el("li", "step-card running");
-  const icon = el("span", "step-icon", "…");
-  icon.setAttribute("aria-hidden", "true");
-  const body = el("div", "step-body");
-  body.append(el("p", "step-title", words.title));
-  if (words.sub) body.append(el("p", "step-sub", words.sub));
-  if (known && phase !== "queued") body.append(phaseStrip(el, phase));
-  if (limit) body.append(limit);
-  li.append(icon, body);
-  li.setAttribute("aria-label", "Agent progress: " + words.title);
-  return li;
-}
 
 // A job that failed after the order was sent: the outcome is not known, so say so.
 export function uncertainCard(ctx) {

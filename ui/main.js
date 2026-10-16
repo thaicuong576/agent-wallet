@@ -38,10 +38,9 @@ export function describeError(err) {
 }
 
 const TERMINAL = new Set(["succeeded", "denied", "failed", "interrupted"]);
-// Design section 10: poll every 2 s, backing off to 5 s.
-export const POLL_START_MS = 2000;
-export const POLL_MAX_MS = 5000;
-export const pollDelay = (attempt) => Math.min(POLL_START_MS + attempt * 1000, POLL_MAX_MS);
+// The owner should see a change within a second, so poll fast at first: 750 ms for the first
+// seven polls, 1.5 s until about 20 s, then 3 s. The loop in pollJob stops after about five minutes.
+export const pollDelay = (attempt) => (attempt < 7 ? 750 : attempt < 22 ? 1500 : 3000);
 
 export function makeCtx({ api, wallet, sleep }) {
   const state = { me: null, tier: null };
@@ -62,7 +61,7 @@ export function makeCtx({ api, wallet, sleep }) {
     // `onUpdate` sees every poll result so a view can show "queued" and "running".
     async pollJob(jobId, onUpdate) {
       let job = null;
-      for (let i = 0; i < 80; i++) {
+      for (let i = 0; i < 120; i++) {
         job = await api.job(jobId);
         if (onUpdate) onUpdate(job);
         if (TERMINAL.has(job.status)) return job;
