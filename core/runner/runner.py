@@ -6,6 +6,8 @@ audit write path: every record it returns was appended by the gateway.
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,6 +18,8 @@ from core.agent.reader import Reader
 from core.gateway.gateway import Gateway
 from core.policy.ips import LoadedIps
 from core.runner.portfolio import PortfolioUnavailable, WalletSnapshot
+
+timing_log = logging.getLogger("agent_wallet.timing")
 
 REASON_MAX_LEN = 500
 MAX_INSTRUCTION_ORDERS = 4
@@ -121,14 +125,26 @@ class Runner:
         left over is recorded as a skipped step with the reason.
         """
         result = InstructionResult()
+        t0 = time.perf_counter()
         try:
             snapshot = self.portfolio.read(now)
         except PortfolioUnavailable:
+            timing_log.info(
+                "phase=portfolio_read elapsed=%.4fs status=failed",
+                time.perf_counter() - t0,
+            )
             result.records.append(self._no_action("portfolio unavailable", now))
             result.plan_reason = "portfolio unavailable"
             return result
+        timing_log.info(
+            "phase=portfolio_read elapsed=%.4fs status=ok",
+            time.perf_counter() - t0,
+        )
 
+        t0 = time.perf_counter()
         plan = self.planner.plan(snapshot.state, self.ips, None, owner_instruction=instruction)
+        timing_log.info("phase=planner elapsed=%.4fs", time.perf_counter() - t0)
+
         result.reply = getattr(plan, "reply", None)
         result.warnings = list(plan.warnings)
         result.validation_errors = list(plan.validation_errors)
@@ -156,15 +172,31 @@ class Runner:
                 result.skipped += 1
                 continue
             if result.records:
+                t0 = time.perf_counter()
                 try:
                     self.portfolio.read(now)
                 except PortfolioUnavailable:
+                    timing_log.info(
+                        "phase=portfolio_read elapsed=%.4fs status=failed",
+                        time.perf_counter() - t0,
+                    )
                     blocker = "the portfolio could not be read."
                     what = f"{order.get('function', 'step')} ({_amount_text(order)})"
                     result.records.append(self._no_action(f"{SKIP_PREFIX} {what}: {blocker}", now))
                     result.skipped += 1
                     continue
+                timing_log.info(
+                    "phase=portfolio_read elapsed=%.4fs status=ok",
+                    time.perf_counter() - t0,
+                )
+            t0 = time.perf_counter()
             record = self.gateway.propose(order)
+            timing_log.info(
+                "phase=gateway order_id=%s elapsed=%.4fs outcome=%s",
+                order.get("order_id"),
+                time.perf_counter() - t0,
+                record.get("outcome"),
+            )
             result.records.append(record)
             outcome = str(record.get("outcome"))
             if outcome != "executed":

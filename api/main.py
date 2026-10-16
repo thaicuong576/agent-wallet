@@ -10,9 +10,12 @@ under `AGENT_WALLET_DATA_DIR`. With Postgres the app applies migrations only whe
 the database is behind (fail closed).
 """
 
+import http.client
 import json
 import os
 import pathlib
+import threading
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
@@ -49,16 +52,68 @@ DEFAULT_IPS_PATH = (
 
 def http_rpc(url: str, timeout: float = 30.0) -> Callable[[str, list[Any]], Any]:
     """JSON-RPC over HTTPS with the standard library. The URL comes only from the environment."""
+    parsed = urllib.parse.urlsplit(url)
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname or "localhost"
+    port = parsed.port
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+
+    local = threading.local()
+
+    def _create_connection() -> http.client.HTTPConnection:
+        if scheme == "https":
+            return http.client.HTTPSConnection(host, port=port or 443, timeout=timeout)
+        return http.client.HTTPConnection(host, port=port or 80, timeout=timeout)
+
+    def _get_connection() -> http.client.HTTPConnection:
+        conn = getattr(local, "conn", None)
+        if conn is None:
+            conn = _create_connection()
+            local.conn = conn
+        return conn
+
+    def _reset_connection() -> None:
+        conn = getattr(local, "conn", None)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            local.conn = None
 
     def call(method: str, params: list[Any]) -> Any:
-        payload = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
-        req = urllib.request.Request(
-            url,
-            data=payload.encode(),
-            headers={"Content-Type": "application/json", "User-Agent": "agent-wallet/0.1"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - env URL only
-            body = json.loads(resp.read())
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        ).encode()
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "agent-wallet/0.1",
+            "Connection": "keep-alive",
+        }
+
+        def _send(conn: http.client.HTTPConnection) -> bytes:
+            conn.request("POST", path, body=payload, headers=headers)
+            resp = conn.getresponse()
+            try:
+                data = resp.read()
+            finally:
+                if resp.will_close:
+                    _reset_connection()
+            if resp.status < 200 or resp.status >= 300:
+                raise RuntimeError(f"{method} failed with HTTP {resp.status}")
+            return data
+
+        conn = _get_connection()
+        try:
+            data = _send(conn)
+        except (http.client.HTTPException, ConnectionError, OSError):
+            _reset_connection()
+            conn = _get_connection()
+            data = _send(conn)
+
+        body = json.loads(data)
         if body.get("error"):
             raise RuntimeError(f"{method} failed")
         return body["result"]

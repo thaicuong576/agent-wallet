@@ -260,3 +260,20 @@ def test_run_instruction_refuses_a_plan_of_more_than_four_orders(tmp_path: Path)
     result = runner.run_instruction("do a lot", NOW)
     assert [r["outcome"] for r in result.records] == ["no_action"]
     assert result.validation_errors and stack.signer.calls == []
+
+
+def test_run_instruction_emits_timing_logs(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    caplog.set_level(logging.INFO, logger="agent_wallet.timing")
+    stack, runner = _instruction_runner(tmp_path, propose_json(make_order()))
+    result = runner.run_instruction("Put 10 USDC to work in Aave", NOW)
+    assert [r["outcome"] for r in result.records] == ["executed"]
+
+    timing_records = [r for r in caplog.records if r.name == "agent_wallet.timing"]
+    phases = [r.message for r in timing_records]
+    assert any("phase=portfolio_read" in m for m in phases)
+    assert any("phase=planner" in m for m in phases)
+    assert any("phase=gateway" in m for m in phases)
