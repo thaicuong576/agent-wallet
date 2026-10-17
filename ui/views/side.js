@@ -205,9 +205,16 @@ export function historyRail(ctx, { onSelect, onNew }) {
     if (failed && !items.length) {
       list.append(el("p", "note", "Conversations are not available right now."));
     }
-    const rows = items.map((t) => ({ id: t.id, title: t.title, at: t.last_message_at, status: t.status }));
+    const rows = items.map((t) => ({
+      id: t.id === "default" ? null : t.id,
+      title: t.title,
+      at: t.last_message_at,
+      status: t.status,
+    }));
     // The implicit default conversation is reachable again once another one is open.
-    if (active !== null) rows.push({ id: null, title: "Earlier chat", at: "", status: "" });
+    if (active !== null && !rows.some((r) => r.id === null)) {
+      rows.push({ id: null, title: "Earlier chat", at: "", status: "" });
+    }
     for (const group of GROUPS) {
       const inGroup = rows.filter((r) => (r.at ? threadGroup(r.at) : "Earlier") === group);
       if (!inGroup.length) continue;
@@ -263,13 +270,16 @@ export function historyRail(ctx, { onSelect, onNew }) {
       paint();
     },
     setActive(id) {
-      active = id;
+      active = id === "default" || !id ? null : id;
       paint();
     },
     setBusy(b) {
       busy = Boolean(b);
       paint();
     },
-    title: (id) => (items.find((t) => t.id === id) || {}).title || "",
+    title: (id) => {
+      const clean = id === "default" || !id ? null : id;
+      return (items.find((t) => (t.id === "default" ? null : t.id) === clean) || {}).title || "";
+    },
   };
 }

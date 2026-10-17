@@ -925,13 +925,13 @@ def test_chat_deep_link_and_404_fallback() -> None:
     assert d["deepLinkSelected"] == "t2"
     assert d["deepLinkTitle"] == "Thread 2"
     assert "YouHello t2" in d["deepLinkBubbles"]
-    assert d["unknownFallbackSelected"] == "t1"
-    assert d["unknownFallbackTitle"] == "Thread 1"
-    assert d["unknownFallbackHash"] == "#/chat/t1"
+    assert d["unknownFallbackSelected"] == "unknown_thread_id"
+    assert d["unknownFallbackTitle"] == "New chat"
+    assert d["unknownFallbackHash"] == "#/chat/unknown_thread_id"
     assert d["unknownStatus"] == ""
-    assert d["notFoundFallbackSelected"] == "t1"
+    assert d["notFoundFallbackSelected"] is None
     assert d["notFoundStatus"] == ""
-    assert d["notFoundHash"] == "#/chat/t1"
+    assert d["notFoundHash"] == "#/chat"
 
 
 @needs_node
@@ -978,3 +978,14 @@ def test_chat_title_refresh_after_first_message() -> None:
     assert t["updatedImmediately"] is True
     assert "What is my balance" in t["headerTitleBeforeJobDone"]
     assert "What is my balance" in t["railTitleBeforeJobDone"]
+
+
+@needs_node
+def test_chat_new_chat_never_jumps_to_default_on_send() -> None:
+    r = chat_flows()["newChatDefaultJumpRepro"]
+    assert r["threadAfterNew"] == "tnew"
+    assert r["hashAfterNew"] == "#/chat/tnew"
+    assert r["jumpedToDefault"] is False
+    assert r["stayedInNewThread"] is True
+    assert r["threadAfterSend"] == "tnew"
+    assert r["hashAfterSend"] == "#/chat/tnew"

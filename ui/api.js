@@ -586,25 +586,29 @@ export function createApi({
       fixtures ? fixtureCall("policy", { preset_id: presetId }) : noPolicyRoute(),
     run: (opts) => call("run", "POST", ROUTES.runs, { body: opts || {} }, opts || {}),
     // `threadId` is optional everywhere: absent means the implicit default conversation.
-    chatSend: (message, threadId) =>
-      call(
+    chatSend: (message, threadId) => {
+      const tid = threadId === "default" || !threadId ? undefined : threadId;
+      return call(
         "chatSend",
         "POST",
         ROUTES.chat,
-        { body: threadId ? { message, thread_id: threadId } : { message } },
-        { message, threadId },
-      ),
-    chat: (limit = 50, threadId) =>
-      call(
+        { body: tid ? { message, thread_id: tid } : { message } },
+        { message, threadId: tid || null },
+      );
+    },
+    chat: (limit = 50, threadId) => {
+      const tid = threadId === "default" || !threadId ? undefined : threadId;
+      return call(
         "chat",
         "GET",
         ROUTES.chat +
           "?limit=" +
           encodeURIComponent(limit) +
-          (threadId ? "&thread_id=" + encodeURIComponent(threadId) : ""),
+          (tid ? "&thread_id=" + encodeURIComponent(tid) : ""),
         {},
-        { limit, threadId },
-      ),
+        { limit, threadId: tid || null },
+      );
+    },
     threads: (limit = 30) =>
       call("threads", "GET", ROUTES.threads + "?limit=" + encodeURIComponent(limit)),
     newThread: () => call("newThread", "POST", ROUTES.threads, { body: {} }),

@@ -179,3 +179,14 @@ def test_newest_empty_thread_isolated_between_owners(backend) -> None:
     t = a.chat.create_thread(NOW)
     assert a.chat.newest_empty_thread() == {"id": t["id"], "title": "New chat"}
     assert b.chat.newest_empty_thread() is None
+
+
+def test_just_created_empty_thread_sorts_first(stores) -> None:
+    stores.chat.append("user", "legacy hello", None, NOW)
+    thread = stores.chat.create_thread(NOW)
+    threads = stores.chat.list_threads()
+    assert len(threads) == 2
+    assert threads[0]["id"] == thread["id"]
+    assert threads[0]["last_message_at"] == "2026-10-14T12:00:00Z"
+    assert threads[1]["id"] == "default"
+    assert threads[1]["last_message_at"] == "2026-10-14T12:00:00Z"

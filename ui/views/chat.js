@@ -132,6 +132,7 @@ export function render(ctx) {
   let newThreadId = null;
   const fromHash = threadFromHash(globalThis.location ? globalThis.location.hash : "");
   let threadId = fromHash !== null ? fromHash : (ctx.state.threadId ?? null);
+  if (threadId === "default") threadId = null;
   ctx.state.threadId = threadId;
   let activeJob = null; // {id, phase, threadId} while a job of this view is queued or running
   let cancelling = false;
@@ -145,7 +146,8 @@ export function render(ctx) {
   let creatingThread = false;
 
   function updateHash(id) {
-    const target = id ? "#/chat/" + encodeURIComponent(id) : "#/chat";
+    const clean = id === "default" || !id ? null : id;
+    const target = clean ? "#/chat/" + encodeURIComponent(clean) : "#/chat";
     if (globalThis.location && globalThis.location.hash !== target) {
       globalThis.location.hash = target;
     }
@@ -155,8 +157,9 @@ export function render(ctx) {
   function onHashChange() {
     if (root.isConnected === false) return;
     const next = threadFromHash(globalThis.location ? globalThis.location.hash : "");
-    if (next !== threadId) {
-      selectThread(next);
+    const clean = next === "default" || !next ? null : next;
+    if (clean !== threadId) {
+      selectThread(clean);
     }
   }
   if (globalThis.addEventListener) {
@@ -459,48 +462,50 @@ export function render(ctx) {
   async function loadThreads() {
     const token = ++threadsToken;
     let items = [];
+    let ok = true;
     try {
       const res = await api.threads();
       if (token !== threadsToken) return;
       items = Array.isArray(res.items) ? res.items : [];
-      rail.setThreads(items, true);
     } catch (_) {
       if (token !== threadsToken) return;
-      rail.setThreads([], false);
+      items = [];
+      ok = false;
     }
     if (token !== threadsToken) return;
-    if (threadId !== null && threadId !== newThreadId && items.length > 0) {
-      const exists = items.some((t) => t.id === threadId);
-      if (!exists) {
-        const newest = items[0];
-        threadId = newest ? newest.id : null;
-        ctx.state.threadId = threadId;
-        updateHash(threadId);
-      }
-    } else if (threadId !== null && threadId !== newThreadId && items.length === 0) {
-      threadId = null;
-      ctx.state.threadId = null;
-      updateHash(null);
+    if (threadId !== null && !items.some((t) => t.id === threadId || (t.id === "default" && threadId === null))) {
+      const existingTitle = rail.title(threadId) || (title.textContent !== "Your agent" ? title.textContent : "") || (threadId === newThreadId ? "New chat" : "") || "New chat";
+      items = [
+        {
+          id: threadId,
+          title: existingTitle,
+          last_message_at: new Date().toISOString(),
+          status: "done",
+        },
+        ...items,
+      ];
     }
+    rail.setThreads(items, ok);
     rail.setActive(threadId);
     const name = threadId === null ? "" : rail.title(threadId);
     title.textContent = name || (threadId === newThreadId ? "New chat" : "Your agent");
   }
 
   async function selectThread(id) {
-    if (threadId === id) return;
+    const clean = id === "default" || !id ? null : id;
+    if (threadId === clean) return;
     const token = ++selectToken;
     newThreadId = null;
     if (live) dropLive();
-    threadId = id;
-    ctx.state.threadId = id;
-    updateHash(id);
-    rail.setActive(id);
+    threadId = clean;
+    ctx.state.threadId = clean;
+    updateHash(clean);
+    rail.setActive(clean);
     status.className = "msg";
     status.textContent = "";
     lock();
     await loadHistory(true);
-    if (token !== selectToken || threadId !== id) return;
+    if (token !== selectToken || threadId !== clean) return;
     await loadThreads();
   }
 
@@ -577,9 +582,9 @@ export function render(ctx) {
     }
     // The progress card appears before the request leaves, so the owner sees the agent at once.
     live = startLive();
-    const sentInThread = threadId;
+    const sentInThread = threadId === "default" || !threadId ? null : threadId;
     try {
-      const accepted = await api.chatSend(text, threadId);
+      const accepted = await api.chatSend(text, sentInThread);
       busy = false;
       newThreadId = null;
       live.prog.setReceived();
@@ -596,7 +601,7 @@ export function render(ctx) {
         // One job at a time: wait for the running one, then offer the message again.
         status.textContent += " Waiting for it to finish.";
         try {
-          await follow(active, threadId);
+          await follow(active, sentInThread);
         } catch (_) {
           // The message above already explains the situation.
         }

@@ -60,15 +60,22 @@ def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-def _parse_ts(value: str) -> datetime:
+def _parse_ts(value: datetime | str) -> datetime:
     """RFC 3339 text (``...Z`` accepted) to an aware UTC datetime."""
-    return _utc(datetime.fromisoformat(value))
+    if isinstance(value, datetime):
+        return _utc(value)
+    s = str(value).strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return _utc(datetime.fromisoformat(s))
 
 
-def _iso(value: datetime | None) -> str | None:
+def _iso(value: datetime | str | None) -> str | None:
     if value is None:
         return None
-    return _utc(value).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if isinstance(value, datetime):
+        return _utc(value).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return _parse_ts(str(value)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _now() -> datetime:
@@ -904,8 +911,8 @@ class PgChatStore:
         items: list[dict[str, Any]] = []
         with self._pool.tenant(self._owner) as cur:
             cur.execute(
-                "SELECT t.id, t.title, COALESCE(l.created_at, t.created_at), j.status "
-                "FROM chat_threads t "
+                "SELECT t.id, t.title, COALESCE(l.created_at, t.created_at), "
+                "j.status, (l.created_at IS NULL) FROM chat_threads t "
                 "LEFT JOIN LATERAL (SELECT m.created_at, m.job_id FROM chat_messages m "
                 "WHERE m.owner = t.owner AND m.thread_id = t.id "
                 "ORDER BY m.seq DESC LIMIT 1) l ON true "
@@ -914,12 +921,15 @@ class PgChatStore:
                 (self._owner,),
             )
             for row in cur.fetchall():
+                raw_ts = row[2]
                 items.append(
                     {
                         "id": str(row[0]),
                         "title": str(row[1]),
-                        "last_message_at": _iso(row[2]),
+                        "last_message_at": _iso(raw_ts),
                         "status": thread_status(row[3]),
+                        "_dt": _parse_ts(raw_ts),
+                        "_empty": bool(row[4]),
                     }
                 )
             cur.execute(
@@ -933,15 +943,29 @@ class PgChatStore:
             )
             row = cur.fetchone()
             if row is not None:
+                raw_ts = row[0]
                 items.append(
                     {
                         "id": DEFAULT_THREAD,
                         "title": thread_title(str(row[2])) if row[2] else NEW_THREAD_TITLE,
-                        "last_message_at": _iso(row[0]),
+                        "last_message_at": _iso(raw_ts),
                         "status": thread_status(row[1]),
+                        "_dt": _parse_ts(raw_ts),
+                        "_empty": False,
                     }
                 )
-        items.sort(key=lambda t: (t["last_message_at"], t["id"]), reverse=True)
+        items.sort(
+            key=lambda t: (
+                t["_dt"],
+                1 if t["_empty"] else 0,
+                0 if t["id"] == DEFAULT_THREAD else 1,
+                t["id"],
+            ),
+            reverse=True,
+        )
+        for t in items:
+            t.pop("_dt", None)
+            t.pop("_empty", None)
         return items[: max(int(limit), 0)]
 
     def attach_job(self, thread_id: str | None, job_id: str) -> None:
