@@ -25,13 +25,25 @@ export async function recordsOfJob(ctx, job) {
 // Records for Activity and the approvals card, oldest first.
 export async function loadRecords(ctx, limit = 50) {
   if (ctx.api.fixtures) return (await ctx.api.decisions(limit)).items;
-  const list = await ctx.api.jobs();
-  const rows = Array.isArray(list.items) ? list.items.slice(0, 10) : [];
-  const details = await Promise.allSettled(rows.map((j) => ctx.api.job(j.job_id)));
+  let list;
+  try {
+    list = await ctx.api.jobs(true);
+  } catch {
+    list = await ctx.api.jobs();
+  }
+  const rows = Array.isArray(list && list.items) ? list.items.slice(0, 10) : [];
+  let jobItems = rows;
+  const hasRecords = rows.length > 0 && rows.some((j) => Array.isArray(j.records));
+  if (!hasRecords && rows.length > 0) {
+    const details = await Promise.allSettled(rows.map((j) => ctx.api.job(j.job_id)));
+    jobItems = details
+      .filter((d) => d.status === "fulfilled" && d.value)
+      .map((d) => d.value);
+  }
   const out = [];
-  for (const d of details) {
-    if (d.status !== "fulfilled" || !Array.isArray(d.value.records)) continue;
-    for (const r of d.value.records) out.push(recordFromSummary(r, d.value));
+  for (const j of jobItems) {
+    if (!Array.isArray(j.records)) continue;
+    for (const r of j.records) out.push(recordFromSummary(r, j));
   }
   out.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
   return out;

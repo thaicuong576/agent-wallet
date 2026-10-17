@@ -561,10 +561,14 @@ class JobService:
                 return []
             return list(live.tokens[index:])
 
-    def list(self, tenant: Tenant, limit: int = 20) -> list[dict[str, Any]]:
+    def list(
+        self, tenant: Tenant, limit: int = 20, *, with_records: bool = False
+    ) -> list[dict[str, Any]]:
         return [
-            self._view(tenant, row, with_records=False) for row in self.store(tenant).list(limit)
+            self._view(tenant, row, with_records=with_records)
+            for row in self.store(tenant).list(limit)
         ]
+
 
     # -- views
 
@@ -1038,9 +1042,15 @@ def cancel_job(
 
 @router.get("/jobs", tags=["jobs"])
 def list_jobs(
-    request: Request, tenant: Annotated[Tenant, Depends(current_tenant)]
+    request: Request,
+    tenant: Annotated[Tenant, Depends(current_tenant)],
+    records: int = 0,
 ) -> dict[str, Any]:
-    return {"items": get_webapp(request).jobs.list(tenant)}
+    with_records = records == 1
+    return {
+        "items": get_webapp(request).jobs.list(tenant, with_records=with_records)
+    }
+
 
 
 __all__ = ["JobInProgress", "JobLimits", "JobService", "RateLimited", "SqliteJobs", "router"]

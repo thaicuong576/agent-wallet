@@ -24,6 +24,8 @@ const ROUTES = {
   job: "/jobs/{job_id}",
   jobs: "/jobs",
   auditVerify: "/audit/verify",
+
+
   portfolio: "/portfolio",
   tier: "/tier",
   ips: "/ips",
@@ -361,7 +363,13 @@ export function createApi({
       }
       case "jobs":
         needSession();
-        return { items: fx.jobs.slice().reverse() };
+        return {
+          items: fx.jobs
+            .slice()
+            .reverse()
+            .map((j) => (arg && arg.records ? jobView(j) : { ...j })),
+        };
+
       case "auditVerify":
         needSession();
         return file("audit-verify");
@@ -695,7 +703,15 @@ export function createApi({
       JOB_ID.test(jobId)
         ? call("job", "GET", ROUTES.job.replace("{job_id}", jobId), {}, jobId)
         : Promise.reject(new ApiError(0, "", "Not a job id")),
-    jobs: () => call("jobs", "GET", ROUTES.jobs),
+    jobs: (records = false) =>
+      call(
+        "jobs",
+        "GET",
+        records ? ROUTES.jobs + "?records=1" : ROUTES.jobs,
+        {},
+        { records: Boolean(records) },
+      ),
+
     auditVerify: () =>
       fixtures ? fixtureCall("auditVerify") : cachedRead("auditVerify", () => real("GET", ROUTES.auditVerify)),
     portfolio: () =>

@@ -131,6 +131,28 @@ def cache_flows() -> dict:
     return json.loads(out.stdout)
 
 
+@functools.lru_cache(maxsize=1)
+def jobs_flows() -> dict:
+    out = subprocess.run(
+        [NODE, str(ROOT / "tests" / "ui" / "jobs_flows.mjs")],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return json.loads(out.stdout)
+
+
+def test_load_records_one_request_replaces_n() -> None:
+    res = jobs_flows()
+    assert res.get("singleRequestReplacesN") is True
+    assert res.get("jobCallsCount") == 0
+    assert res.get("jobsCallsCount") == 1
+    assert res.get("fallbackWorks") is True
+    assert res.get("fallbackJobCallsCount") == 2
+
+
+
 @pytest.mark.parametrize("name", UI_FILES)
 def test_static_files_are_served(client: TestClient, name: str) -> None:
     res = client.get(f"/ui/{name}")
