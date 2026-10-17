@@ -20,7 +20,7 @@ import psycopg
 
 from core.storage.interfaces import StorageUnavailable
 
-DEFAULT_POOL_SIZE = 5
+DEFAULT_POOL_SIZE = 12
 DEFAULT_CONNECT_TIMEOUT_S = 10
 
 db_calls: contextvars.ContextVar[int] = contextvars.ContextVar("db_calls", default=0)
@@ -28,6 +28,22 @@ db_ms: contextvars.ContextVar[int] = contextvars.ContextVar("db_ms", default=0)
 _request_db_acc: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
     "_request_db_acc", default=None
 )
+
+
+def parse_pool_size(raw: str | None, default: int = DEFAULT_POOL_SIZE) -> int:
+    """Parse pool size from string or environment.
+
+    Rejects non-integer, below 1, or above 50, falling back to default.
+    """
+    if raw is None:
+        return default
+    try:
+        val = int(raw.strip())
+        if 1 <= val <= 50:
+            return val
+    except (ValueError, TypeError):
+        pass
+    return default
 
 
 def db_stats() -> tuple[int, int]:
@@ -52,11 +68,59 @@ class PgPool:
         if max_size < 1:
             raise ValueError("max_size must be at least 1")
         self._dsn = dsn
+        self._max_size = max_size
         self._acquire_timeout_s = acquire_timeout_s
         self._connect_timeout_s = connect_timeout_s
         self._idle: queue.LifoQueue[psycopg.Connection] = queue.LifoQueue()
         self._slots = threading.BoundedSemaphore(max_size)
         self._closed = False
+
+    @property
+    def max_size(self) -> int:
+        return self._max_size
+
+    def warm(self, n: int = 4) -> None:
+        """Open up to n connections in a background daemon thread at startup.
+
+        Failures are ignored, never raise, and never block startup.
+        """
+        target = min(max(n, 0), self._max_size)
+        if target <= 0 or self._closed:
+            return
+
+        def _do_warm() -> None:
+            conns: list[psycopg.Connection] = []
+            try:
+                for _ in range(target):
+                    if self._closed:
+                        break
+                    if self._idle.qsize() >= target:
+                        break
+                    try:
+                        conn = psycopg.connect(
+                            self._dsn,
+                            autocommit=False,
+                            prepare_threshold=None,
+                            connect_timeout=self._connect_timeout_s,
+                        )
+                        if self._closed:
+                            self._discard(conn)
+                            break
+                        conns.append(conn)
+                    except Exception:
+                        break
+                for conn in conns:
+                    if self._closed:
+                        self._discard(conn)
+                    else:
+                        self._idle.put(conn)
+                        if self._closed:
+                            self._discard(conn)
+            except Exception:
+                pass
+
+        thread = threading.Thread(target=_do_warm, name="pg-pool-warm", daemon=True)
+        thread.start()
 
     @property
     def dsn(self) -> str:

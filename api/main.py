@@ -226,13 +226,18 @@ def global_stop_flag(
 def build_backend(env: Mapping[str, str], data_dir: pathlib.Path) -> StorageBackend:
     """The StorageBackend the environment selects. Opens no connection until first use, except
     the schema check below, which is the point: a hosted app must not run on an old schema."""
-    backend = create_backend(
-        env,
-        sqlite_factory=lambda: sqlite_backend(
-            data_dir, auth=lambda: SqliteAuthStore(data_dir / "auth.sqlite"), env=env
-        ),
-    )
     if selected_backend(env) == POSTGRES:
+        from core.storage.postgres import PostgresBackend
+        from core.storage.postgres.pool import parse_pool_size
+
+        pool_size = parse_pool_size(env.get("AGENT_WALLET_DB_POOL_SIZE"))
+        migrate_url = env.get("DATABASE_MIGRATE_URL", "").strip() or None
+        backend = PostgresBackend(
+            env["DATABASE_URL"].strip(),
+            migrate_dsn=migrate_url,
+            pool_size=pool_size,
+        )
+        backend._pool.warm(4)
         try:
             if env.get("DATABASE_MIGRATE_URL", "").strip():
                 backend.migrate()  # DDL-capable URL present: apply, then verify
@@ -243,7 +248,14 @@ def build_backend(env: Mapping[str, str], data_dir: pathlib.Path) -> StorageBack
                 f"database schema is not ready: {exc}. Run `python -m core.storage.migrate` with "
                 "DATABASE_MIGRATE_URL set, or set DATABASE_MIGRATE_URL for this process."
             ) from exc
-    return backend
+        return backend
+
+    return create_backend(
+        env,
+        sqlite_factory=lambda: sqlite_backend(
+            data_dir, auth=lambda: SqliteAuthStore(data_dir / "auth.sqlite"), env=env
+        ),
+    )
 
 
 def build_webapp(

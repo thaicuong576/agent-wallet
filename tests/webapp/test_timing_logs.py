@@ -285,9 +285,13 @@ def test_db_accumulator_per_request_isolation(
     from fastapi import FastAPI
 
     from api.main import TimingMiddleware
-    from core.storage.postgres.pool import _request_db_acc, db_stats
+    from core.storage.postgres.pool import _request_db_acc, db_calls, db_ms, db_stats
+
+    db_calls.set(0)
+    db_ms.set(0)
 
     sub_app = FastAPI()
+
     sub_app.add_middleware(TimingMiddleware)
 
     @sub_app.get("/req1")

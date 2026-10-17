@@ -114,16 +114,18 @@ pytest tests/test_intent_boundary.py -q
 ```
 
 ### 3. Storage Tests (With & Without PostgreSQL)
-By default, running `pytest tests/storage/` runs SQLite storage tests and skips tests requiring live PostgreSQL:
+By default, running `pytest tests/storage/` runs SQLite storage tests, connection pool sizing/warmup unit tests (`test_postgres_pool.py`), and skips tests requiring live PostgreSQL:
 ```sh
-# SQLite only (offline, default)
+# SQLite and pool unit tests (offline, default)
 pytest tests/storage/ -q
+pytest tests/storage/test_postgres_pool.py -q
 ```
 To run full PostgreSQL tests (including RLS and migration concurrency), supply `TEST_DATABASE_URL`:
 ```sh
 # PostgreSQL tests (requires running PostgreSQL instance)
 TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/agent_wallet_test" pytest tests/storage/ -q
 ```
+
 
 ### 4. Webapp Authentication & Session Tests
 ```sh
