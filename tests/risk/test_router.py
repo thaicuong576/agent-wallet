@@ -25,7 +25,8 @@ from core.risk.aave import GET_RESERVE_DATA_SELECTOR
 from core.risk.router import GET_POOL_SELECTOR
 from tests.risk.conftest import encode_aave_reserve_data
 
-NOW = datetime(2026, 10, 16, 12, 0, 0, tzinfo=UTC)
+# The risk router reads the wall clock when no `now` is passed, so the fixture time must follow it.
+NOW = datetime.now(UTC).replace(microsecond=0)
 
 SAMPLE_IPS: dict[str, Any] = {
     "schema_version": 1,
