@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import threading
+import time
 import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Executor, ThreadPoolExecutor
@@ -50,6 +51,7 @@ from core.storage.interfaces import JobInProgress, JobStore, RateLimited
 from core.storage.sqlite.webapp import SqliteJobs, mark_jobs_interrupted
 
 log = logging.getLogger("agent_wallet.jobs")
+timing_log = logging.getLogger("agent_wallet.timing")
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ORDER_SCHEMA = ROOT_DIR / "contracts" / "schemas" / "order.schema.json"
@@ -786,90 +788,108 @@ class JobService:
         The agent text is composed from what the gateway recorded; the model's `reply` only rides
         along under its own label.
         """
-        now = self._clock()
-        code = self._stopped(tenant, owner_stop_counts=True)
-        if code is not None:
-            reason = (
-                "Chat request not handled: the operator's global stop is set."
-                if code == GLOBAL_STOP_CODE
-                else "Chat request not handled: the emergency stop is engaged."
-            )
-            record = tenant.gateway.record_no_action(reason, _now_iso(now))
-            return Outcome(
-                "denied",
-                code,
-                [],
-                [int(record["seq"])],
-                chat_text=compose_agent_text([record], stop_text=user_facing_stop(code)),
-                intent="refusal",
-            )
-        gas_error = self._gas_gate(tenant)
-        if gas_error is not None:
-            gas_error.intent = "refusal"
-            return gas_error
-
-        thread_id = args.get("thread_id")
-        if thread_id is None:
-            try:
-                thread_id = tenant.stores.chat.get_thread_id(job_id)
-            except Exception:  # noqa: BLE001
-                thread_id = None
-        history = _build_chat_history(tenant, job_id, thread_id, store)
-
-        label, planner = self._select_planner("auto")
-        fallback = FALLBACK_UNCONFIGURED if label == "fallback" else None
-        store.update(job_id, planner_client=label)
-        portfolio = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
-        ips = tenant.gateway.policy.ips
-        message = args["message"]
-
-        def on_token(token: str) -> None:
-            if not token:
-                return
-            with self._live_lock:
-                live = self._live.get(job_id)
-                if live is None:
-                    return
-                current_len = sum(len(t) for t in live.tokens)
-                if current_len >= 4000:
-                    return
-                avail = 4000 - current_len
-                live.tokens.append(token[:avail])
-
+        t0 = time.perf_counter()
         try:
-            result = self._runner(tenant, job_id, portfolio, ips, label, planner).run_instruction(
-                message, now, conversation_history=history, on_token=on_token
-            )
-        except LLMError:
-            with self._live_lock:
-                live = self._live.get(job_id)
-                if live is not None:
-                    live.tokens.clear()
-            # Nothing is proposed before the model answers, so the fallback cannot duplicate.
-            label, planner = "fallback", FallbackPlanner()
-            fallback = FALLBACK_LLM_ERROR
+            now = self._clock()
+            code = self._stopped(tenant, owner_stop_counts=True)
+            if code is not None:
+                reason = (
+                    "Chat request not handled: the operator's global stop is set."
+                    if code == GLOBAL_STOP_CODE
+                    else "Chat request not handled: the emergency stop is engaged."
+                )
+                record = tenant.gateway.record_no_action(reason, _now_iso(now))
+                return Outcome(
+                    "denied",
+                    code,
+                    [],
+                    [int(record["seq"])],
+                    chat_text=compose_agent_text([record], stop_text=user_facing_stop(code)),
+                    intent="refusal",
+                )
+            gas_error = self._gas_gate(tenant)
+            if gas_error is not None:
+                gas_error.intent = "refusal"
+                return gas_error
+
+            thread_id = args.get("thread_id")
+            if thread_id is None:
+                try:
+                    thread_id = tenant.stores.chat.get_thread_id(job_id)
+                except Exception:  # noqa: BLE001
+                    thread_id = None
+            history = _build_chat_history(tenant, job_id, thread_id, store)
+
+            label, planner = self._select_planner("auto")
+            fallback = FALLBACK_UNCONFIGURED if label == "fallback" else None
             store.update(job_id, planner_client=label)
-            result = self._runner(tenant, job_id, portfolio, ips, label, planner).run_instruction(
-                message, now, conversation_history=history, on_token=on_token
+            portfolio = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
+            ips = tenant.gateway.policy.ips
+            message = args["message"]
+
+            first_token_seen = False
+
+            def on_token(token: str) -> None:
+                nonlocal first_token_seen
+                if not token:
+                    return
+                if not first_token_seen:
+                    first_token_seen = True
+                    elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                    timing_log.info(
+                        "job=%s phase=planner_first_token elapsed_ms=%d",
+                        job_id,
+                        elapsed_ms,
+                    )
+                with self._live_lock:
+                    live = self._live.get(job_id)
+                    if live is None:
+                        return
+                    current_len = sum(len(t) for t in live.tokens)
+                    if current_len >= 4000:
+                        return
+                    avail = 4000 - current_len
+                    live.tokens.append(token[:avail])
+
+            try:
+                runner = self._runner(tenant, job_id, portfolio, ips, label, planner)
+                result = runner.run_instruction(
+                    message, now, conversation_history=history, on_token=on_token
+                )
+            except LLMError:
+                with self._live_lock:
+                    live = self._live.get(job_id)
+                    if live is not None:
+                        live.tokens.clear()
+                # Nothing is proposed before the model answers, so the fallback cannot duplicate.
+                label, planner = "fallback", FallbackPlanner()
+                fallback = FALLBACK_LLM_ERROR
+                store.update(job_id, planner_client=label)
+                runner = self._runner(tenant, job_id, portfolio, ips, label, planner)
+                result = runner.run_instruction(
+                    message, now, conversation_history=history, on_token=on_token
+                )
+            records = result.records
+            status, error = self._apply_cancel(job_id, *classify(records, "chat"))
+            text = compose_agent_text(
+                records,
+                reply=result.reply,
+                plan_reason=result.plan_reason,
+                validation_errors=result.validation_errors,
+                fallback=fallback,
             )
-        records = result.records
-        status, error = self._apply_cancel(job_id, *classify(records, "chat"))
-        text = compose_agent_text(
-            records,
-            reply=result.reply,
-            plan_reason=result.plan_reason,
-            validation_errors=result.validation_errors,
-            fallback=fallback,
-        )
-        return Outcome(
-            status,
-            error,
-            [r["order_id"] for r in records if r.get("order_id")],
-            [int(r["seq"]) for r in records],
-            label,
-            chat_text=text,
-            intent=result.intent,
-        )
+            return Outcome(
+                status,
+                error,
+                [r["order_id"] for r in records if r.get("order_id")],
+                [int(r["seq"]) for r in records],
+                label,
+                chat_text=text,
+                intent=result.intent,
+            )
+        finally:
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            timing_log.info("job=%s phase=chat_total elapsed_ms=%d", job_id, elapsed_ms)
 
     def _apply_cancel(self, job_id: str, status: str, error: str | None) -> tuple[str, str | None]:
         """A cancel that skipped orders ends the job `denied` (code OWNER_CANCELLED), unless an

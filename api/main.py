@@ -10,11 +10,15 @@ under `AGENT_WALLET_DATA_DIR`. With Postgres the app applies migrations only whe
 the database is behind (fail closed).
 """
 
+import contextvars
 import http.client
 import json
+import logging
 import os
 import pathlib
+import sys
 import threading
+import time
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
@@ -22,6 +26,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from api.app import create_app
 from api.auth import AuthProblem, AuthService, SqliteAuthStore
@@ -48,6 +54,49 @@ DEFAULT_IPS_PATH = (
     if (PRESETS_DIR / "conservative.json").exists()
     else EXAMPLES_DIR / "ips.valid.json"
 )
+
+
+def configure_logging(env: Mapping[str, str] | None = None) -> logging.Logger:
+    """Configure stdout logging for the `agent_wallet` logger hierarchy.
+
+    Sets the `agent_wallet` logger (and children) to the level in env `AGENT_WALLET_LOG_LEVEL`
+    (default `INFO`), attaches one `StreamHandler` to stdout with format
+    `%(asctime)s %(levelname)s %(name)s %(message)s`, `propagate = False`, and is idempotent
+    (calling twice does not duplicate handlers). Do not touch the root logger and do not change
+    uvicorn's loggers. Never log request bodies, headers, cookies, keys or addresses of owners.
+    """
+    if env is None:
+        env = os.environ
+    raw_level = env.get("AGENT_WALLET_LOG_LEVEL", "INFO").strip().upper()
+    level = getattr(logging, raw_level, logging.INFO)
+    if not isinstance(level, int):
+        level = logging.INFO
+
+    logger = logging.getLogger("agent_wallet")
+    logger.setLevel(level)
+    logger.propagate = False
+
+    has_stdout = any(
+        isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
+        for h in logger.handlers
+    )
+    if not has_stdout:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        logger.addHandler(handler)
+    return logger
+
+
+configure_logging()
+
+rpc_calls: contextvars.ContextVar[int] = contextvars.ContextVar("rpc_calls", default=0)
+rpc_ms: contextvars.ContextVar[int] = contextvars.ContextVar("rpc_ms", default=0)
+_request_rpc_acc: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
+    "_request_rpc_acc", default=None
+)
+
+rpc_log = logging.getLogger("agent_wallet.rpc")
+http_log = logging.getLogger("agent_wallet.http")
 
 
 def http_rpc(url: str, timeout: float = 30.0) -> Callable[[str, list[Any]], Any]:
@@ -84,39 +133,55 @@ def http_rpc(url: str, timeout: float = 30.0) -> Callable[[str, list[Any]], Any]
             local.conn = None
 
     def call(method: str, params: list[Any]) -> Any:
-        payload = json.dumps(
-            {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
-        ).encode()
-        headers = {
-            "Content-Type": "application/json",
-            "User-Agent": "agent-wallet/0.1",
-            "Connection": "keep-alive",
-        }
-
-        def _send(conn: http.client.HTTPConnection) -> bytes:
-            conn.request("POST", path, body=payload, headers=headers)
-            resp = conn.getresponse()
-            try:
-                data = resp.read()
-            finally:
-                if resp.will_close:
-                    _reset_connection()
-            if resp.status < 200 or resp.status >= 300:
-                raise RuntimeError(f"{method} failed with HTTP {resp.status}")
-            return data
-
-        conn = _get_connection()
+        t0 = time.perf_counter()
+        status = "error"
         try:
-            data = _send(conn)
-        except (http.client.HTTPException, ConnectionError, OSError):
-            _reset_connection()
-            conn = _get_connection()
-            data = _send(conn)
+            payload = json.dumps(
+                {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+            ).encode()
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "agent-wallet/0.1",
+                "Connection": "keep-alive",
+            }
 
-        body = json.loads(data)
-        if body.get("error"):
-            raise RuntimeError(f"{method} failed")
-        return body["result"]
+            def _send(conn: http.client.HTTPConnection) -> bytes:
+                conn.request("POST", path, body=payload, headers=headers)
+                resp = conn.getresponse()
+                try:
+                    data = resp.read()
+                finally:
+                    if resp.will_close:
+                        _reset_connection()
+                if resp.status < 200 or resp.status >= 300:
+                    raise RuntimeError(f"{method} failed with HTTP {resp.status}")
+                return data
+
+            conn = _get_connection()
+            try:
+                data = _send(conn)
+            except (http.client.HTTPException, ConnectionError, OSError):
+                _reset_connection()
+                conn = _get_connection()
+                data = _send(conn)
+
+            body = json.loads(data)
+            if body.get("error"):
+                raise RuntimeError(f"{method} failed")
+            status = "ok"
+            return body["result"]
+        finally:
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            rpc_log.info("method=%s elapsed_ms=%d status=%s", method, elapsed_ms, status)
+            try:
+                rpc_calls.set(rpc_calls.get() + 1)
+                rpc_ms.set(rpc_ms.get() + elapsed_ms)
+                acc = _request_rpc_acc.get()
+                if acc is not None:
+                    acc[0] += 1
+                    acc[1] += elapsed_ms
+            except Exception:
+                pass
 
     return call
 
@@ -253,36 +318,124 @@ def build_webapp(
     return WebappServices(registry=registry, auth=auth, wallet=wallet, jobs=jobs, mode="multi")
 
 
+class TimingMiddleware:
+    """Pure ASGI middleware logging request timing and RPC metrics.
+
+    Emits `method=<verb> path=<route> status=<code> elapsed_ms=<ms> rpc_calls=<n> rpc_ms=<ms>`
+    on logger `agent_wallet.http` for all requests except `/health`, `/health/deep`, and `/ui/*`.
+    For streaming responses (like `/chat/stream/*`), timing completes when the stream ends.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        path = scope.get("path", "")
+        clean_path = path.rstrip("/")
+        if clean_path in ("/health", "/health/deep") or path == "/ui" or path.startswith("/ui/"):
+            await self.app(scope, receive, send)
+            return
+
+        acc = [0, 0]
+        token_acc = _request_rpc_acc.set(acc)
+        token_calls = rpc_calls.set(0)
+        token_ms = rpc_ms.set(0)
+        t0 = time.perf_counter()
+        status_code = 500
+
+        async def send_wrapper(message: Message) -> None:
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            if acc[0] > 0:
+                calls = acc[0]
+                ms = acc[1]
+            else:
+                calls = rpc_calls.get()
+                ms = rpc_ms.get()
+            _request_rpc_acc.reset(token_acc)
+            rpc_calls.reset(token_calls)
+            rpc_ms.reset(token_ms)
+            method = scope.get("method", "GET")
+            http_log.info(
+                "method=%s path=%s status=%d elapsed_ms=%d rpc_calls=%d rpc_ms=%d",
+                method,
+                path,
+                status_code,
+                elapsed_ms,
+                calls,
+                ms,
+            )
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles subclass ensuring Cache-Control: no-cache on all static responses."""
+
+    def file_response(
+        self,
+        full_path: Any,
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        resp = super().file_response(full_path, stat_result, scope, status_code=status_code)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 def create_configured_app() -> Any:
     multi = os.environ.get("AGENT_WALLET_MODE", "single") == "multi"
     if not multi:
-        return create_app(webapp=None)
-    env = os.environ
-    data_dir = pathlib.Path(env.get("AGENT_WALLET_DATA_DIR") or ".data")
-    backend = build_backend(env, data_dir)
-    app_ = create_app(webapp=build_webapp(env, backend=backend))
+        app_ = create_app(webapp=None)
+    else:
+        env = os.environ
+        data_dir = pathlib.Path(env.get("AGENT_WALLET_DATA_DIR") or ".data")
+        backend = build_backend(env, data_dir)
+        app_ = create_app(webapp=build_webapp(env, backend=backend))
 
-    @app_.get("/health/deep", include_in_schema=False)
-    def health_deep() -> Any:
-        """Liveness plus one cheap database read, for an external keep-warm ping.
+        @app_.get("/health/deep", include_in_schema=False)
+        def health_deep() -> Any:
+            """Liveness plus one cheap database read, for an external keep-warm ping.
 
-        The ping keeps the free web service awake and the free database project active. It returns
-        no data from the database and needs no credential.
-        """
-        from fastapi.responses import JSONResponse
+            The ping keeps the free web service awake and the free database project active.
+            It returns no data from the database and needs no credential.
+            """
+            from fastapi.responses import JSONResponse
 
-        try:
-            backend.settings().global_stop()
-        except Exception:  # noqa: BLE001 - never echo driver text
-            return JSONResponse({"status": "degraded", "db": "unreachable"}, status_code=503)
-        return {"status": "ok", "db": "ok"}
+            try:
+                backend.settings().global_stop()
+            except Exception:  # noqa: BLE001 - never echo driver text
+                return JSONResponse({"status": "degraded", "db": "unreachable"}, status_code=503)
+            return {"status": "ok", "db": "ok"}
 
+    app_.add_middleware(TimingMiddleware)
     return app_
 
 
 app = create_configured_app()
 
 UI_DIR = ROOT_DIR / "ui"
-app.mount("/ui", StaticFiles(directory=UI_DIR, html=True), name="ui")
+app.mount("/ui", NoCacheStaticFiles(directory=UI_DIR, html=True), name="ui")
 
-__all__ = ["app", "create_app", "build_webapp"]
+__all__ = [
+    "NoCacheStaticFiles",
+    "TimingMiddleware",
+    "app",
+    "build_webapp",
+    "configure_logging",
+    "create_app",
+    "create_configured_app",
+    "http_rpc",
+    "rpc_calls",
+    "rpc_ms",
+]
