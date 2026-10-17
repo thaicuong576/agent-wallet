@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The web UI shows token and protocol icons (`ui/icons.js`, styled by `ui/icons.css`). They are token and protocol marks only. Nothing is loaded from the internet at runtime: every token image is a local SVG file under `ui/assets/tokens/`, and protocol marks are letter monograms drawn in code.
+The web UI shows token and protocol icons (`ui/lib/icons.js`, styled by `ui/css/icons.css`). They are token and protocol marks only. Nothing is loaded from the internet at runtime: every token image is a local SVG file under `ui/assets/tokens/`, and protocol marks are letter monograms drawn in code.
 
 ## Sources
 
@@ -18,7 +18,7 @@ Licence note: the repository's LICENSE.md is CC0 1.0 Universal (`https://raw.git
 
 ## Token mapping
 
-Copied from `TOKEN_META` in `ui/icons.js`. Every token here is a Base Sepolia test token.
+Copied from `TOKEN_META` in `ui/lib/icons.js`. Every token here is a Base Sepolia test token.
 
 | Symbol | Plain name | Image used |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ Copied from `TOKEN_META` in `ui/icons.js`. Every token here is a Base Sepolia te
 
 ## How to add a token
 
-1. Add a row to `TOKEN_META` in `ui/icons.js`.
+1. Add a row to `TOKEN_META` in `ui/lib/icons.js`.
 2. Add an SVG under `ui/assets/tokens/` only if its licence is confirmed.
 3. Add the token to the tables in this file.
 4. Run `tests/ui`.

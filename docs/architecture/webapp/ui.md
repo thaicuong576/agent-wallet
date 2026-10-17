@@ -57,10 +57,10 @@ After Activate succeeds the view calls `ctx.go("#/chat")` and the header re-rout
 ## Screens
 | Screen | File | Contents |
 | :--- | :--- | :--- |
-| Chat | `views/chat.js`, `views/progress.js`, `views/side.js` | Conversation card: owner bubbles right (yellow), unified agent bubbles left (grey frame housing text, live progress, and expandable compact step rows), live streaming text via SSE tokens, clarification chips under question bubbles, thread switch skeleton, suggested prompts above composer (cached TTL), history rail on the left, Enter sends, 500 character counter. Right column: wallet value and idle/earning bar, today's limit, gas with Top up, audit log line |
+| Chat | `views/chat/index.js`, `views/progress.js`, `views/side.js` | Conversation card: owner bubbles right (yellow), unified agent bubbles left (grey frame housing text, live progress, and expandable compact step rows), live streaming text via SSE tokens, clarification chips under question bubbles, thread switch skeleton, suggested prompts above composer (cached TTL), history rail on the left, Enter sends, 500 character counter. Right column: wallet value and idle/earning bar, today's limit, gas with Top up, audit log line |
 | Overview | `views/overview.js`, `holdings.js`, `icons.js`, `views/funds.js`, `views/withdraw.js`, `views/approvals.js` | Main column: a note and the approvals card when an order waits; the hero (agent wallet value, "working for you" and "idle", the allocation bar with legend, **Add funds** and **Withdraw**); "What the agent holds" grouped by what the money is doing (idle in the wallet, lent on Aave v3, Aave vaults, Morpho Blue, swapped assets), each row with token and protocol marks, amount, value and share, and the agent's gas. Side column: your wallet, today's limit, recent activity |
 | Activity | `views/activity.js` | Every decision, newest first, as step cards; Verify audit chain with a verdict card; planner and reference-price chips |
-| Rules | `views/rules.js` | Read-only rows from `GET /limits` (`ui/limits.js`), the allowed protocols with their marks, the **Agent permission** control (lower to propose-only or read-only) and the scripted **Safety demo** |
+| Rules | `views/rules.js` | Read-only rows from `GET /limits` (`ui/lib/limits.js`), the allowed protocols with their marks, the **Agent permission** control (lower to propose-only or read-only) and the scripted **Safety demo** |
 | Setup | `views/setup.js`, `views/activate.js` | Three steps (Connected, Add gas, Activate). Agent address with Copy, gas amount and send, Activate with its one-sentence explanation and one free signature |
 
 ### Step cards (`views/cards.js`)
@@ -138,7 +138,7 @@ sequenceDiagram
 sequenceDiagram
   participant U as User / Browser
   participant M as main.js (routeFor)
-  participant C as views/chat.js
+  participant C as views/chat/index.js
   participant S as Server API
 
   U->>M: Deep link / navigation to #/chat/t123
@@ -175,7 +175,7 @@ sequenceDiagram
 
 ## UI Read Cache (Single Flight, Short Memo, Peek)
 
-To prevent tab switching from starting with empty skeleton cards and eliminate redundant concurrent requests across views (such as the side panel and Overview loading `api.portfolio()` simultaneously), `ui/api.js` incorporates a lightweight in-memory read cache around 6 idempotent GET reads: `agent`, `portfolio`, `ips`, `tier`, `limits`, and `auditVerify`.
+To prevent tab switching from starting with empty skeleton cards and eliminate redundant concurrent requests across views (such as the side panel and Overview loading `api.portfolio()` simultaneously), `ui/lib/api.js` incorporates a lightweight in-memory read cache around 6 idempotent GET reads: `agent`, `portfolio`, `ips`, `tier`, `limits`, and `auditVerify`.
 
 ```mermaid
 flowchart TD
@@ -184,7 +184,7 @@ flowchart TD
     V2["fresh request: api.portfolio(), api.agent(), ..."]
   end
 
-  subgraph Cache ["ui/api.js Read Cache"]
+  subgraph Cache ["ui/lib/api.js Read Cache"]
     P["peek: return last successful value (any age)"]
     C1{"In-flight request?"}
     C2{"Memo < 8s?"}
@@ -224,7 +224,7 @@ flowchart TD
 | `api.js` | The only module that calls the network; `ROUTES` lists every path; `?fixtures=1` switch |
 | `gauges.js`, `explain.js`, `limits.js` | Pure helpers: gauges, retry text, relative time; rule code to sentence and unit formatting; the `/limits` read |
 | `holdings.js`, `icons.js` | The holdings grouping model; token and protocol marks |
-| `views/chat.js`, `progress.js`, `side.js` | Chat, the staged progress card, the wallet panel and the history rail |
+| `views/chat/index.js`, `progress.js`, `side.js` | Chat, the staged progress card, the wallet panel and the history rail |
 | `views/overview.js`, `funds.js`, `withdraw.js`, `dialog.js`, `approvals.js`, `topup.js` | Overview, the money dialogs, the approvals card, the gas top-up flow |
 | `views/activity.js`, `rules.js`, `setup.js`, `activate.js`, `account.js`, `confirm.js`, `cards.js`, `jobs.js` | The other screens and shared pieces |
 | `wallet/adapter.js`, `injected.js`, `test.js` | Adapter interface, EIP-1193 implementation (EIP-6963 first), `TestWallet` stub |
@@ -235,14 +235,14 @@ flowchart TD
 - **API strings are text.** Every value from the API is written with `textContent`; no `innerHTML` anywhere. Local token images are fixed paths under `assets/tokens/`.
 - **No storage.** No `localStorage`, `sessionStorage` or cookie access from JS; the session is an HttpOnly cookie. Step-up signatures are asked per action and not kept.
 - **Honest labels.** Reference prices and fixture data carry a chip in words; "Agent says" text is labelled; step cards come from the audit log only; the progress card names only stages the backend reports.
-- **Only listed routes.** `tests/ui/test_ui.py` checks that every path in `api.js` is in the design 12.2 list and in `contracts/openapi.yaml`. The only external URLs are the BaseScan transaction link (navigation) and the chain parameters handed to the wallet.
+- **Only listed routes.** `tests/ui/test_ui_*.py` checks that every path in `api.js` is in the design 12.2 list and in `contracts/openapi.yaml`. The only external URLs are the BaseScan transaction link (navigation) and the chain parameters handed to the wallet.
 - **Keyboard and focus.** Every control is a button, link or form field; `:focus-visible` draws a 3 px ring; the skip link jumps to `#view`; dialogs trap focus and return it.
 
 ## Fixtures mode
 `/ui/?fixtures=1` serves everything from `ui/fixtures/` with an in-memory state and `TestWallet`; `&demo=1` starts signed in and funded at T2, `&scenario=t0` starts at T0 (Setup with Activate), `&scenario=hostile` starts with a blocked hostile order in Activity. In a real browser every fixture chat job walks the stages one poll at a time (a question or a blocked order stops before "Sending"). It exists for judges, previews and tests.
 
 ## Tests
-`tests/ui/test_ui.py` (static scans, contract checks, route list, rule-code coverage, tokens) and node programs that run the real modules against a fake DOM: `harness.mjs`, `flows.mjs`, `chat_flows.mjs`, `f3_flows.mjs` (the existing flows) plus one per new module: `progress_check.mjs`, `icons_check.mjs`, `holdings_check.mjs`, `dialogs_check.mjs`, `rules_check.mjs`, `overview_check.mjs`, each wrapped by a `test_<name>.py`. The node-based tests are skipped when `node` is not on the PATH; the static scans always run. Layout checks that need a real browser (no horizontal overflow, one scroll region on Chat, 44 px targets at 375 px, the progress card visible within 100 ms) were measured in Chrome; the numbers are in the status section of [`ui-v3-plan.md`](../../design/webapp/ui-v3-plan.md).
+`tests/ui/test_ui_*.py` (static scans, contract checks, route list, rule-code coverage, tokens) and node programs that run the real modules against a fake DOM: `harness.mjs`, `flows.mjs`, `chat_flows.mjs`, `f3_flows.mjs` (the existing flows) plus one per new module: `progress_check.mjs`, `icons_check.mjs`, `holdings_check.mjs`, `dialogs_check.mjs`, `rules_check.mjs`, `overview_check.mjs`, each wrapped by a `test_<name>.py`. The node-based tests are skipped when `node` is not on the PATH; the static scans always run. Layout checks that need a real browser (no horizontal overflow, one scroll region on Chat, 44 px targets at 375 px, the progress card visible within 100 ms) were measured in Chrome; the numbers are in the status section of [`ui-v3-plan.md`](../../design/webapp/ui-v3-plan.md).
 
 | Contract item | Test |
 | :--- | :--- |

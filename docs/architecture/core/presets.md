@@ -21,7 +21,7 @@ flowchart TD
 
     subgraph API["Webapp API (api/)"]
         LP["GET /presets<br/>api/wallet.py::list_presets"]
-        ST["PUT /tier (preset_id, tier='T2')<br/>api/app.py & api/main.py"]
+        ST["PUT /tier (preset_id, tier='T2')<br/>api/routes/tier.py & api/main.py"]
     end
 
     subgraph GATEWAY["Gateway & Custody"]
@@ -93,8 +93,8 @@ erDiagram
 - **`contracts/presets/`**: Canonical JSON files validated against `contracts/schemas/ips.schema.json`.
 - **`api/wallet.py`**: `list_presets()` reads both files and returns plain-language summaries and limits without exposing internal paths.
 - **`api/main.py`**: `ips_for(owner, preset_id)` loads preset files and falls back to recorded policy selections.
-- **`api/app.py`**: `PUT /tier` handles optional `preset_id`, validates it against available presets, verifies owner step-up signature against the active IPS hash, and reloads tenant policy under gateway lock.
-- **`core/agent/planner.py`**: `render_system_prompt` formats protocol descriptions, allowed tokens, and Morpho markets dynamically based on the active IPS universe.
+- **`api/routes/tier.py`**: `PUT /tier` handles optional `preset_id`, validates it against available presets, verifies owner step-up signature against the active IPS hash, and reloads tenant policy under gateway lock.
+- **`core/agent/planner/`**: `render_system_prompt` formats protocol descriptions, allowed tokens, and Morpho markets dynamically based on the active IPS universe.
 - **`ui/`**: Setup view renders a 2-option radio selector and passes the selected preset to `setTier` upon activation.
 
 ## Testnet liquidity calibration

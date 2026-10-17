@@ -1,11 +1,11 @@
 # Chat Thread Lifecycle and Staleness Protection
 
 Owning modules:
-- `ui/views/chat.js`: Client-side thread selection, idempotent creation, request staleness guards, and immediate title synchronization.
+- `ui/views/chat/index.js`: Client-side thread selection, idempotent creation, request staleness guards, and immediate title synchronization.
 - `api/chat.py`: `POST /chat/threads` idempotent reuse of empty threads (`200 OK` vs `201 Created`).
 - `core/storage/interfaces.py`: `ChatStore.newest_empty_thread()`.
 - `core/storage/sqlite/chat.py`: SQLite implementation of `newest_empty_thread()`.
-- `core/storage/postgres/adapters.py`: Postgres implementation of `newest_empty_thread()`.
+- `core/storage/postgres/chat.py`: Postgres implementation of `newest_empty_thread()`.
 
 ## Purpose
 
@@ -20,7 +20,7 @@ Owning modules:
 sequenceDiagram
     autonumber
     actor User as Owner
-    participant View as ui/views/chat.js
+    participant View as ui/views/chat/index.js
     participant API as api/chat.py
     participant Store as ChatStore (SQLite / Postgres)
 
@@ -95,4 +95,4 @@ erDiagram
 
 ## Intent Persistence (Migration 0006)
 
-Migration `core/storage/migrations/0006_chat_intent.sql` adds the nullable `intent` column (`text`) to `chat_messages` (with column UPDATE permission for `aw_app`). SQLite (`core/storage/sqlite/chat.py`) and Postgres adapter (`core/storage/postgres/adapters.py`) persist and surface `intent` on agent messages without requiring backfill.
+Migration `core/storage/migrations/0006_chat_intent.sql` adds the nullable `intent` column (`text`) to `chat_messages` (with column UPDATE permission for `aw_app`). SQLite (`core/storage/sqlite/chat.py`) and Postgres adapter (`core/storage/postgres/chat.py`) persist and surface `intent` on agent messages without requiring backfill.

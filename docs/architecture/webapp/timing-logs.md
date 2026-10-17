@@ -1,6 +1,6 @@
 # Latency Visibility, Timing Instrumentation & UI Cache Control
 
-Owner modules: `api.main` (`api/main.py`), `api.jobs` (`api/jobs.py`), and `core.runner.runner` (`core/runner/runner.py`).
+Owner modules: `api.main` (`api/main.py`), `api.jobs` (`api/jobs/`), and `core.runner.runner` (`core/runner/runner.py`).
 
 ## Overview
 

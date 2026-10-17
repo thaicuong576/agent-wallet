@@ -116,7 +116,7 @@ title is the first 40 characters of the first owner message, set by code in `att
 thread's `status` is read from the latest job of its last message (`queued`/`running` is
 `running`, `pending_approval` is `pending`, `denied`/`failed`/`interrupted` is `blocked`,
 otherwise `done`). An agent message appended with a job id joins the thread of that job's user
-message, so `api/jobs.py` is unchanged.
+message, so `api/jobs/` is unchanged.
 
 SQLite: table `chat_threads` and the added column are created in place by `SqliteChat` (an
 existing `webapp.sqlite` gains `thread_id` on open). Postgres: `0005_chat_threads.sql` creates
