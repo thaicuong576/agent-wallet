@@ -889,6 +889,62 @@ def test_chat_failed_after_sent_says_it_may_still_land() -> None:
     assert u["text"] is True and u["link"] == ["#/activity"]
 
 
+@needs_node
+def test_chat_thread_survival_across_remounts_and_reload() -> None:
+    s = harness()["threadSurvival"]
+    assert s["createdThread"] == "t6"
+    assert s["afterSendThread"] == "t6"
+    assert s["hashAfterSend"] == "#/chat/t6"
+    assert s["sameRouteThread"] == "t6"
+    assert s["routeBackThread"] == "t6"
+    assert s["topbarThread"] == "t6"
+    assert s["changedThread"] == "t6"
+    assert s["reloadThread"] == "t6"
+
+
+@needs_node
+def test_chat_thread_survival_in_chat_flows() -> None:
+    s = chat_flows()["threadSurvival"]
+    assert s["threadAfterNew"] == "tnew"
+    assert s["hashAfterNew"] == "#/chat/tnew"
+    assert s["titleAfterSend"] == "Starting new"
+    assert any("Starting new" in r for r in s["activeRailAfterSend"])
+    assert s["threadSameRoute"] == "tnew"
+    assert s["hashSameRoute"] == "#/chat/tnew"
+    assert s["threadRouteBack"] == "tnew"
+    assert s["threadTopbar"] == "tnew"
+    assert s["threadChanged"] == "tnew"
+    assert s["threadReload"] == "tnew"
+    assert s["reloadTitle"] == "Starting new"
+    assert any("Starting new" in r for r in s["reloadActiveRail"])
+
+
+@needs_node
+def test_chat_deep_link_and_404_fallback() -> None:
+    d = chat_flows()["deepLinkAnd404"]
+    assert d["deepLinkSelected"] == "t2"
+    assert d["deepLinkTitle"] == "Thread 2"
+    assert "YouHello t2" in d["deepLinkBubbles"]
+    assert d["unknownFallbackSelected"] == "t1"
+    assert d["unknownFallbackTitle"] == "Thread 1"
+    assert d["unknownFallbackHash"] == "#/chat/t1"
+    assert d["unknownStatus"] == ""
+    assert d["notFoundFallbackSelected"] == "t1"
+    assert d["notFoundStatus"] == ""
+    assert d["notFoundHash"] == "#/chat/t1"
+
+
+@needs_node
+def test_chat_job_isolation_between_threads() -> None:
+    iso = chat_flows()["jobIsolation"]
+    assert iso["t1RunningLive"] is True
+    assert iso["t1RunningStopBtn"] is True
+    assert iso["t2DuringRunLive"] is False
+    assert iso["t2DuringRunSendBtn"] is True
+    assert "Earlier in t2" in "".join(iso["t2TextAfterJobDone"])
+    assert "Earlier in t1" in "".join(iso["t1TextFinal"])
+
+
 def test_chat_ui_has_no_new_storage_or_external_urls() -> None:
     for name in ("views/chat.js", "views/cards.js", "views/side.js"):
         text = (UI / name).read_text(encoding="utf-8")

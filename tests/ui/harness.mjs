@@ -28,6 +28,9 @@ class FakeEl {
     this.className = "";
     this._text = "";
     this.isConnected = true;
+    this.value = "";
+    this.disabled = false;
+    this.hidden = false;
   }
   set textContent(v) {
     this.children = [];
@@ -47,7 +50,14 @@ class FakeEl {
     throw new Error("innerHTML must not be read");
   }
   append(...nodes) {
-    for (const n of nodes) this.children.push(typeof n === "string" ? new TextNode(n) : n);
+    for (const n of nodes) {
+      if (typeof n !== "string") n.parent = this;
+      this.children.push(typeof n === "string" ? new TextNode(n) : n);
+    }
+  }
+  remove() {
+    if (this.parent) this.parent.children = this.parent.children.filter((c) => c !== this);
+    this.parent = null;
   }
   replaceChildren(...nodes) {
     this.children = [];
@@ -119,14 +129,15 @@ const activity = await imp("views/activity.js");
 const rules = await imp("views/rules.js");
 const cards = await imp("views/cards.js");
 const side = await imp("views/side.js");
+const chat = await imp("views/chat.js");
 const gauges = await imp("gauges.js");
 const explain = await imp("explain.js");
 
 const out = {};
 const HOSTILE = '<img src=x onerror=alert(1)><script>alert(2)</script>';
 
-function mk({ demo = true, override = {}, wallet } = {}) {
-  const api = createApi({ fixtures: true, demo, fetchImpl: fileFetch(override) });
+function mk({ demo = true, override = {}, wallet, api: customApi } = {}) {
+  const api = customApi || createApi({ fixtures: true, demo, fetchImpl: fileFetch(override) });
   const ctx = makeCtx({ api, wallet: wallet || new TestWallet(), delayMs: 0 });
   return { api, ctx };
 }
@@ -295,6 +306,70 @@ out.plannerLabels = Object.fromEntries(
   out.pills.t2 = parts.pill.textContent;
   gauges.applyTopbar(parts, { tier: "T2", emergency_stop: true }, me);
   out.pills.stopped = parts.pill.textContent;
+}
+
+// 3d. chat thread survival across remounts and reloads (fixtures mode, ticket T1)
+{
+  const { ctx, api } = mk({ demo: true });
+  await ctx.refreshSession();
+  ctx.state.tier = await api.tier();
+  let root = chat.render(ctx);
+  await tick();
+
+  // New chat
+  const newBtn = byText(root, "button", "+ New chat")[0];
+  await click(newBtn);
+  const createdThread = ctx.state.threadId;
+
+  // Send message
+  const inputEl = find(root, (n) => n.tagName === "TEXTAREA")[0];
+  inputEl.value = "Put 10 USDC to work in Aave";
+  const sendBtn = byText(root, "button", "Send")[0];
+  await click(sendBtn);
+  await tick(50);
+  const afterSendThread = ctx.state.threadId;
+  const hashAfterSend = globalThis.location.hash;
+
+  // 1. hashchange to same route (#/chat)
+  globalThis.location.hash = "#/chat";
+  root = chat.render(ctx);
+  await tick();
+  const sameRouteThread = ctx.state.threadId;
+
+  // 2. another route and back (#/overview then #/chat)
+  overview.render(ctx);
+  await tick();
+  root = chat.render(ctx);
+  await tick();
+  const routeBackThread = ctx.state.threadId;
+
+  // 3. topbar refresh
+  await ctx.refreshSession();
+  const topbarThread = ctx.state.threadId;
+
+  // 4. ctx.changed()
+  ctx.changed();
+  const changedThread = ctx.state.threadId;
+
+  // 5. full page reload with hash
+  globalThis.location.hash = hashAfterSend;
+  const { ctx: reloadCtx } = mk({ demo: true, api });
+  await reloadCtx.refreshSession();
+  reloadCtx.state.tier = await api.tier();
+  const reloadRoot = chat.render(reloadCtx);
+  await tick();
+  const reloadThread = reloadCtx.state.threadId;
+
+  out.threadSurvival = {
+    createdThread,
+    afterSendThread,
+    hashAfterSend,
+    sameRouteThread,
+    routeBackThread,
+    topbarThread,
+    changedThread,
+    reloadThread,
+  };
 }
 
 // 5. API layer: only listed routes, errors become ApiError

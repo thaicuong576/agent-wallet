@@ -43,7 +43,7 @@ const TERMINAL = new Set(["succeeded", "denied", "failed", "interrupted"]);
 export const pollDelay = (attempt) => (attempt < 7 ? 750 : attempt < 22 ? 1500 : 3000);
 
 export function makeCtx({ api, wallet, sleep }) {
-  const state = { me: null, tier: null };
+  const state = { me: null, tier: null, threadId: null };
   const wait = sleep || ((ms) => new Promise((r) => setTimeout(r, api.fixtures ? 0 : ms)));
   const listeners = new Set();
   const ctx = {
@@ -74,6 +74,7 @@ export function makeCtx({ api, wallet, sleep }) {
       if (!state.me) return;
       state.me = null;
       state.tier = null;
+      state.threadId = null;
       ctx.changed();
     },
     // Log out: end the server session, drop every piece of client state and show the connect
@@ -86,6 +87,7 @@ export function makeCtx({ api, wallet, sleep }) {
       }
       state.me = null;
       state.tier = null;
+      state.threadId = null;
       state.loggedOut = true;
       ctx.go("#/chat");
       ctx.changed();
@@ -121,11 +123,30 @@ const VIEWS = { chat, overview, activity, rules, setup };
 // Old hashes keep working.
 const ALIASES = { portfolio: "overview", dashboard: "overview", approvals: "overview", feed: "activity", onboard: "setup" };
 
+// Thread id from a hash like #/chat/<thread_id>. Returns null for #/chat or other screens.
+export function threadFromHash(hash) {
+  const raw = String(hash || "").replace(/^#\/?/, "");
+  const [route, id] = raw.split("/");
+  if (route === "chat" && id) {
+    try {
+      return decodeURIComponent(id);
+    } catch (_) {
+      return id;
+    }
+  }
+  return null;
+}
+
 // Which screen to show. Chat is home once the agent is activated; Setup is shown until then
 // (always for a signed-out visitor and for tier T0). Pure, so the tests can call it.
 export function routeFor(hash, { signedIn, tier }) {
   const raw = String(hash || "").replace(/^#\/?/, "");
-  const asked = Object.prototype.hasOwnProperty.call(ALIASES, raw) ? ALIASES[raw] : raw;
+  const [head] = raw.split("/");
+  const asked = Object.prototype.hasOwnProperty.call(ALIASES, raw)
+    ? ALIASES[raw]
+    : Object.prototype.hasOwnProperty.call(ALIASES, head)
+      ? ALIASES[head]
+      : head;
   if (!signedIn || tier === "T0") return "setup";
   if (asked === "setup") return tier === "T1" ? "setup" : "chat";
   return Object.prototype.hasOwnProperty.call(VIEWS, asked) && asked !== "setup" ? asked : "chat";
@@ -240,8 +261,10 @@ function boot() {
   (async () => {
     const wallet = fixtures ? new TestWallet() : await discoverInjected(globalThis);
     ctx = makeCtx({ api, wallet });
+    const fromHash = threadFromHash(globalThis.location ? globalThis.location.hash : "");
+    if (fromHash) ctx.state.threadId = fromHash;
     ctx.onChange(topbar);
-    globalThis.addEventListener("hashchange", () => showRoute(true));
+    globalThis.addEventListener("hashchange", () => showRoute(false));
     await ctx.refreshSession(); // decides the home view before the first paint
     if (ctx.state.me) {
       try {
