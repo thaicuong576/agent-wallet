@@ -44,26 +44,26 @@ Submit all 6 required items for Topic F (Agent Wallet) before **20 Oct 2026, 23:
 ## Phases and sprints
 Today is 14 Oct; 6 days remain. One sprint per phase. Up to 3 workers run in parallel (slots are set during `/fleet-setup`).
 
-| Phase | Sprint | Done when | Specs |
-| :--- | :--- | :--- | :--- |
-| P0 Foundations | 14–15 Oct | Research tickets answered (RPC simulation, Aave address, Uniswap liquidity); scaffold merged; funded testnet wallet; **first tx hash** through the gateway | S1 |
-| P1 Safe core | 16–17 Oct | Policy engine and tier tests pass 100%; audit log detects a tampered line; gateway blocks a violating order | S2, S3 |
-| P2 Intelligence and proof | 17–18 Oct | Risk scoring, Planner and Reader, eval harness produce a report; all 4 decision branches have a test | S4, S5, S6 |
-| P3 Package | 19–20 Oct | Minimal UI, README, deploy guide, architecture and security docs, tx evidence, deck, video, repo public, submitted | S7, S8 |
+| Phase | Sprint | Status | Done when | Specs |
+| :--- | :--- | :--- | :--- | :--- |
+| P0 Foundations | 14–15 Oct | **Completed** | Research tickets answered (RPC simulation, Aave address, Uniswap liquidity); scaffold merged; funded testnet wallet; **first tx hash** through the gateway | S1 |
+| P1 Safe core | 16–17 Oct | **Completed** | Policy engine and tier tests pass 100%; audit log detects a tampered line; gateway blocks a violating order | S2, S3 |
+| P2 Intelligence and proof | 17–18 Oct | **Completed** | Risk scoring, Planner and Reader, eval harness produce a report; all 4 decision branches have a test | S4, S5, S6 |
+| P3 Package | 19–20 Oct | **Completed** | Minimal UI, README, deploy guide, architecture and security docs, tx evidence, deck, video, repo public, submitted | S7, S8 |
 
 Critical path: scaffold → gateway → policy engine → eval harness → submission pack. Risk scoring, Planner/Reader and the UI hang off it and can run in parallel once the gateway interface is fixed.
 
 ## Specs
-| ID | Capability | Phase |
-| :--- | :--- | :--- |
-| S1 | Gateway and execution (Aave supply and withdraw) | P0 |
-| S2 | Policy engine, IPS, permission tiers | P1 |
-| S3 | Audit log (append-only, hash chain) | P1 |
-| S4 | Research and risk scoring | P2 |
-| S5 | Planner, Reader, injection defence | P2 |
-| S6 | Eval harness and report | P2 |
-| S7 | API contract and minimal UI | P3 |
-| S8 | Submission pack | P3 |
+| ID | Capability | Phase | Status |
+| :--- | :--- | :--- | :--- |
+| S1 | Gateway and execution (Aave supply and withdraw) | P0 | **Done** |
+| S2 | Policy engine, IPS, permission tiers | P1 | **Done** |
+| S3 | Audit log (append-only, hash chain) | P1 | **Done** |
+| S4 | Research and risk scoring | P2 | **Done** |
+| S5 | Planner, Reader, injection defence | P2 | **Done** |
+| S6 | Eval harness and report | P2 | **Done** |
+| S7 | API contract and minimal UI | P3 | **Done** |
+| S8 | Submission pack | P3 | **In progress** (packaging) |
 
 Full specs are written for P0 and P1 first; P2 and P3 specs are written after P1 finishes.
 

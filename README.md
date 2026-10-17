@@ -1,110 +1,90 @@
 # agent-wallet
 
-An AI wallet agent for FinTechathon 2026 (Topic F, Agent Wallet). The agent holds its own funded wallet and acts only inside an Investment Policy Statement (IPS) set by the owner. A deterministic policy engine decides every order, and an eval suite measures whether the agent complies.
+Autonomous AI wallet agent for FinTechathon 2026 (Topic F) managing on-chain assets on Base Sepolia inside an Investment Policy Statement (IPS) set by the owner. A deterministic policy engine evaluates every proposed order before any transaction is signed, ensuring the LLM never controls private keys or exceeds policy limits.
 
-> Status: a working multi-owner webapp is live on Base Sepolia (testnet only): <https://agent-wallet-6vuy.onrender.com/ui/> (Render free tier, so the first request after idle can take about a minute; Supabase Postgres behind it). Sign in with a wallet, the server creates a custodial testnet agent wallet for you, fund its gas, activate it, mint test USDC, run the LLM planner, and every decision lands in a hash-chained audit log. The policy engine, tiers, gateway, signer, audit chain, risk provider, planner and reader, API, UI and the eval harness are built and tested. Hosting and operations: [`docs/architecture/deployment.md`](docs/architecture/deployment.md).
+- **Hosted Demo**: <https://agent-wallet-6vuy.onrender.com/ui/> (Base Sepolia testnet, Render free tier)
+- **Repository**: <https://github.com/thaicuong576/agent-wallet>
 
-## For judges: verify in five minutes, no keys needed
-```sh
-python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scriptsctivate
-pip install -r requirements-dev.txt
-python -m pytest -q                              # full test suite, offline
-python -m evals.run                              # 46 scenarios, 27/28 rule codes; writes docs/evidence/eval-report.md
-python -m core.audit.verify docs/evidence/audit-chain.jsonl   # hash chain of the live run
-```
-| Evidence | Where |
-| :--- | :--- |
-| Hosted end-to-end session (sign-in, top-up, activate, mint, planner runs, hostile run denied, audit verify) | [`docs/evidence/webapp-evidence.md`](docs/evidence/webapp-evidence.md) |
-| On-chain transactions (approve and supply 1 test USDC, receipts `0x1`) | [`docs/evidence/tx_hashes.md`](docs/evidence/tx_hashes.md) |
-| Planner-proposed run: two executed orders, one hostile order denied, verified chain | [`docs/evidence/runner-evidence.md`](docs/evidence/runner-evidence.md) |
-| Evaluation report (offline replay) | [`docs/evidence/eval-report.md`](docs/evidence/eval-report.md) |
-| Live on-chain risk inputs evidence | [`docs/design/evidence-risk-inputs.md`](docs/design/evidence-risk-inputs.md) |
-| Technical documentation | [`docs/technical-documentation.md`](docs/technical-documentation.md) |
-| Security self-assessment and known risks | [`docs/security/self-assessment.md`](docs/security/self-assessment.md) |
-| Architecture notes | [`docs/architecture/`](docs/architecture/) |
-| Third-party notices | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
-
-## Quick start
-Requires Python 3.11 and, optionally, Docker.
-
-```sh
-python -m venv .venv
-. .venv/bin/activate            # Windows: .venv\Scripts\activate
-pip install -r requirements-dev.txt
-make check                      # lint, tests, secret scan; needs no keys and no network
-make run                        # API on http://127.0.0.1:8000 (GET /health)
-```
-
-With Docker:
-```sh
-cp .env.example .env            # optional; the API starts without keys
-docker compose up --build       # API on http://localhost:8000
-```
-The container runs the API and static console at `/ui` as non-root (UID 10001). Runtime state persists in `./data:/app/data` under `AGENT_WALLET_DATA_DIR`. Repository scripts (`scripts/`, `evals/`) are not bundled into the image and run from a local checkout. Architecture note: [`docs/architecture/deployment.md`](docs/architecture/deployment.md).
-
-## Run the UI
-The webapp UI (plain HTML, CSS and JS modules, no build step, no external assets) is served by the API at `/ui`. **Chat** is home once the agent is activated, then **Overview** (what the agent holds, grouped by what the money is doing, with token and protocol icons, plus Add funds and Withdraw dialogs), **Activity** (every decision as plain-language step cards, with the verify-chain action) and **Rules** (read-only limits, the agent-permission control and a scripted safety demo). While the agent works, Chat shows a staged progress card (message received, waiting, working, sending to Base Sepolia) with elapsed time and a Stop button. A three-step **Setup** (Connected, Add gas, Activate with a choice between Conservative Aave USDC and Diversified multi-protocol presets) is shown until the agent is activated. The layout fits the viewport on desktop (one scroll region in Chat) and on a phone (bottom tab bar). There is no warning banner: testnet and custody are a header chip, one grey footer line and the Setup text.
-```sh
-uvicorn api.main:app                                  # then open http://127.0.0.1:8000/ui/
-# no backend needed for a look around: http://127.0.0.1:8000/ui/?fixtures=1&demo=1
-```
-`?fixtures=1` answers every call from `ui/fixtures/*.json` and a stub wallet (a header chip says so). `&demo=1` starts signed in and funded at tier T2; `&scenario=t0` starts at T0 so Setup and Activate show; `&scenario=hostile` starts with a blocked hostile order in Activity. Without it the page is live: it talks to the session routes through `ui/api.js` (wallet sign-in, HttpOnly cookie, `X-AW-CSRF` header) and needs the API started with `AGENT_WALLET_MODE=multi`, a session secret, a keystore secret and `AGENT_WALLET_PUBLIC_ORIGIN` set to the address in the browser bar (see `docs/architecture/api.md`). Activate (raises the tier from T0 with one signature over the chosen preset's IPS hash), chat, stop and resume, and approvals work from the page, and every screen shows only the signed-in owner's own data. Add funds sends test ETH for gas from your wallet or asks the faucet for test USDC; Withdraw returns USDC or ETH to your own address with one signature. Previews of this version: [`docs/previews/ui3-*.png`](docs/previews/); the audit that led to it and the plan: [`docs/design/webapp/ui-v3-plan.md`](docs/design/webapp/ui-v3-plan.md); design note: [`docs/architecture/ui.md`](docs/architecture/ui.md); chat architecture notes: [`docs/architecture/chat-quota-voice.md`](docs/architecture/chat-quota-voice.md), [`docs/architecture/chat-thread-lifecycle.md`](docs/architecture/chat-thread-lifecycle.md); token icons and their licences: [`docs/design/webapp/icons.md`](docs/design/webapp/icons.md).
-
-## How it works
 ```mermaid
 flowchart LR
   U[Owner sets IPS] --> P[Planner LLM proposes order]
   P --> G[Gateway]
   G --> T{Tier gate}
   T --> E{Policy engine}
-  E -- allow --> S[Simulate then sign] --> C[(Base Sepolia)]
+  E -- allow --> S[Simulate & sign] --> C[(Base Sepolia)]
   E -- deny or escalate --> L[Audit log with reason]
   S --> L
 ```
-Protocols plug in through one registry ([`docs/architecture/protocols.md`](docs/architecture/protocols.md)): the tx builder, planner prompt, portfolio reader and `GET /protocols` all read it. Supported protocols include Aave v3 (USDC and USDT lending, [`docs/architecture/aave-adapter.md`](docs/architecture/aave-adapter.md)), Aave Stata (ERC-4626 static aToken vaults for USDC and USDT, [`docs/architecture/aave-stata.md`](docs/architecture/aave-stata.md)), Morpho Blue isolated lending ([`docs/architecture/morpho-blue.md`](docs/architecture/morpho-blue.md)), and Uniswap v3 (DEX swaps for USDC, WETH, WBTC, [`docs/architecture/uniswap-v3.md`](docs/architecture/uniswap-v3.md)). Strategy presets (Conservative vs Diversified) govern the allowed universe and limits ([`docs/architecture/presets.md`](docs/architecture/presets.md)).
 
-The LLM proposes and code decides; the LLM never holds a key. Only the gateway can reach the signer, and every outcome is written to a hash-chained log. Details: [`docs/technical-documentation.md`](docs/technical-documentation.md).
+## Submission Deliverables
+| Item | Deliverable | Path / Reference |
+| :--- | :--- | :--- |
+| **01** | Technical documentation | [`docs/technical-documentation.md`](docs/technical-documentation.md) |
+| **02** | Presentation deck | [`docs/submission/02-presentation-deck.md`](docs/submission/02-presentation-deck.md) |
+| **03** | Demo video script | [`docs/submission/03-demo-video-script.md`](docs/submission/03-demo-video-script.md) |
+| **04** | Source code & docs | This repository: [`README.md`](README.md), [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md), [`docs/TESTING.md`](docs/TESTING.md) |
+| **05** | Security self-assessment | [`docs/security/self-assessment.md`](docs/security/self-assessment.md) |
+| **06** | Execution evidence | [`docs/submission/06-execution-evidence.md`](docs/submission/06-execution-evidence.md) |
 
-## Runner
-`core.runner.runner.Runner.run_once(untrusted_text, now)` runs one cycle: the Reader extracts facts, the Planner proposes orders, the portfolio reader supplies state and ledger limits, and each order goes through `Gateway.propose`. A planner `no_action` is recorded through `Gateway.record_no_action`. The runner never imports the signer, the owner controls or the intent store. Design note: [`docs/architecture/runner.md`](docs/architecture/runner.md); RPC concurrency note: [`docs/architecture/rpc-latency.md`](docs/architecture/rpc-latency.md).
+## Quick Start
+Run locally in 5 commands without API keys (offline demo mode with fixtures needs no keys or RPC):
+```sh
+python -m venv .venv && . .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+make check                                  # lint, tests, links, secret scan (offline)
+make demo                                   # starts API server on http://127.0.0.1:8000
+# Open http://127.0.0.1:8000/ui/?fixtures=1&demo=1 in browser for zero-key demo
+```
+With keys: copy `.env.example` to `.env`, set `BASE_SEPOLIA_RPC_URL`, `OPENAI_API_KEY`, and run `make run`. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
-## Make targets
-| Target | What it does |
-| :--- | :--- |
-| `make check` | lint, tests and secret scan (what CI runs) |
-| `make test` | pytest, including contract-example validation and the signer-boundary test |
-| `make lint` / `make format` | ruff |
-| `make run` | local API with reload |
-| `make docker-build` / `make docker-run` | image build and run |
+## Running Tests
+```sh
+make test                                   # over 1,380 tests: unit, policy, gateway, storage, UI
+make eval                                   # 46 replay scenarios covering 27/28 rule codes
+python -m core.audit.verify docs/evidence/audit-chain.jsonl  # verifies audit hash chain
+```
+Detailed testing guide and suite breakdowns: [`docs/TESTING.md`](docs/TESTING.md).
 
-## Configuration
-Environment variable names only (see `.env.example`). Values live in `.env`, which is never committed. Testnet keys only.
+## Supported Protocols
+- **Aave v3**: USDC and USDT supply & withdraw on Base Sepolia ([`docs/architecture/aave-adapter.md`](docs/architecture/aave-adapter.md))
+- **Aave Stata**: ERC-4626 static yield-bearing aToken vaults for USDC/USDT ([`docs/architecture/aave-stata.md`](docs/architecture/aave-stata.md))
+- **Morpho Blue**: Isolated lending markets for USDC/cbETH and USDC/WBTC ([`docs/architecture/morpho-blue.md`](docs/architecture/morpho-blue.md))
+- **Uniswap v3**: DEX token swaps with oracle-based minimum output protection ([`docs/architecture/uniswap-v3.md`](docs/architecture/uniswap-v3.md))
+- Protocol registry & strategy presets (Conservative vs Diversified): [`docs/architecture/protocols.md`](docs/architecture/protocols.md), [`docs/architecture/presets.md`](docs/architecture/presets.md)
 
-| Variable | Purpose |
-| :--- | :--- |
-| `OPENAI_API_KEY` | Planner and Reader LLM |
-| `AGENT_WALLET_PRIVATE_KEY` | Testnet agent wallet key; read only by the signer |
-| `AGENT_WALLET_OWNER_TOKEN` | Owner token for the owner endpoints and UI; unset means they answer 503 |
-| `BASE_SEPOLIA_RPC_URL` | JSON-RPC endpoint (default `https://sepolia.base.org`) |
-| `AGENT_WALLET_DATA_DIR` | Directory for SQLite state files (default `.data`, `/app/data` in container) |
-| `AGENT_WALLET_CHAT_INQUIRIES_PER_HOUR` | Per-hour limit for chat jobs with zero proposals (default `60`) |
-| `IPS_PATH` | The Investment Policy Statement file |
+## On-Chain Evidence
+Real testnet transactions executed on Base Sepolia (chain ID 84532):
+| Action | Protocol | Transaction Hash | Evidence Source |
+| :--- | :--- | :--- | :--- |
+| Approve 1 USDC | Aave v3 | [`0xba75...0221`](https://sepolia.basescan.org/tx/0xba75953fca67a96112ec7f11bfeeb03235629e0cc7415033ddb7a6b244630221) | [`docs/evidence/tx_hashes.md`](docs/evidence/tx_hashes.md) |
+| Supply 1 USDC | Aave v3 | [`0x7c81...f233`](https://sepolia.basescan.org/tx/0x7c81b0ad32c8213081a0e142ee50e5de72f750ad23425c9267ecb81a0ea6f233) | [`docs/evidence/tx_hashes.md`](docs/evidence/tx_hashes.md) |
+| Gas Top-up | Base Sepolia | [`0xf9db...0e9a`](https://sepolia.basescan.org/tx/0xf9db01704315836598e0496a7ee9233caf5aedc25ab16eec6002bbd9d3af0e9a) | [`docs/evidence/webapp-evidence.md`](docs/evidence/webapp-evidence.md) |
+| Approve 5 USDC | Stata Vault | [`0xd10c...7274`](https://sepolia.basescan.org/tx/0xd10c778b9b496a0b185a01679a59466a957883f2b01619f683fe8c0b68ca7274) | [`docs/evidence/defi-evidence.md`](docs/evidence/defi-evidence.md) |
+| Supply 5 USDC | Stata Vault | [`0xa61e...0221`](https://sepolia.basescan.org/tx/0xa61e6dcae14132cd74efe19bdd7fb38f16e5d34e1a825625f3745383df960221) | [`docs/evidence/defi-evidence.md`](docs/evidence/defi-evidence.md) |
+| Approve 5 USDC | Morpho Blue | [`0x03de...2ecc`](https://sepolia.basescan.org/tx/0x03dec0e246b5d355731020567f94a2aed72a11490bdd6a2060b44fe63c282ecc) | [`docs/evidence/defi-evidence.md`](docs/evidence/defi-evidence.md) |
+| Supply 10 USDC (Planner) | Aave v3 | [`0xcc49...44ff`](https://sepolia.basescan.org/tx/0xcc49ca6da6435519fb15291b95887bbcd16f9934ce81076efff93836ed4044ff) | [`docs/evidence/webapp-evidence.md`](docs/evidence/webapp-evidence.md) |
 
-## Repository map
-| Path | Purpose |
-| :--- | :--- |
-| `PLAN.md` | Goal, scope, phases, milestones, risks |
-| `AGENTS.md` | Conventions for the agents that build this repo |
-| `contracts/` | Data contracts v1: JSON Schemas, OpenAPI, rule codes, examples (see `contracts/README.md`) |
-| `core/` | Gateway, signer, policy engine, tiers, audit log, risk provider, planner and reader, protocol adapters |
-| `evals/` | Offline replay evaluation harness |
-| `api/` | FastAPI app |
-| `ui/` | Static webapp UI served at `/ui` |
-| `tests/` | pytest suite |
-| `scripts/` | Repository checks (secret scan) and the first-live-transaction script (dry run by default) |
-| `docs/` | Competition rules, design notes, architecture notes (see `docs/README.md`) |
-| `THIRD_PARTY_NOTICES.md` | Open-source attribution and licences (fetch-event-source, sse-starlette) |
-| `Dockerfile`, `docker-compose.yml` | Container image and one-command run |
+## Repository Structure
+- `api/`: REST API (FastAPI), auth sessions, SSE event streams, OpenAPI contract
+- `contracts/`: Data contracts, JSON Schemas, OpenAPI spec, rule codes, presets, examples
+- `core/`: Policy engine, gateway, signer, audit hash-chain, protocols, risk router
+- `docs/`: Technical documentation, deployment guides, test catalogues, architecture notes
+- `evals/`: 46 offline evaluation scenarios covering 27 of 28 rule codes
+- `scripts/`: Link checker, secret scanner, smoke test, and live transaction scripts
+- `tests/`: Pytest suite (over 1,380 tests across unit, policy, gateway, storage, UI)
+- `ui/`: Zero-build single-page webapp console (plain HTML, CSS, and ES modules)
 
-## Submission
-Deadline: 20 Oct 2026, 23:59 Beijing time. Required items and rules: `docs/competition/`.
+## Security Model
+- **LLM proposes, code decides**: The LLM outputs structured proposals; a pure Python engine enforces rules.
+- **Key isolation**: Signer private keys are restricted to the gateway and never exposed to LLMs or UI.
+- **Permission tiers**: T0 (read-only), T1 (propose-only), and T2 (autonomous execution within limits).
+- **Fail-closed risk router**: Stale or unreachable risk oracle data immediately blocks execution.
+- **Tamper-evident audit chain**: Every action, denial, and approval is recorded in a SHA-256 hash chain.
+
+## Known Limits
+- Testnet only (Base Sepolia, chain 84532); mainnet execution and assets are strictly unsupported.
+- Hosted demo uses encrypted custodial testnet wallets; production requires user-delegated accounts.
+- Render free-tier instances sleep after 15 minutes of inactivity; first request may take ~50s.
+
+## Licence & Notices
+Licensed under MIT. Open-source licenses and third-party notices: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
