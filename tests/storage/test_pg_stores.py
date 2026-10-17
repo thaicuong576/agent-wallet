@@ -69,7 +69,7 @@ def test_pg_chat_store_newest_empty_thread_offline() -> None:
     from contextlib import contextmanager
     from unittest.mock import MagicMock
 
-    from core.storage.postgres.adapters import PgChatStore
+    from core.storage.postgres.chat import PgChatStore
 
     pool = MagicMock()
     cur = MagicMock()
@@ -98,7 +98,7 @@ def test_pg_chat_store_intent_and_thread_lookup_offline() -> None:
     from contextlib import contextmanager
     from unittest.mock import MagicMock
 
-    from core.storage.postgres.adapters import PgChatStore
+    from core.storage.postgres.chat import PgChatStore
 
     pool = MagicMock()
     cur = MagicMock()
