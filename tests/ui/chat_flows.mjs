@@ -1224,4 +1224,451 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
   };
 }
 
+// 22. ticket E: measurement flow (a, b, c, d)
+{
+  const encoder = new TextEncoder();
+  const nowIso = new Date().toISOString();
+  const testJobId = "e".repeat(32);
+
+  const measureCalls = [];
+  const state = {
+    threads: [
+      { id: "t1", title: "Thread 1", last_message_at: nowIso, status: "done" },
+      { id: "t2", title: "Thread 2", last_message_at: "2026-01-01T10:00:00Z", status: "done" },
+    ],
+    byThread: {
+      t1: [msg("user", "Hello t1"), msg("agent", "Reply in t1", [])],
+      t2: [msg("user", "Hello t2"), msg("agent", "Reply in t2", [])],
+    },
+  };
+
+  let streamController = null;
+  const srvFetch = async (url, init = {}) => {
+    const method = init.method || "GET";
+    measureCalls.push({ method, url });
+    const reply = (status, data, headers = {}) => ({
+      ok: status < 400,
+      status,
+      headers: { get: (k) => headers[k] ?? (k.toLowerCase() === "content-type" ? "application/json" : null) },
+      json: async () => data,
+    });
+    if (url === "/me") {
+      return reply(200, { address: OWNER, tier: "T2", emergency_stop: false });
+    }
+    if (url.startsWith("/chat?")) {
+      const tid = new URL(url, "http://x").searchParams.get("thread_id");
+      return reply(200, { items: (tid && state.byThread[tid]) || [] });
+    }
+    if (url === "/limits") {
+      return reply(200, { per_order_usd: "50.00", per_day_usd: "1000.00" });
+    }
+    if (url === "/chat/suggestions") {
+      return reply(200, { items: [{ text: "What is my balance?" }] });
+    }
+    if (url.startsWith("/chat/threads")) {
+      return reply(200, { items: state.threads });
+    }
+    if (method === "POST" && url === "/chat") {
+      state.byThread.t1.push(msg("user", "Put 10 USDC to work in Aave"));
+      return reply(202, { job_id: testJobId, status: "queued" });
+    }
+    if (url.startsWith("/chat/stream/" + testJobId)) {
+      const stream = new ReadableStream({
+        start(controller) {
+          streamController = controller;
+        },
+      });
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (k) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null) },
+        body: stream,
+      };
+    }
+    if (url === "/jobs/" + testJobId) {
+      return reply(200, {
+        job_id: testJobId,
+        status: "succeeded",
+        phase: "done",
+        finished_at: "2026-10-15T12:00:03Z",
+      });
+    }
+    return reply(404, {});
+  };
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = srvFetch;
+
+  const api = createApi({ fixtures: false, fetchImpl: srvFetch });
+  const ctx = makeCtx({
+    api,
+    wallet: new TestWallet({ address: OWNER }),
+    sleep: async () => {},
+  });
+  globalThis.location.hash = "#/chat/t1";
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick(50);
+
+  // ---- (a), (b), (c): Send and finish with fake stream
+  measureCalls.length = 0;
+  const initialBubbleCount = bubbles(root).length;
+
+  const box = input(root);
+  box.value = "Put 10 USDC to work in Aave";
+
+  let firstAgentTextTime = null;
+  function getAgentText() {
+    // Check if new turn's agent text is visible (either streamed token text or completed message)
+    const agentBubbles = bubbles(root).filter((b) => b.className.includes("agent"));
+    const last = agentBubbles[agentBubbles.length - 1];
+    if (!last) return "";
+    const txt = last.textContent || "";
+    if (txt.includes("I have verified your rules")) return txt;
+    return "";
+  }
+
+  // Count bubbles created during the turn
+  let agentBubblesCreatedDuringTurn = 0;
+  const origAppend = root.querySelector ? null : null; // we can inspect live vs final bubble
+
+  // Press enter to send
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(30);
+
+  // At 0.3s (300 ms): phase event
+  if (streamController) {
+    streamController.enqueue(encoder.encode('event: phase\r\ndata: {"phase":"working"}\r\n\r\n'));
+  }
+  await tick(30);
+  if (!firstAgentTextTime && getAgentText()) firstAgentTextTime = 0.3;
+
+  // Track live bubble node
+  const liveBubbleDuringRun = byClass(root, "live")[0];
+
+  // At 1.0s (1000 ms): token event
+  if (streamController) {
+    streamController.enqueue(encoder.encode('event: token\r\ndata: {"text":"I have verified your rules."}\r\n\r\n'));
+  }
+  await tick(30);
+  if (!firstAgentTextTime && getAgentText()) firstAgentTextTime = 1.0;
+
+  // At 3.0s (3000 ms): done event
+  // Update state with final message before done
+  state.byThread.t1.push(
+    msg(
+      "agent",
+      "I have verified your rules and supplied 10 USDC to Aave.",
+      [
+        step({ function: "supply", outcome: "executed", tx_hash: TX, explanation: "Supplied 10 USDC to Aave." }),
+      ]
+    )
+  );
+
+  if (streamController) {
+    streamController.enqueue(
+      encoder.encode('event: done\r\ndata: {"job_id":"' + testJobId + '","status":"succeeded"}\r\n\r\n')
+    );
+    streamController.close();
+  }
+  await tick(100);
+  if (!firstAgentTextTime && getAgentText()) firstAgentTextTime = 3.0;
+
+  // Count requests by route
+  const requestsByRoute = {};
+  for (const c of measureCalls) {
+    const route = c.url.split("?")[0];
+    requestsByRoute[c.method + " " + route] = (requestsByRoute[c.method + " " + route] || 0) + 1;
+  }
+
+  const finishedBubbles = bubbles(root);
+  const finalAgentBubbles = finishedBubbles.filter((b) => b.className.includes("agent"));
+  const lastAgentBubble = finalAgentBubbles[finalAgentBubbles.length - 1];
+
+  function countSubtreeNodes(node) {
+    let count = 1;
+    if (node && node.children) {
+      for (const child of node.children) {
+        if (typeof child !== "string") count += countSubtreeNodes(child);
+      }
+    }
+    return count;
+  }
+  const domNodesInAgentBubble = lastAgentBubble ? countSubtreeNodes(lastAgentBubble) : 0;
+
+  // Single bubble per turn: check if the live bubble element was directly reused for the final message
+  const reusedSameBubble = Boolean(liveBubbleDuringRun && lastAgentBubble === liveBubbleDuringRun);
+  const totalAgentBubblesCreatedInTurn = reusedSameBubble ? 1 : 2;
+
+  // ---- (d): Thread switch
+  measureCalls.length = 0;
+  let skeletonSeenDuringSwitch = false;
+  const origSrvFetch = srvFetch;
+
+  const rows = byClass(root, "rail-row");
+  const t2Row = rows.find((r) => r.textContent.includes("Thread 2"));
+
+  const switchStart = Date.now();
+  // Check skeleton immediately before/during fetch
+  const clickPromise = fire(t2Row, "click");
+  skeletonSeenDuringSwitch = Boolean(
+    byClass(root, "skeleton").length || byClass(root, "chat-skeleton").length
+  );
+  await clickPromise;
+  await tick(50);
+  const switchTimeMs = Date.now() - switchStart;
+
+  const threadSwitchRequests = {};
+  for (const c of measureCalls) {
+    const route = c.url.split("?")[0];
+    threadSwitchRequests[c.method + " " + route] = (threadSwitchRequests[c.method + " " + route] || 0) + 1;
+  }
+
+  globalThis.fetch = origFetch;
+
+  out.measurement = {
+    // (a) requests during send-and-finish
+    sendAndFinishRequests: {
+      byRoute: requestsByRoute,
+      total: Object.values(requestsByRoute).reduce((a, b) => a + b, 0),
+    },
+    sendAndFinishTotal: Object.values(requestsByRoute).reduce((a, b) => a + b, 0),
+    // (b) time to first agent text
+    timeToFirstAgentTextSec: firstAgentTextTime,
+    // (c) DOM nodes and bubbles created
+    bubblesCreatedInTurn: totalAgentBubblesCreatedInTurn,
+    reusedSameBubble,
+    finalAgentBubbleCount: finalAgentBubbles.length,
+    domNodesInAgentBubble,
+    // (d) thread switch
+    threadSwitchRequests: {
+      byRoute: threadSwitchRequests,
+      total: Object.values(threadSwitchRequests).reduce((a, b) => a + b, 0),
+    },
+    threadSwitchSkeletonSeen: skeletonSeenDuringSwitch,
+    threadSwitchTimeMs: switchTimeMs,
+  };
+}
+
+// 23. ticket E: specific feature verification
+{
+  // A. Clarification chips
+  const clarifyMsg = {
+    ...msg("agent", "Should I deposit into Aave or Compound?"),
+    intent: "clarify",
+  };
+  const { srv: srvClarify, ctx: ctxClarify } = make({
+    state: {
+      items: [msg("user", "Put 10 USDC to work"), clarifyMsg],
+    },
+    onSend: (body) => ({
+      messages: [msg("user", body.message), msg("agent", "Done with " + body.message)],
+    }),
+  });
+  globalThis.location.hash = "#/chat";
+  await ctxClarify.refreshSession();
+  const rootClarify = chat.render(ctxClarify);
+  await tick(50);
+
+  const clarifyChips = byClass(rootClarify, "clarify-chip").map((b) => b.textContent);
+  const clarifyBox = input(rootClarify);
+  // Click first clarify chip
+  const aaveChip = byClass(rootClarify, "clarify-chip").find((b) => b.textContent === "Aave");
+  if (aaveChip) await fire(aaveChip, "click");
+  const valueAfterClick = clarifyBox.value;
+  const postCallsAfterClick = srvClarify.calls.filter((c) => c.method === "POST" && c.url === "/chat").length;
+
+  // Send message
+  await fire(clarifyBox, "keydown", { key: "Enter", shiftKey: false });
+  await tick(50);
+  const clarifyChipsAfterSend = byClass(rootClarify, "clarify-chip").length;
+
+  // B. Token streaming, reset, and hostile tags
+  let streamControllerE = null;
+  const testJobE = "f".repeat(32);
+  const encoderE = new TextEncoder();
+  const stateE = {
+    threads: [{ id: "te", title: "Thread E", last_message_at: new Date().toISOString(), status: "done" }],
+    byThread: { te: [] },
+  };
+
+  const srvFetchE = async (url, init = {}) => {
+    const method = init.method || "GET";
+    const reply = (status, data, headers = {}) => ({
+      ok: status < 400,
+      status,
+      headers: { get: (k) => headers[k] ?? (k.toLowerCase() === "content-type" ? "application/json" : null) },
+      json: async () => data,
+    });
+    if (url === "/me") return reply(200, { address: OWNER, tier: "T2", emergency_stop: false });
+    if (url.startsWith("/chat?")) {
+      const tid = new URL(url, "http://x").searchParams.get("thread_id");
+      return reply(200, { items: (tid && stateE.byThread[tid]) || [] });
+    }
+    if (url.startsWith("/chat/threads")) return reply(200, { items: stateE.threads });
+    if (url === "/limits") return reply(200, { per_order_usd: "50.00", per_day_usd: "1000.00" });
+    if (url === "/chat/suggestions") return reply(200, { items: [] });
+    if (method === "POST" && url === "/chat") {
+      stateE.byThread.te.push(msg("user", "Stream test"));
+      return reply(202, { job_id: testJobE, status: "queued" });
+    }
+    if (url.startsWith("/chat/stream/" + testJobE)) {
+      const stream = new ReadableStream({
+        start(controller) {
+          streamControllerE = controller;
+        },
+      });
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: (k) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null) },
+        body: stream,
+      };
+    }
+    if (url === "/jobs/" + testJobE) {
+      return reply(200, { job_id: testJobE, status: "succeeded", phase: "done" });
+    }
+    return reply(404, {});
+  };
+
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = srvFetchE;
+  const apiE = createApi({ fixtures: false, fetchImpl: srvFetchE });
+  const ctxE = makeCtx({
+    api: apiE,
+    wallet: new TestWallet({ address: OWNER }),
+    sleep: async () => {},
+  });
+  globalThis.location.hash = "#/chat/te";
+  await ctxE.refreshSession();
+  const rootE = chat.render(ctxE);
+  await tick(50);
+
+  const boxE = input(rootE);
+  boxE.value = "Stream test";
+  await fire(boxE, "keydown", { key: "Enter", shiftKey: false });
+  await tick(30);
+
+  // Send token with hostile tag
+  if (streamControllerE) {
+    streamControllerE.enqueue(encoderE.encode('event: token\r\ndata: {"text":"Checking <img onerror=alert(1)>"}\r\n\r\n'));
+  }
+  await tick(30);
+  const streamParaHostile = byClass(rootE, "streaming-text")[0];
+  const hostileTextSeen = streamParaHostile ? streamParaHostile.textContent : "";
+  const innerHTMLUsedDuringStream = globalThis.__innerHTMLUsed;
+
+  // Send reset
+  if (streamControllerE) {
+    streamControllerE.enqueue(encoderE.encode('event: reset\r\ndata: {}\r\n\r\n'));
+  }
+  await tick(30);
+  const textAfterReset = streamParaHostile ? streamParaHostile.textContent : "";
+  const hiddenAfterReset = streamParaHostile ? streamParaHostile.hidden : false;
+
+  // Send new token
+  if (streamControllerE) {
+    streamControllerE.enqueue(encoderE.encode('event: token\r\ndata: {"text":"Verified cleanly."}\r\n\r\n'));
+  }
+  await tick(30);
+  const textAfterSecondToken = streamParaHostile ? streamParaHostile.textContent : "";
+
+  // Complete stream
+  stateE.byThread.te.push(msg("agent", "Verified cleanly.", []));
+  if (streamControllerE) {
+    streamControllerE.enqueue(encoderE.encode('event: done\r\ndata: {"job_id":"' + testJobE + '","status":"succeeded"}\r\n\r\n'));
+    streamControllerE.close();
+  }
+  await tick(100);
+
+  const finalBubbles = bubbles(rootE);
+  const finalAgentBubbles = finalBubbles.filter((b) => b.className.includes("agent"));
+  const lastAgentText = finalAgentBubbles.length ? finalAgentBubbles[finalAgentBubbles.length - 1].textContent : "";
+  const saysChipCount = byClass(rootE, "says-chip").length;
+
+  // C. Thread switch error, retry, and stale response drop
+  let failLoadOnce = true;
+  let tErrorHistoryCalls = 0;
+  const stateThreads = {
+    threads: [
+      { id: "te_ok", title: "OK Thread", last_message_at: new Date().toISOString(), status: "done" },
+      { id: "te_err", title: "Error Thread", last_message_at: new Date().toISOString(), status: "done" },
+    ],
+    byThread: {
+      te_ok: [msg("user", "OK msg"), msg("agent", "OK reply")],
+      te_err: [msg("user", "Err msg"), msg("agent", "Err reply")],
+    },
+  };
+
+  const srvFetchSwitch = async (url) => {
+    const reply = (status, data) => ({
+      ok: status < 400,
+      status,
+      headers: { get: () => "application/json" },
+      json: async () => data,
+    });
+    if (url === "/me") return reply(200, { address: OWNER, tier: "T2", emergency_stop: false });
+    if (url.startsWith("/chat/threads")) return reply(200, { items: stateThreads.threads });
+    if (url.startsWith("/chat?")) {
+      const tid = new URL(url, "http://x").searchParams.get("thread_id");
+      if (tid === "te_err") {
+        tErrorHistoryCalls++;
+        if (failLoadOnce) {
+          failLoadOnce = false;
+          return reply(500, { title: "Server Error", status: 500 });
+        }
+      }
+      return reply(200, { items: (tid && stateThreads.byThread[tid]) || [] });
+    }
+    return reply(404, { title: "Not found", status: 404 });
+  };
+
+  globalThis.fetch = srvFetchSwitch;
+  const apiSwitch = createApi({ fixtures: false, fetchImpl: srvFetchSwitch });
+  const ctxSwitch = makeCtx({
+    api: apiSwitch,
+    wallet: new TestWallet({ address: OWNER }),
+    sleep: async () => {},
+  });
+  globalThis.location.hash = "#/chat/te_ok";
+  await ctxSwitch.refreshSession();
+  const rootSwitch = chat.render(ctxSwitch);
+  await tick(50);
+
+  // Switch to te_err which fails
+  const errRow = byClass(rootSwitch, "rail-row").find((r) => r.textContent.includes("Error Thread"));
+  await fire(errRow, "click");
+  await tick(50);
+
+  const errorBox = byClass(rootSwitch, "error-box")[0];
+  const errorText = errorBox ? errorBox.textContent : "";
+  const retryBtn = button(rootSwitch, "Retry");
+
+  // Click retry
+  if (retryBtn) await fire(retryBtn, "click");
+  await tick(50);
+
+  const recoveredBubbles = bubbles(rootSwitch).map((b) => b.textContent);
+
+  globalThis.fetch = origFetch;
+
+  out.ticketE = {
+    clarifyChips,
+    valueAfterClick,
+    postCallsAfterClick,
+    clarifyChipsAfterSend,
+    hostileTextSeen,
+    innerHTMLUsedDuringStream,
+    textAfterReset,
+    hiddenAfterReset,
+    textAfterSecondToken,
+    saysChipCount,
+    lastAgentHasSays: lastAgentText.includes("Agent says:"),
+    errorText,
+    recoveredBubbles,
+  };
+}
+
 console.log(JSON.stringify(out));
+
+

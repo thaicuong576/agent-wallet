@@ -148,10 +148,28 @@ const SKIP_WORDS = { "owner-cancelled": "You stopped the run, so this step was n
 export function stepCard(ctx, step, opts = {}) {
   const { el } = ctx;
   const info = KINDS[step.outcome] || KINDS.no_action;
-  const { li, body, side } = shell(el, info);
+  const li = el("li", "step-card " + info.kind);
+  const details = el("details", "step-details");
+  const summary = el("summary", "step-summary");
+  const row = el("div", "step-row");
+
+  const icon = el("span", "step-icon", info.icon);
+  icon.setAttribute("aria-hidden", "true");
+
   const past = info.kind === "done";
-  const title = step.explanation || describeOrder(step, past) || info.word;
-  body.append(el("p", "step-title", title));
+  const titleText = step.explanation || describeOrder(step, past) || info.word;
+  const title = el("p", "step-title", titleText);
+  row.append(icon, title);
+
+  if (step.elapsed) {
+    row.append(el("span", "step-elapsed", String(step.elapsed)));
+  }
+
+  const link = txLink(el, step.tx_hash);
+  if (link) row.append(link);
+  summary.append(row);
+
+  const body = el("div", "step-body");
   const codes = Array.isArray(step.rule_codes) ? step.rule_codes : [];
   if (info.kind === "blocked" || info.kind === "pending") {
     for (const code of codes) body.append(el("p", "step-sub", explainRule(code, {}).sentence));
@@ -186,9 +204,13 @@ export function stepCard(ctx, step, opts = {}) {
     }
     if (actions.children.length) body.append(actions);
   }
+  const side = el("div", "step-side");
+  side.append(el("span", "state-word", info.word));
   addRuleChips(el, side, codes);
-  const link = txLink(el, step.tx_hash);
-  if (link) side.append(link);
+  body.append(side);
+
+  details.append(summary, body);
+  li.append(details);
   return li;
 }
 

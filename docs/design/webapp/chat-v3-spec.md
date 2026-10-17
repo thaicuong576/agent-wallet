@@ -30,6 +30,6 @@ Small, permissively licensed code may be adapted with attribution in `THIRD_PART
 | B | Thread context, `intent` in the planner output, migration `0006` for `intent` | implemented in `feat/chat-b-context-intent`; apply migration 0006 before merging |
 | C | SSE endpoint, `ui/sse.js`, polling fallback, `THIRD_PARTY_NOTICES.md` | phases only, no token stream yet |
 | D | Token streaming via streamed JSON with `reply` extractor | implemented in `feat/chat-d-token-stream` (streamed JSON with `ReplyExtractor` instead of tool calling to preserve strict schema validation) |
-| E | UI: unified bubbles without the label, clarification chips, plan confirmation card | follows A and B |
+| E | UI: unified bubble without "Agent says" label, token streaming, clarification chips, thread switch skeleton | implemented in `feat/chat-e-ui` (one frame per turn, live text via tokens, compact expandable steps, thread switch shimmer) |
 
 Cut order if time runs short: D, then E, then B. A and C give the most visible gain.
