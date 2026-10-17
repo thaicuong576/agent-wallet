@@ -143,7 +143,7 @@ Recommendation: **KEEP** swap in scope for v1.
 2. **Execution Strategy for Agent Wallet v1**:
    - For **USDC $\to$ WETH** swaps (selling test USDC from Aave faucet for WETH gas): Route to **Fee 100 (`0x068e...`)** for realistic price execution (~0.000456 WETH per 1 USDC).
    - For **WETH $\to$ USDC** swaps (buying test USDC with WETH to supply to Aave): Route to **Fee 3000 (`0x9226...`)** because Fee 100 has only 0.15 USDC in reserve, whereas Fee 3000 has 239.77 USDC.
-3. **Alternative Path (Circle Native Test USDC)**: If the orchestrator or owner requires symmetric bidirectional swaps at mainnet-equivalent prices without price distortion, Circle's official Base Sepolia testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) has deep liquidity across all tiers (Pool `0x4688...` at fee 3000 has $L = 307 \times 10^{12}$). However, for the specified Aave faucet token, Fee 3000 and Fee 100 provide sufficient liquidity to keep swap in v1.
+3. **Alternative Path (Circle Native Test USDC)**: If the operator or owner requires symmetric bidirectional swaps at mainnet-equivalent prices without price distortion, Circle's official Base Sepolia testnet USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) has deep liquidity across all tiers (Pool `0x4688...` at fee 3000 has $L = 307 \times 10^{12}$). However, for the specified Aave faucet token, Fee 3000 and Fee 100 provide sufficient liquidity to keep swap in v1.
 
 ---
 

@@ -1,4 +1,4 @@
-# Morpho Blue Lending Adapter (D3)
+# Morpho Blue Lending Adapter
 
 The Morpho Blue adapter connects the agent wallet to Morpho Blue lending markets on Base Sepolia (Chain ID 84532), allowing the wallet to supply and withdraw USDC against whitelisted isolated collateral markets (`usdc-wbtc` and `usdc-cbeth`).
 

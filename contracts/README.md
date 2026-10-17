@@ -17,7 +17,7 @@ Where they sit and how they relate: [`docs/architecture/core/contracts.md`](../d
 | :--- | :--- | :--- |
 | `order` | Planner proposes, gateway receives | A proposed action. Enum values and amounts only: never an address, never free text |
 | `portfolio-state` | Gateway | Wallet snapshot: positions, weights, 24h spend, tx count |
-| `risk-inputs` | Risk scoring (S4) | Measured inputs for the risk rules |
+| `risk-inputs` | Risk scoring | Measured inputs for the risk rules |
 | `ips` | Owner (out of band) | Investment Policy Statement. Read-only for the agent; no endpoint writes it |
 | `decision` | Policy engine | `allow`, `deny` or `escalate`, with `rules_hit` and a human-readable `reason` |
 | `execution-result` | Gateway | Outcome of an executed order: tx hash or error code |
@@ -40,7 +40,7 @@ Every `<name>.valid*.json` must validate against `schemas/<name>.schema.json`, e
 
 ## Conventions
 - **Money.** Token amounts are `{ "value": "<integer string>", "decimals": <int> }` in the smallest unit; `USDC` is 6 decimals, while `WETH` and `ETH` are 18, enforced per order. USD values are decimal strings (`"150.00"`). Never a float anywhere.
-- **Owner-only functions and recipient owner.** Functions `mint` and `transfer` are owner functions. The planner (agent) origin can never use these functions (proposals with non-owner origin are denied with `ACCESS.OWNER_ONLY_FUNCTION`). Enforcement is handled by the policy engine and gateway (tickets C2 and C3), not within JSON Schema. The recipient `owner` is resolved server-side to the owner's session address; orders never contain raw Ethereum addresses.
+- **Owner-only functions and recipient owner.** Functions `mint` and `transfer` are owner functions. The planner (agent) origin can never use these functions (proposals with non-owner origin are denied with `ACCESS.OWNER_ONLY_FUNCTION`). Enforcement is handled by the policy engine and gateway, not within JSON Schema. The recipient `owner` is resolved server-side to the owner's session address; orders never contain raw Ethereum addresses.
 - **No mint amount cap.** The contract schema and rule codes enforce no mint amount cap (no `LIMIT.MINT_PER_CALL` or `LIMIT.MINT_PER_DAY`). On-chain Aave faucet limits (1,000,000 USDC per call and 1-hour cooldown) and server-side rate limits prevent abuse.
 - **Ratios are integer basis points** (10000 = 100%). The draft architecture's sample IPS maps like this:
 
@@ -77,11 +77,11 @@ def record_hash(r):  # hash covers prev_hash, excludes the hash field
 The first record's `prev_hash` is 64 zeros. `seq` starts at 0 and is assigned by the log, never by the caller. `examples/decision-record.chain.json` holds a denied order, a pending order and the same order executed after approval.
 
 ## Embedded copies
-Schemas are self-contained so any JSON Schema library validates them with no registry. The objects `Order`, `Decision` and `ExecutionResult` (and the helper `$defs` they use) are therefore copied into `decision-record.schema.json`. The copies must stay byte-identical in canonical JSON; the validation step compares them. Change them in every file in the same PR.
+Schemas are self-contained so any JSON Schema library validates them with no registry. The objects `Order`, `Decision` and `ExecutionResult` (and the helper `$defs` they use) are therefore copied into `decision-record.schema.json`. The copies must stay byte-identical in canonical JSON; the validation step compares them. Change them in every file together.
 
 ## Versioning and changing a contract
 - `schema_version` is `1` for all of v1. A change that existing valid data still satisfies (a new optional field, a new rule code, a new enum value that consumers may ignore) keeps `1` and adds examples.
-  - **Additive additions in Ticket C1 (no bump):** Adds enum values to `order.schema.json` and its embedded copy in `decision-record.schema.json`: functions `mint` and `transfer`, recipient `owner`, token `ETH`, protocol `wallet`, along with rule codes `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, and `TIER.POLICY_CHANGED`. Because existing valid orders, stored decision records, and audit chains remain completely valid, `schema_version` remains `1`.
+  - **Additive additions (no bump):** Adds enum values to `order.schema.json` and its embedded copy in `decision-record.schema.json`: functions `mint` and `transfer`, recipient `owner`, token `ETH`, protocol `wallet`, along with rule codes `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, and `TIER.POLICY_CHANGED`. Because existing valid orders, stored decision records, and audit chains remain completely valid, `schema_version` remains `1`.
 - Any other change (a removed or renamed field, a tighter pattern, a new required field, a meaning change) is a new `schema_version` and a new set of examples. Consumers must reject a `schema_version` they do not know.
 - Changes to `ips`, `tier-state` or `decision-record` define permissions and the audit boundary: they are high risk and go to the owner.
 - A change comes with: schema, OpenAPI if exposed, examples (one valid, one invalid), this README and `docs/architecture/core/contracts.md` if relations changed.

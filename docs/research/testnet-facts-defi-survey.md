@@ -1,4 +1,4 @@
-# Research: DeFi protocols the agent can use on Base Sepolia (R4, ticket #132)
+# Research: DeFi protocols the agent can use on Base Sepolia
 
 Chain: Base Sepolia (84532). Method: read-only JSON-RPC against `https://sepolia.base.org` (User-Agent header set), `eth_getCode`, view calls, and `eth_simulateV1` call sequences from the agent wallet `0xc18afDC2dF55772bA3c031Df98305F02a3a36493` (mint, approve, supply, withdraw chained in one simulated block; no transaction was sent, no key used). Morpho market discovery used `eth_getLogs` on `https://base-sepolia.gateway.tenderly.co` because the public RPC rejects ranges above a few hundred blocks. Simulations ran on 2026-10-16 (block about 0x2dee09b); pool and market state drifts, re-check before coding.
 

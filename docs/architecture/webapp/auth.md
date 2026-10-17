@@ -1,4 +1,4 @@
-# Wallet sign-in, sessions and step-up (webapp ticket A2)
+# Wallet sign-in, sessions and step-up
 
 Source of truth: `docs/design/webapp/system-design.md` sections 6, 12.1, 12.2, 19 and 20. Testnet
 only. EOAs only; a contract wallet (EIP-1271) is rejected with a clear message.
@@ -10,7 +10,7 @@ only. EOAs only; a contract wallet (EIP-1271) is rejected with a clear message.
 | `api/session.py` | `AuthConfig.from_env()` (secret of at least 32 bytes, public origin, bearer flag; unset or short raises `AuthUnavailable`, mapped to 503), `sign_token`, `verify_token`, address normalisation |
 | `api/auth.py` | `AuthService`, `router` (`/auth/nonce`, `/auth/verify`, `/auth/logout`, `/auth/step-up`), dependencies `require_session` and `require_step_up(action)`, `InMemoryAuthStore`, `SqliteAuthStore` (`DATA_DIR/auth.sqlite`), RFC 7807 problems |
 
-Wiring (ticket A3): set `app.state.auth_service = AuthService(store, on_login=<create tenant>)`,
+Wiring: set `app.state.auth_service = AuthService(store, on_login=<create tenant>)`,
 `app.include_router(router)` and call `install_auth_handlers(app)` so the dependencies return
 `problem+json` on other routes. The session comes only from `require_session`; no route reads an
 owner address from a body, query or header.

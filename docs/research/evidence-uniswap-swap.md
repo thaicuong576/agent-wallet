@@ -1,4 +1,4 @@
-# Evidence: Uniswap v3 Swap on Base Sepolia (D2, ticket #139)
+# Evidence: Uniswap v3 Swap on Base Sepolia
 
 Chain: Base Sepolia (84532)  
 RPC: `https://sepolia.base.org` (User-Agent: `agent-wallet/0.1`)  

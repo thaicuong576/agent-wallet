@@ -1,6 +1,6 @@
 # Storage: Protocols, SQLite and Postgres adapters, contract suite
 
-Tickets P1 (Protocols, SQLite adapters) and P2 (Postgres backend) of the webapp design (`docs/design/webapp/system-design.md`, sections 5 and 13).
+Storage architecture (Protocols, SQLite adapters and Postgres backend) of the webapp design (`docs/design/webapp/system-design.md`, sections 5 and 13).
 
 ## Structure
 
@@ -39,7 +39,7 @@ flowchart LR
 - `core/storage/sqlite/tenant.py` holds the per-owner layout
   `DATA_DIR/owners/<0x lowercase address>/{state,audit,gateway.lock}.sqlite`. `tenant_dir`
   validates `^0x[0-9a-f]{40}$` and asserts the resolved path is inside `owners/`.
-- `core/storage/sqlite/webapp.py` (ticket W1) adds the webapp side of the SQLite layout and the
+- `core/storage/sqlite/webapp.py` adds the webapp side of the SQLite layout and the
   SQLite `StorageBackend`: `SqliteJobs`, `SqliteTopups` and `SqlitePolicySelection` share one
   `webapp.sqlite` per owner, `SqliteSettings` reads `AGENT_WALLET_GLOBAL_STOP` and the
   `GLOBAL_STOP` file (fail closed). `SqliteBackend` takes the intent store and the keystore
@@ -52,7 +52,7 @@ flowchart LR
 - `StorageBackend` also exposes `keystore_admin()` (an unbound keystore handle: asking whether an
   owner has a wallet creates nothing) and `mark_jobs_interrupted()` (startup recovery).
 
-## One app, two backends (W1)
+## One app, two backends
 
 ```mermaid
 flowchart LR
@@ -106,7 +106,7 @@ takes `count_kinds` so one hourly limit can count several kinds (chat and run sh
 Tests: `tests/storage/contract/test_chat.py` (both backends) and `tests/storage/test_migration_0004.py`
 (static SQL checks always).
 
-### Conversation threads and migration 0005 (ticket 123)
+### Conversation threads and migration 0005
 
 `ChatStore` also holds the owner's threads: `create_thread`, `thread_exists`, `list_threads`,
 `attach_job`, and `append` / `list` take an optional `thread_id`. A thread is an id and a title;
@@ -124,8 +124,8 @@ existing `webapp.sqlite` gains `thread_id` on open). Postgres: `0005_chat_thread
 `chat_messages`, adds `chat_messages.thread_id` (nullable) with indexes on `(owner, thread_id,
 seq)` and `(owner, job_id)`, and grants `aw_app` `SELECT, INSERT` plus `UPDATE (title)` on threads
 and `UPDATE (thread_id)` on messages only (message text stays immutable). Nothing goes to `anon` or
-`authenticated`. The migration is applied to the hosted database by the orchestrator before the
-change is merged. Tests: `tests/storage/contract/test_chat.py` (both backends, including the
+`authenticated`. The migration is applied to the hosted database before the
+code that needs it is deployed. Tests: `tests/storage/contract/test_chat.py` (both backends, including the
 cross-tenant case) and `tests/storage/test_migration_0005.py`.
 
 ## Contract suite
@@ -146,7 +146,7 @@ afterwards (the append-only triggers forbid TRUNCATE, so tables are never cleane
 | Two owners never see each other, address validation | `test_isolation.py` |
 | Chat messages: order, limit, role check, isolation; one limit over several job kinds | `test_chat.py` |
 
-## Postgres backend (P2)
+## Postgres backend
 
 Selected when `DATABASE_URL` is set; unset keeps SQLite (`core/storage/factory.py`; the caller
 supplies the SQLite backend, because only `core.gateway` may import the intents module).
@@ -194,5 +194,5 @@ hold and RLS is bypassed (design 15.4 fallback).
   Without `TEST_DATABASE_URL` the Postgres tests are skipped with a stated reason.
 - `docker compose up --build` starts `db` (`postgres:16`, volume `pgdata`, healthcheck
   `pg_isready`) and `api` with `DATABASE_URL` composed from `POSTGRES_PASSWORD`. The multi-owner app
-  now runs on this backend (ticket W1); `tests/webapp/test_storage_backends.py` covers sign-in,
+  runs on this backend; `tests/webapp/test_storage_backends.py` covers sign-in,
   a mint job, isolation, restart and a pooler-style run on `sqlite` and `postgres`.

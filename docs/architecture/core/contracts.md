@@ -99,8 +99,8 @@ erDiagram
 ## Which test proves what
 | Claim | Proving check |
 | :--- | :--- |
-| Every schema is valid draft 2020-12 and requires `schema_version` | schema validation step in the PR (`check_schema`) |
-| Valid examples pass and invalid examples fail | example validation step in the PR |
+| Every schema is valid draft 2020-12 and requires `schema_version` | schema validation check (`check_schema`) |
+| Valid examples pass and invalid examples fail | example validation check |
 | An order cannot carry an address, a float, or an unlimited amount | `order.invalid.address-recipient`, `.float-amount`, `.unlimited-approval` |
-| The hash chain recomputes | chain recomputation step in the PR; the audit-log ticket (S3) owns the runtime test |
-| The IPS has no agent-writable field | `ips.invalid.agent-editable-field` and no write path in `openapi.yaml`; the permission test belongs to S2 |
+| The hash chain recomputes | chain recomputation check; the audit-log test suite owns the runtime test |
+| The IPS has no agent-writable field | `ips.invalid.agent-editable-field` and no write path in `openapi.yaml`; permission tests verify write isolation |

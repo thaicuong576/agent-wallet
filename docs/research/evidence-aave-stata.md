@@ -1,4 +1,4 @@
-# Evidence: Aave v3 USDT and Aave Stata (ERC-4626) Vaults (D1, Issue #138)
+# Evidence: Aave v3 USDT and Aave Stata (ERC-4626) Vaults
 
 Chain: Base Sepolia (84532)  
 RPC: `https://sepolia.base.org` (User-Agent header set)  

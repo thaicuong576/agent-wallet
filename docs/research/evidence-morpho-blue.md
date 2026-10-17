@@ -1,6 +1,6 @@
 # Morpho Blue Simulation Evidence (Base Sepolia, 84532)
 
-Evidence for Ticket D3 (#140): Morpho Blue lending adapter on Base Sepolia.
+Evidence for Morpho Blue lending adapter on Base Sepolia.
 
 ## Setup
 - **Chain:** Base Sepolia (Chain ID 84532)

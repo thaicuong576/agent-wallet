@@ -1,4 +1,4 @@
-# Custody, tenancy and storage interfaces (webapp ticket A1)
+# Custody, tenancy and storage interfaces
 
 Source of truth: `docs/design/webapp/system-design.md` sections 4, 5 and 13. Testnet only. This is a
 custodial service: the server holds each agent key. Never send real funds.
@@ -7,7 +7,7 @@ custodial service: the server holds each agent key. Never send real funds.
 
 | Module | Role |
 | :--- | :--- |
-| `core/storage/interfaces.py` | Protocols only (`TierRead`, `TierWrite`, `AuditStore`, `IntentStore`, `LedgerQueries`, `GatewayLockProvider`, `KeystoreStore`, `OwnerRegistry`, `AuthStore`, `JobStore`, `PolicySelectionStore`, `SettingsStore`, `TenantStores`, `StorageBackend`) and `StorageUnavailable`. No `sqlite3` or `psycopg` import. Adapters arrive in P1 and P2 |
+| `core/storage/interfaces.py` | Protocols only (`TierRead`, `TierWrite`, `AuditStore`, `IntentStore`, `LedgerQueries`, `GatewayLockProvider`, `KeystoreStore`, `OwnerRegistry`, `AuthStore`, `JobStore`, `PolicySelectionStore`, `SettingsStore`, `TenantStores`, `StorageBackend`) and `StorageUnavailable`. No `sqlite3` or `psycopg` import. Adapters implement SQLite and PostgreSQL storage backends |
 | `core/gateway/custody.py` | Generate, encrypt, store, decrypt once, rotate. Importable only by `core.gateway` (boundary test). Contains the file `KeystoreStore` adapter |
 | `core/gateway/tenant.py` | `TenantRegistry.open(owner)` builds the per-owner objects and a `Gateway`; the only gateway module the API imports |
 | `core/gateway/setup.py` | `python -m core.gateway.setup` writes the two secrets into `.env` if absent |
