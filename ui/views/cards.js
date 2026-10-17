@@ -2,8 +2,8 @@
 // Kinds: done (green), blocked (red), pending (amber, Approve and Reject), skipped (grey), plus
 // fail (red, "!") for an execution that errored. Every API string is written with textContent;
 // the icon and the state word mean the kind is never colour alone.
-import { explainRecord, explainRule, formatAmount, shortHash } from "../explain.js";
-import { relTime } from "../gauges.js";
+import { explainRecord, explainRule, formatAmount, shortHash } from "../lib/explain.js";
+import { relTime } from "../lib/gauges.js";
 
 // Navigation target for a transaction link, not an asset: the page never fetches it.
 const EXPLORER_TX = "https://sepolia.basescan.org/tx/";

@@ -1,9 +1,9 @@
 // Rules: a read-only summary of the owner's limits, from GET /limits (contract C4, board D).
 // Nothing here changes a limit: the policy engine checks every order against these values.
 // The page also holds the agent permission control and the scripted safety demo (moved from Portfolio).
-import { cta, emptyState, frozenCard } from "../gauges.js";
-import { PROTOCOL_META, protocolAvatar } from "../icons.js";
-import { getLimits, limitRows } from "../limits.js";
+import { cta, emptyState, frozenCard } from "../lib/gauges.js";
+import { PROTOCOL_META, protocolAvatar } from "../lib/icons.js";
+import { getLimits, limitRows } from "../lib/limits.js";
 import { lowerControls } from "./activate.js";
 import { jobPanel, runJob } from "./jobs.js";
 

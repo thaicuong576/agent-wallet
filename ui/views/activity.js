@@ -2,8 +2,8 @@
 // verify-chain action and its result. All API strings go through textContent.
 import { plannerLabel, recordCard } from "./cards.js";
 import { chainChip, loadRecords } from "./jobs.js";
-import { emptyState, frozenCard } from "../gauges.js";
-import { activitySkeleton } from "../skeleton.js";
+import { emptyState, frozenCard } from "../lib/gauges.js";
+import { activitySkeleton } from "../lib/skeleton.js";
 
 export function render(ctx) {
   const { el, api } = ctx;

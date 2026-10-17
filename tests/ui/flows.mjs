@@ -91,7 +91,7 @@ const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-flows-"));
 fs.cpSync(UI, COPY, { recursive: true });
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 const imp = (rel) => import(pathToFileURL(path.join(COPY, rel)).href);
-const { createApi, ROUTES } = await imp("api.js");
+const { createApi, ROUTES } = await imp("lib/api.js");
 const { makeCtx, describeError, pollDelay } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
 const setup = await imp("views/setup.js");
@@ -102,7 +102,7 @@ const activity = await imp("views/activity.js");
 const approvals = await imp("views/approvals.js");
 const activate = await imp("views/activate.js");
 const side = await imp("views/side.js");
-const gauges = await imp("gauges.js");
+const gauges = await imp("lib/gauges.js");
 
 const OWNER = "0x1111111111111111111111111111111111111111";
 const AGENT = "0x2222222222222222222222222222222222222222";
@@ -617,7 +617,7 @@ const out = {};
     date: gauges.retryText("Thu, 15 Oct 2026 12:00:45 GMT", Date.parse("Thu, 15 Oct 2026 12:00:00 GMT")),
     none: gauges.retryText(null),
     shown: describeError(
-      Object.assign(new (await imp("api.js")).ApiError(429, "rate-limited", "Too many", "", { retryAfter: "30" }), {}),
+      Object.assign(new (await imp("lib/api.js")).ApiError(429, "rate-limited", "Too many", "", { retryAfter: "30" }), {}),
     ),
   };
 }

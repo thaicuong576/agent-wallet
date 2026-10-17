@@ -1,4 +1,4 @@
-// Token and protocol icon checks: the real ui/icons.js against a fake DOM.
+// Token and protocol icon checks: the real ui/lib/icons.js against a fake DOM.
 // Prints one JSON object of named results; tests/ui/test_icons.py asserts them. No network.
 import fs from "node:fs";
 import os from "node:os";
@@ -10,7 +10,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 // Copy the one module into a temp folder with a module marker, as chat_flows.mjs does,
 // so this check never writes into ui/.
 const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-icons-"));
-fs.copyFileSync(path.join(ROOT, "ui", "icons.js"), path.join(COPY, "icons.js"));
+fs.copyFileSync(path.join(ROOT, "ui", "lib", "icons.js"), path.join(COPY, "icons.js"));
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 const icons = await import(pathToFileURL(path.join(COPY, "icons.js")).href);
 fs.rmSync(COPY, { recursive: true, force: true });

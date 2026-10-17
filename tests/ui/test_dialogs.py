@@ -13,7 +13,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 UI = ROOT / "ui"
 JS_FILES = [UI / "views" / "dialog.js", UI / "views" / "funds.js", UI / "views" / "withdraw.js"]
-CSS = UI / "overview.css"
+CSS = UI / "css" / "overview.css"
 CHECK = ROOT / "tests" / "ui" / "dialogs_check.mjs"
 NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(NODE is None, reason="node not available")

@@ -613,7 +613,7 @@ export function createApi({
 
   return {
     fixtures,
-    // Shared helpers for modules that own their route (ui/limits.js): the same fetch path and the
+    // Shared helpers for modules that own their route (ui/lib/limits.js): the same fetch path and the
     // same fixture files as every other call.
     request: (method, path, opts) => {
       if (!fixtures && method === "GET" && path === ROUTES.limits && (!opts || !opts.body)) {

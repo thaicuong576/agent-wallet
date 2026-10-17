@@ -2,11 +2,11 @@
 // and idle money, the allocation bar and the Add funds and Withdraw buttons. Below it every holding is
 // grouped by what the money is doing. The right column holds the approvals card, the wallet,
 // today's limit and recent activity.
-import { allocationSegments, groupHoldings } from "../holdings.js";
-import { displayName, protocolAvatar, tokenAvatar } from "../icons.js";
-import { formatAmount, formatWei } from "../explain.js";
-import { cta, emptyState, frozenCard, shortAddr, spendGauge } from "../gauges.js";
-import { getLimits, usd } from "../limits.js";
+import { allocationSegments, groupHoldings } from "../lib/holdings.js";
+import { displayName, protocolAvatar, tokenAvatar } from "../lib/icons.js";
+import { formatAmount, formatWei } from "../lib/explain.js";
+import { cta, emptyState, frozenCard, shortAddr, spendGauge } from "../lib/gauges.js";
+import { getLimits, usd } from "../lib/limits.js";
 import { approvalsCard, pendingOf } from "./approvals.js";
 import { recordLine } from "./cards.js";
 import { loadRecords } from "./jobs.js";

@@ -1,7 +1,7 @@
 // The right column of Chat: wallet value, today's limit, gas, audit log line. Each card reads its
 // own routes and says "unavailable" rather than showing a guess.
-import { formatAmount, formatWei } from "../explain.js";
-import { gasGauge, relTime, spendGauge } from "../gauges.js";
+import { formatAmount, formatWei } from "../lib/explain.js";
+import { gasGauge, relTime, spendGauge } from "../lib/gauges.js";
 import { topUpButton } from "./topup.js";
 
 export function sidePanel(ctx) {

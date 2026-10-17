@@ -120,7 +120,7 @@ const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-"));
 fs.cpSync(UI, COPY, { recursive: true });
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 const imp = (rel) => import(pathToFileURL(path.join(COPY, rel)).href);
-const { createApi, ROUTES } = await imp("api.js");
+const { createApi, ROUTES } = await imp("lib/api.js");
 const { makeCtx, describeError, routeFor } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
 const setup = await imp("views/setup.js");
@@ -129,9 +129,9 @@ const activity = await imp("views/activity.js");
 const rules = await imp("views/rules.js");
 const cards = await imp("views/cards.js");
 const side = await imp("views/side.js");
-const chat = await imp("views/chat.js");
-const gauges = await imp("gauges.js");
-const explain = await imp("explain.js");
+const chat = await imp("views/chat/index.js");
+const gauges = await imp("lib/gauges.js");
+const explain = await imp("lib/explain.js");
 
 const out = {};
 const HOSTILE = '<img src=x onerror=alert(1)><script>alert(2)</script>';
@@ -174,7 +174,7 @@ function mk({ demo = true, override = {}, wallet, api: customApi } = {}) {
   let injected = 0;
   for (const root of all) {
     walk(root, (n) => {
-      // A token icon is a local, fixed image (ui/icons.js); any other image is injected markup.
+      // A token icon is a local, fixed image (ui/lib/icons.js); any other image is injected markup.
       const localIcon = n.tagName === "IMG" && n.className === "token-img" && /^assets\/tokens\/[a-z]+\.svg$/.test(n.attrs.src || "");
       if (["IMG", "SCRIPT", "IFRAME", "SVG"].includes(n.tagName) && !localIcon) injected++;
       if (n.tagName === "A") {

@@ -101,10 +101,10 @@ const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-chat-"));
 fs.cpSync(UI, COPY, { recursive: true });
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 const imp = (rel) => import(pathToFileURL(path.join(COPY, rel)).href);
-const { createApi } = await imp("api.js");
+const { createApi } = await imp("lib/api.js");
 const { makeCtx } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
-const chat = await imp("views/chat.js");
+const chat = await imp("views/chat/index.js");
 
 const OWNER = "0x1111111111111111111111111111111111111111";
 const TX = "0x" + "cd".repeat(32);

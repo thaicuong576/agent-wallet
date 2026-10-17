@@ -1,8 +1,8 @@
 // "Withdraw": one dialog that moves USDC or ETH from the agent back to the owner's wallet. The
 // amount signed in stepUp and the amount sent to the API are the same object. Every string lands
 // in textContent.
-import { explainJob, formatUnits, formatWei, parseUnits } from "../explain.js";
-import { shortAddr } from "../gauges.js";
+import { explainJob, formatUnits, formatWei, parseUnits } from "../lib/explain.js";
+import { shortAddr } from "../lib/gauges.js";
 import { recordCard } from "./cards.js";
 import { openDialog } from "./dialog.js";
 import { recordsOfJob } from "./jobs.js";

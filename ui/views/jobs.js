@@ -1,6 +1,6 @@
 // Shared by Portfolio, Activity and the approvals card: job progress and record loading.
 // Every API string is written with textContent.
-import { explainJob, recordFromSummary } from "../explain.js";
+import { explainJob, recordFromSummary } from "../lib/explain.js";
 import { plannerLabel, recordCard } from "./cards.js";
 
 const STATUS_WORDS = {

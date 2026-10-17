@@ -178,7 +178,7 @@ def test_ui_root_serves_index(client: TestClient) -> None:
 
 def test_no_banner_element_and_testnet_custody_are_chip_footer_and_setup_text() -> None:
     html = (UI / "index.html").read_text(encoding="utf-8")
-    css = (UI / "style.css").read_text(encoding="utf-8")
+    css = (UI / "css" / "style.css").read_text(encoding="utf-8")
     # The full-width notice bar is gone: no element, no id, no class, no style rule.
     assert not re.search(r"""id=["']banner|class=["'][^"']*\bbanner\b|<aside""", html)
     assert ".banner" not in css and "#banner" not in css
@@ -230,7 +230,7 @@ def test_header_has_the_four_tabs_chips_pill_and_stop_in_contract_order() -> Non
 
 
 def test_layout_guards_for_375px_are_in_the_stylesheet() -> None:
-    css = (UI / "style.css").read_text(encoding="utf-8")
+    css = (UI / "css" / "style.css").read_text(encoding="utf-8")
     assert "max-width: 900px" in css and "max-width: 520px" in css  # stacks under the chat
     assert 'name="viewport"' in (UI / "index.html").read_text(encoding="utf-8")
     assert "overflow-x: auto" in css  # only the tab strip scrolls
@@ -251,13 +251,13 @@ def _block_after(css: str, query: str) -> str:
 
 def test_wallet_strip_is_built_by_side_js_and_hidden_on_desktop() -> None:
     side = (UI / "views" / "side.js").read_text(encoding="utf-8")
-    css = (UI / "style.css").read_text(encoding="utf-8")
+    css = (UI / "css" / "style.css").read_text(encoding="utf-8")
     assert "wallet-strip" in side and "aria-expanded" in side
     assert ".wallet-strip" in css and "display: none" in css
 
 
 def test_chat_screen_is_a_single_scroll_region_and_declares_color_scheme() -> None:
-    css = (UI / "style.css").read_text(encoding="utf-8")
+    css = (UI / "css" / "style.css").read_text(encoding="utf-8")
     html = (UI / "index.html").read_text(encoding="utf-8")
     assert "color-scheme: light dark" in css
     assert 'name="color-scheme" content="light dark"' in html
@@ -287,9 +287,9 @@ def test_fixtures_hold_no_secrets_or_external_assets() -> None:
 
 
 def test_api_paths_are_in_design_route_list() -> None:
-    js = (UI / "api.js").read_text(encoding="utf-8")
+    js = (UI / "lib" / "api.js").read_text(encoding="utf-8")
     block = re.search(r"const ROUTES = \{(.*?)\};", js, re.S)
-    assert block, "ROUTES block not found in ui/api.js"
+    assert block, "ROUTES block not found in ui/lib/api.js"
     paths = set(re.findall(r'"(/[^"]*)"', block.group(1)))
     assert paths
     assert paths <= DESIGN_ROUTES, paths - DESIGN_ROUTES
@@ -313,7 +313,7 @@ def test_stop_visible_and_session_only() -> None:
     assert "await api.stop();" in main  # engaging needs no signature
     assert "api.release(await ctx.stepUp(" in main  # only the release path asks for one
     assert 'stopBtn.textContent = frozen ? "Resume (needs signature)"' in (
-        UI / "gauges.js"
+        UI / "lib" / "gauges.js"
     ).read_text(encoding="utf-8")
 
 
@@ -337,7 +337,7 @@ def test_existing_routes_used_by_ui_exist_in_openapi() -> None:
 def test_every_existing_rule_code_has_a_plain_language_sentence() -> None:
     codes = [c["code"] for c in json.loads((ROOT / "contracts" / "rule-codes.json").read_text())]
     assert len(codes) >= 25
-    source = (UI / "explain.js").read_text(encoding="utf-8")
+    source = (UI / "lib" / "explain.js").read_text(encoding="utf-8")
     for code in codes + ["ACCESS.OWNER_ONLY_FUNCTION", "TIER.GLOBAL_STOP", "TIER.POLICY_CHANGED"]:
         assert f'"{code}"' in source, code
 
@@ -637,7 +637,7 @@ def test_fixtures_mode_can_activate_the_agent() -> None:
 
 def test_every_route_the_js_calls_exists_in_openapi() -> None:
     spec = yaml.safe_load((ROOT / "contracts" / "openapi.yaml").read_text(encoding="utf-8"))
-    js = (UI / "api.js").read_text(encoding="utf-8")
+    js = (UI / "lib" / "api.js").read_text(encoding="utf-8")
     block = re.search(r"const ROUTES = \{(.*?)\};", js, re.S)
     assert block
     paths = set(re.findall(r'"(/[^"]*)"', block.group(1)))
@@ -679,7 +679,7 @@ def test_wallet_adapter_interface_and_test_stub_exist() -> None:
 
 
 def test_design_tokens_come_from_design_md() -> None:
-    css = (UI / "style.css").read_text(encoding="utf-8")
+    css = (UI / "css" / "style.css").read_text(encoding="utf-8")
     for token, value in (
         ("--primary", "#ffd23f"),
         ("--primary-pressed", "#e9b800"),
@@ -764,14 +764,15 @@ def test_chat_is_the_first_tab_and_a_view() -> None:
     main = (UI / "main.js").read_text(encoding="utf-8")
     assert "const VIEWS = { chat," in main and "export function routeFor" in main
     assert 'asked === "setup"' in main and ': "chat";' in main  # Chat is the default once active
-    for view in ("chat", "overview", "activity", "rules", "setup"):
+    assert (UI / "views" / "chat" / "index.js").is_file()
+    for view in ("overview", "activity", "rules", "setup"):
         assert (UI / "views" / f"{view}.js").is_file(), view
     for gone in ("dashboard", "feed", "onboard"):
         assert not (UI / "views" / f"{gone}.js").exists(), gone
 
 
 def test_rules_tab_reads_the_limits_route() -> None:
-    assert '"/limits"' in (UI / "limits.js").read_text(encoding="utf-8")
+    assert '"/limits"' in (UI / "lib" / "limits.js").read_text(encoding="utf-8")
     assert "getLimits(" in (UI / "views" / "rules.js").read_text(encoding="utf-8")
     spec = yaml.safe_load((ROOT / "contracts" / "openapi.yaml").read_text(encoding="utf-8"))
     assert "get" in spec["paths"]["/limits"]
@@ -980,7 +981,13 @@ def test_chat_job_isolation_between_threads() -> None:
 
 
 def test_chat_ui_has_no_new_storage_or_external_urls() -> None:
-    for name in ("views/chat.js", "views/cards.js", "views/side.js"):
+    for name in (
+        "views/chat/index.js",
+        "views/chat/bubble.js",
+        "views/chat/stream.js",
+        "views/cards.js",
+        "views/side.js",
+    ):
         text = (UI / name).read_text(encoding="utf-8")
         assert "localStorage" not in text and "sessionStorage" not in text, name
         assert not re.findall(r"https?://(?!sepolia\.basescan\.org)", text), name
