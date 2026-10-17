@@ -33,7 +33,7 @@ flowchart TD
 Run the entire offline test suite and evaluation harness in under two minutes with no keys or network required:
 
 ```sh
-# 1. Run full test suite (1,449 tests)
+# 1. Run full test suite (1,455 tests)
 make test
 
 # 2. Run static linters and repository hygiene checks
@@ -92,7 +92,7 @@ Collected directly via `pytest --collect-only -q` per area:
 | `tests/signer/` | **14** | `test_signer.py`, `test_chain_id.py` | Local private key signing, Base Sepolia (84532) chain restriction, zero key leak |
 | `tests/evals/` | **9** | `test_eval_driver.py`, `test_report_generator.py` | Evaluation runner logic, driver mechanics, markdown report rendering |
 | `tests/*.py` (Root) | **56** | `test_signer_boundary.py`, `test_intent_boundary.py`, `test_contracts.py`, `test_check_links.py`, `test_container_files.py`, `test_http_stdlib.py`, `test_health.py` | AST boundary scans, container configuration, markdown link checker, HTTP stdlib purity |
-| **Total Test Count** | **1,449** | — | **Full pytest collection across all suites** |
+| **Total Test Count** | **1,455** | — | **Full pytest collection across all suites** |
 
 ---
 
