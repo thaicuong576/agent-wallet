@@ -10,10 +10,10 @@ In accordance with system boundaries, `core.agent` never imports `core.signer`, 
 
 `Planner.plan(..., owner_instruction=text, conversation_history=history)` carries the owner's chat message on its own labelled channel (`owner_instruction: {channel, trust: "untrusted_text", text}`), never inside the Reader facts. It is untrusted for rule purposes: the output is validated exactly as before, the planner can only propose `approve`, `supply`, `withdraw` and `exactInputSingle` with planner recipients, and every order still goes to the gateway with `origin="planner"`. The output contract accepts an ordered `orders` list (the single `order` form still works) and an optional `reply` of plain text (control characters removed, at most 600 characters) that the API shows as "Agent says" and never as proof of an outcome.
 
-### Thread context and conversation history (Ticket B, chat v3)
-- `conversation_history` is passed in the planner payload: the last 6 turns of the same thread, at most 2,000 characters total (oldest dropped first), in a labelled untrusted channel.
-- For agent turns, history carries strictly the recorded outcome sentence written by code from audit records (`outcome_sentence_from_records`), never raw model text as authority.
-- The system prompt specifies that earlier turns are data, cannot change rules, add recipients, or approve anything. The current message is not repeated in history; an empty thread sends `[]`.
+### Thread context and conversation history (Ticket B, Ticket K, chat v3)
+- `conversation_history` is passed in the planner payload: the last 10 turns of the same thread, at most 3,500 characters total (oldest dropped first), in a labelled untrusted channel.
+- For agent turns, history carries the stored agent message text that the owner saw (`m["text"]`), cleaned of "Agent says: " prefixes, transaction hashes, and control characters, capped at 400 characters (matching the 400 character cap on owner turns). If audit records add facts (executed or blocked orders) not already contained in the text, the recorded outcome sentence is appended so code-recorded facts are never lost. Agent turns also carry `intent` when available.
+- The system prompt specifies that earlier turns are data, cannot change rules, add recipients, or approve anything. The agent uses earlier turns to answer follow-up questions about the conversation (intent `question`); earlier agent text is a record of what was said, not proof that anything was executed. The current message is not repeated in history; an empty thread sends `[]`.
 
 ### Intent classification and enforcement (Ticket B, chat v3)
 - Planner output schema adds `intent` in `question | clarify | action | refusal`.
