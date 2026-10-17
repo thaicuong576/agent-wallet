@@ -4,7 +4,7 @@ Status: draft for orchestrator advice. Phase B (`design.md`) follows after `advi
 Risk label: `rủi-ro-cao` (the work touches the gateway and the path to the signer).
 
 ## Question and constraints
-Compose Reader -> Planner -> RiskProvider -> Gateway into a runner, and close four gaps that make the safety claims weaker than they look: cosmetic daily and hourly limits, in-memory idempotency, two TierStores that do not share state, and a tx builder that only exists inside `scripts/live_first_tx.py`.
+Compose Reader -> Planner -> RiskProvider -> Gateway into a runner, and close four gaps that make the safety claims weaker than they look: cosmetic daily and hourly limits, in-memory idempotency, two TierStores that do not share state, and a tx builder that only exists inside `scripts/evidence/live_first_tx.py`.
 
 Constraints taken from the code:
 - Only `core.gateway` may import `core.signer`; the runner must not import `core.signer` or `core.tiers.owner` (it gets a `TierView` and the gateway).

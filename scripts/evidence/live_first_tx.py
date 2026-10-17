@@ -8,8 +8,8 @@ with a fake signer, nothing is broadcast. A live run needs both `--execute` and 
 variable AGENT_WALLET_LIVE_CONFIRM=I_APPROVE_1_USDC_ON_BASE_SEPOLIA (the owner's go).
 
 Usage:
-    python scripts/live_first_tx.py                 # dry run
-    python scripts/live_first_tx.py --execute       # live (needs the confirm variable)
+    python scripts/evidence/live_first_tx.py                 # dry run
+    python scripts/evidence/live_first_tx.py --execute       # live (needs the confirm variable)
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from typing import Any
 
 import httpx
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from core.audit.sink import SqliteAuditSink  # noqa: E402

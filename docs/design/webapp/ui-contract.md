@@ -1,6 +1,6 @@
 # Webapp UI contract
 
-Approved by the owner on 2026-10-15 as the target look and layout. The static mockups in [`ui-contract/`](ui-contract/) (`Main.html` Chat, `Portfolio.html`, `Setup.html`; open them in a browser) are the contract for structure, hierarchy, copy tone and states. Colour, type, radii and elevation come from the root `DESIGN.md`, which wins wherever a mockup differs (the mockups predate it).
+Approved by the owner on 2026-10-15 as the target look and layout. The static mockups in [`ui-contract/`](ui-contract) (`Main.html` Chat, `Portfolio.html`, `Setup.html`; open them in a browser) are the contract for structure, hierarchy, copy tone and states. Colour, type, radii and elevation come from the root `DESIGN.md`, which wins wherever a mockup differs (the mockups predate it).
 
 ## Principles
 1. **Chat is home.** The owner talks to the agent; every other page supports that.
@@ -28,7 +28,7 @@ Header 64 px, white, bottom border: logo mark and name, tabs **Chat · Portfolio
 - Screenshots of the built screens are committed next to the mockups for side-by-side review.
 
 ## Changes in UI v3 (built on `feat/ui-refactor`, for the owner to confirm)
-The approved text above is unchanged. The v3 work ([`ui-v3-plan.md`](ui-v3-plan.md)) changes these points; the screens and principles not named here stay as approved. Details of the built version: [`docs/architecture/ui.md`](../../architecture/ui.md).
+The approved text above is unchanged. The v3 work ([`ui-v3-plan.md`](ui-v3-plan.md)) changes these points; the screens and principles not named here stay as approved. Details of the built version: [`docs/architecture/webapp/ui.md`](../../architecture/webapp/ui.md).
 
 | Topic | v3 | Contract text it changes |
 | :--- | :--- | :--- |

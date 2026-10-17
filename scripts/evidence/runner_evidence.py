@@ -10,8 +10,8 @@ Testnet only. Default is a dry run (real portfolio reads, stub simulator, fake s
 broadcast). A live run needs `--execute` and AGENT_WALLET_LIVE_CONFIRM set to CONFIRM_VALUE.
 
 Usage:
-    python scripts/runner_evidence.py                 # dry run
-    python scripts/runner_evidence.py --execute       # live (owner's go required)
+    python scripts/evidence/runner_evidence.py                 # dry run
+    python scripts/evidence/runner_evidence.py --execute       # live (owner's go required)
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from core.agent.client import ScriptedClient  # noqa: E402
@@ -209,7 +209,7 @@ def main() -> int:
     lines = [
         "# Runner evidence (Base Sepolia, chain 84532)",
         "",
-        f"Generated {now_iso()} by `scripts/runner_evidence.py --execute`.",
+        f"Generated {now_iso()} by `scripts/evidence/runner_evidence.py --execute`.",
         "",
         "Planner: **ScriptedClient** (deterministic replay of a planner response; the second cycle "
         "simulates a planner misled by a hostile note). The Reader, runner, policy engine, "

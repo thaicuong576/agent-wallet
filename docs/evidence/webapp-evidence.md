@@ -1,6 +1,6 @@
 # Webapp evidence (Base Sepolia, chain 84532)
 
-Generated 2026-10-15T05:31:23Z by `scripts/webapp_evidence.py --execute` against `https://agent-wallet-6vuy.onrender.com`.
+Generated 2026-10-15T05:31:23Z by `scripts/evidence/webapp_evidence.py --execute` against `https://agent-wallet-6vuy.onrender.com`.
 
 The owner is a throwaway testnet wallet held by the script; the server created and holds a separate custodial agent key for it. Prices are mainnet reference values, not market prices.
 

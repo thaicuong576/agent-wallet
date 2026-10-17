@@ -8,7 +8,7 @@ Inputs: [`proposal.md`](proposal.md) and the orchestrator's `advice-1.md`. The a
 
 | Gap | Today | Decision |
 | :--- | :--- | :--- |
-| Limits are cosmetic | `scripts/live_first_tx.py` hardcodes `spent_24h_usd = "0"`, `tx_count_1h = 0` | Derived from the audit log by `AuditLedger`, read **inside** the gateway lock |
+| Limits are cosmetic | `scripts/evidence/live_first_tx.py` hardcodes `spent_24h_usd = "0"`, `tx_count_1h = 0` | Derived from the audit log by `AuditLedger`, read **inside** the gateway lock |
 | Idempotency is in memory | `Gateway._orders`, `_in_flight` | Audit lookup by `order_id` plus a gateway-owned insert-only `order_intents` table; unfinished intent raises `ReconcileRequired` |
 | Two TierStores | each process opens its own | One SQLite file via `AGENT_WALLET_DATA_DIR`, WAL and busy timeout |
 | Tx builder lives in a script | `full_tx` in `scripts/` | `core/gateway/txbuilder.py`, used by script and runner; builder errors recorded as `failed` |
@@ -278,7 +278,7 @@ erDiagram
 `order_intents` has `BEFORE UPDATE` and `BEFORE DELETE` triggers like `audit_records`. It lives in `audit.sqlite` but outside the hash chain; `IntentStore` is the only writer. `tier_state` and `approval_queue` are unchanged (only pragmas).
 
 ## 8. Evidence plan (item 8)
-`scripts/runner_evidence.py` (ticket T6) builds the real stack with the same factory the API uses and never calls the signer or `propose` bypass; every order goes through `Runner.run_once`. Owner's live confirmation variable is required, as in `live_first_tx.py`.
+`scripts/evidence/runner_evidence.py` (ticket T6) builds the real stack with the same factory the API uses and never calls the signer or `propose` bypass; every order goes through `Runner.run_once`. Owner's live confirmation variable is required, as in `live_first_tx.py`.
 1. Cycle 1 (executed): the Planner proposes `approve 1 USDC` then `supply 1 USDC` (two orders, as in the live path). Both pass policy and execute; two tx hashes.
 2. Cycle 2 (denied): the Planner proposes a supply above `per_tx_usd`, or the text is a hostile injection corpus string; the policy denies with `LIMIT.PER_TX` or `ACCESS.*`. No tx.
 3. Output to `docs/evidence/runner-*.{md,jsonl,txt}`: tx hashes, `python -m core.audit.verify` result on the exported chain, and a line "Planner client: OpenAIClient | ScriptedClient". `OpenAIClient` is used when `OPENAI_API_KEY` is set, `ScriptedClient` otherwise; the file says which. If the live model is nondeterministic and does not produce the denied order, the denied cycle uses `ScriptedClient` and says so.
@@ -289,11 +289,11 @@ erDiagram
 | # | Ticket | Files touched | Depends | Acceptance test | Risk |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | T1 | Audit sink transaction fix | `core/audit/sink.py`, `tests/audit/test_sink_concurrency.py` | none | two processes append 200 records each; `verify_chain` ok, no gap, no `IntegrityError` | `rủi-ro-cao` (audit integrity) |
-| T2 | Tx builder, builder errors as `failed`, `TierView.get_approval` | `core/gateway/txbuilder.py`, `core/gateway/gateway.py` (`_execute_order`, `_get_approval_info` only), `core/tiers/view.py`, `scripts/live_first_tx.py`, `tests/gateway/test_txbuilder.py` | none | stale head, `pending < latest`, estimate failure each give `failed` with `detail` starting `tx build:`; two-call builder yields nonces n, n+1 and passes `simulate_bundle` | `rủi-ro-cao` (path to signer) |
+| T2 | Tx builder, builder errors as `failed`, `TierView.get_approval` | `core/gateway/txbuilder.py`, `core/gateway/gateway.py` (`_execute_order`, `_get_approval_info` only), `core/tiers/view.py`, `scripts/evidence/live_first_tx.py`, `tests/gateway/test_txbuilder.py` | none | stale head, `pending < latest`, estimate failure each give `failed` with `detail` starting `tx build:`; two-call builder yields nonces n, n+1 and passes `simulate_bundle` | `rủi-ro-cao` (path to signer) |
 | T3 | Ledger, lock, intents, audit-backed idempotency | `core/runner/ledger.py`, `core/gateway/lock.py`, `core/gateway/intents.py`, `core/gateway/gateway.py` (`propose`, `__init__`), `core/gateway/exceptions.py`, `core/audit/sink.py` (`find_by_order_id`, indexes), `tests/gateway/`, `tests/runner/test_ledger.py` | T1; merge after T2 (same file) | seeded log denies `LIMIT.PER_DAY` and `LIMIT.TX_PER_HOUR`; restart same `order_id` does not call signer; raising in `append` after sign then restart gives `ReconcileRequired` and signer not called | `rủi-ro-cao` |
 | T4 | TierStore WAL and busy timeout | `core/tiers/store.py`, `tests/tiers/test_shared_file.py` | none | two `TierStore` on one file: stop engaged by one is seen by the other's `TierView` | `rủi-ro-cao` (permission-tier module) |
-| T5 | Portfolio reader, prices, config, runner, e2e | `core/runner/{portfolio,prices,config,runner}.py`, `tests/runner/`, `tests/e2e/test_runner_stop.py`, `README.md`, `docs/architecture/runner.md` | T2, T3 (T4 for the e2e) | planner scripted order executes through fake signer; API-engaged stop denies next `run_once` | `rủi-ro-thấp` (no key, no signer import) |
-| T6 | Evidence run | `scripts/runner_evidence.py`, `docs/evidence/runner-*` | T5 | one executed and one denied planner order in a chain that `python -m core.audit.verify` passes | `rủi-ro-cao` (live funds, owner confirmation) |
+| T5 | Portfolio reader, prices, config, runner, e2e | `core/runner/{portfolio,prices,config,runner}.py`, `tests/runner/`, `tests/e2e/test_runner_stop.py`, `README.md`, `docs/architecture/agent/runner.md` | T2, T3 (T4 for the e2e) | planner scripted order executes through fake signer; API-engaged stop denies next `run_once` | `rủi-ro-thấp` (no key, no signer import) |
+| T6 | Evidence run | `scripts/evidence/runner_evidence.py`, `docs/evidence/runner-*` | T5 | one executed and one denied planner order in a chain that `python -m core.audit.verify` passes | `rủi-ro-cao` (live funds, owner confirmation) |
 | T7 | `reconcile(order_id, tx_hash_or_none)` owner tool (cut candidate) | `core/gateway/reconcile.py`, `api/app.py` (owner route) | T3 | checks receipt, appends the truthful record, closes the intent | `rủi-ro-cao` |
 
 Parallelism: builder A runs T1 then T3. Builder B runs T2 and T4 in parallel with A, then T5 once T2 and T3 are merged; start `core/runner/prices.py` and `portfolio.py` earlier because they touch no gateway file. `core/gateway/gateway.py` is touched by T2 and T3: they edit different functions, T3 rebases after T2. `core/audit/sink.py` is touched by T1 then T3: sequential, same builder.

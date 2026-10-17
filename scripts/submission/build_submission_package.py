@@ -28,7 +28,7 @@ def build_package(
 ) -> Path:
     dest_path = Path(dest_dir).resolve()
     if repo_root is None:
-        root_path = Path(__file__).resolve().parent.parent
+        root_path = Path(__file__).resolve().parent.parent.parent
     else:
         root_path = Path(repo_root).resolve()
 
@@ -40,7 +40,7 @@ def build_package(
     # 1. 01-technical-documentation
     dir_01 = dest_path / "01-technical-documentation"
     dir_01.mkdir(parents=True, exist_ok=True)
-    tech_doc = root_path / "docs" / "technical-documentation.md"
+    tech_doc = root_path / "docs" / "submission" / "01-technical-documentation.md"
     if tech_doc.exists():
         shutil.copy2(tech_doc, dir_01 / "technical-documentation.md")
 
@@ -107,10 +107,10 @@ From the root of the cloned repository:
    python -m core.audit.verify docs/evidence/audit-chain.jsonl
 
 4. Scan for secrets (confirms zero keys/secrets in repository):
-   python scripts/check_no_secrets.py
+   python scripts/checks/check_no_secrets.py
 
 5. Build the complete submission package:
-   python scripts/build_submission_package.py
+   python scripts/submission/build_submission_package.py
 
 ## Local Quick Start
 1. Create and activate a virtual environment:
@@ -129,7 +129,7 @@ From the root of the cloned repository:
     # 5. 05-security-self-assessment
     dir_05 = dest_path / "05-security-self-assessment"
     dir_05.mkdir(parents=True, exist_ok=True)
-    sec_src = root_path / "docs" / "security" / "self-assessment.md"
+    sec_src = root_path / "docs" / "submission" / "05-security-self-assessment.md"
     if sec_src.exists():
         shutil.copy2(sec_src, dir_05 / "self-assessment.md")
 
@@ -210,8 +210,8 @@ From the root of the cloned repository:
 1. python -m pytest -q                                # Run test suite (1,279+ tests pass)
 2. python -m evals.run                                # Replay 46 evaluation scenarios offline
 3. python -m core.audit.verify docs/evidence/audit-chain.jsonl # Verify SHA-256 audit hash chain
-4. python scripts/check_no_secrets.py                 # Scan repo for secrets (clean)
-5. python scripts/build_submission_package.py         # Build and verify this package
+4. python scripts/checks/check_no_secrets.py                 # Scan repo for secrets (clean)
+5. python scripts/submission/build_submission_package.py         # Build and verify this package
 """
     (dest_path / "README.txt").write_text(top_readme_content, encoding="utf-8")
     return dest_path

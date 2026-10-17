@@ -52,7 +52,7 @@ Title: first 40 characters of the first owner message, set by code (not by the L
 | F2 | History rail, New chat, mobile drawer | `ui/views/side.js`, `chat.js`, `ui/api.js` | B2, mockups A, D |
 | F3 | Rules page, emergency-stop confirm, skeleton loaders | `ui/views/rules.js`, `portfolio.js`, `activity.js`, `ui/views/actions.js` | B3, mockups C, E |
 
-B1 to B3 start now. F1 to F3 start when the mockups are signed off and the matching backend ticket is merged; they may begin against fixtures in `ui/fixtures`. Each ticket ships tests and updates `docs/architecture/api.md` and `docs/architecture/ui.md`.
+B1 to B3 start now. F1 to F3 start when the mockups are signed off and the matching backend ticket is merged; they may begin against fixtures in `ui/fixtures`. Each ticket ships tests and updates `docs/architecture/webapp/api.md` and `docs/architecture/webapp/ui.md`.
 
 ## Rules for every ticket
 - Reuse existing validation and the gateway; no new path to the signer; no new dependency.

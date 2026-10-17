@@ -19,11 +19,11 @@ flowchart LR
 ## Submission Deliverables
 | Item | Deliverable | Path / Reference |
 | :--- | :--- | :--- |
-| **01** | Technical documentation | [`docs/technical-documentation.md`](docs/technical-documentation.md) |
+| **01** | Technical documentation | [`docs/submission/01-technical-documentation.md`](docs/submission/01-technical-documentation.md) |
 | **02** | Presentation deck | [`docs/submission/02-presentation-deck.md`](docs/submission/02-presentation-deck.md) |
 | **03** | Demo video script | [`docs/submission/03-demo-video-script.md`](docs/submission/03-demo-video-script.md) |
-| **04** | Source code & docs | This repository: [`README.md`](README.md), [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md), [`docs/TESTING.md`](docs/TESTING.md) |
-| **05** | Security self-assessment | [`docs/security/self-assessment.md`](docs/security/self-assessment.md) |
+| **04** | Source code & docs | This repository: [`README.md`](README.md), [`docs/guides/deployment.md`](docs/guides/deployment.md), [`docs/guides/testing.md`](docs/guides/testing.md) |
+| **05** | Security self-assessment | [`docs/submission/05-security-self-assessment.md`](docs/submission/05-security-self-assessment.md) |
 | **06** | Execution evidence | [`docs/submission/06-execution-evidence.md`](docs/submission/06-execution-evidence.md) |
 
 ## Quick Start
@@ -35,7 +35,7 @@ make check                                  # lint, tests, links, secret scan (o
 make demo                                   # starts API server on http://127.0.0.1:8000
 # Open http://127.0.0.1:8000/ui/?fixtures=1&demo=1 in browser for zero-key demo
 ```
-With keys: copy `.env.example` to `.env`, set `BASE_SEPOLIA_RPC_URL`, `OPENAI_API_KEY`, and run `make run`. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+With keys: copy `.env.example` to `.env`, set `BASE_SEPOLIA_RPC_URL`, `OPENAI_API_KEY`, and run `make run`. See [`docs/guides/deployment.md`](docs/guides/deployment.md).
 
 ## Running Tests
 ```sh
@@ -43,15 +43,15 @@ make test                                   # over 1,440 tests: unit, policy, ga
 make eval                                   # 46 replay scenarios covering 27/28 rule codes
 python -m core.audit.verify docs/evidence/audit-chain.jsonl  # verifies audit hash chain
 ```
-Detailed testing guide and suite breakdowns: [`docs/TESTING.md`](docs/TESTING.md).
+Detailed testing guide and suite breakdowns: [`docs/guides/testing.md`](docs/guides/testing.md).
 
 ## Supported Protocols
-- **Aave v3**: USDC and USDT supply & withdraw on Base Sepolia ([`docs/architecture/aave-adapter.md`](docs/architecture/aave-adapter.md))
-- **Aave Stata**: ERC-4626 static yield-bearing aToken vaults for USDC/USDT ([`docs/architecture/aave-stata.md`](docs/architecture/aave-stata.md))
-- **Morpho Blue**: Isolated lending markets for USDC/cbETH and USDC/WBTC ([`docs/architecture/morpho-blue.md`](docs/architecture/morpho-blue.md))
-- **Uniswap v3**: DEX token swaps with oracle-based minimum output protection ([`docs/architecture/uniswap-v3.md`](docs/architecture/uniswap-v3.md))
-- Protocol registry & strategy presets (Conservative vs Diversified): [`docs/architecture/protocols.md`](docs/architecture/protocols.md), [`docs/architecture/presets.md`](docs/architecture/presets.md)
-- Latency visibility & UI cache control: [`docs/architecture/timing-logs.md`](docs/architecture/timing-logs.md), [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
+- **Aave v3**: USDC and USDT supply & withdraw on Base Sepolia ([`docs/architecture/protocols/aave-adapter.md`](docs/architecture/protocols/aave-adapter.md))
+- **Aave Stata**: ERC-4626 static yield-bearing aToken vaults for USDC/USDT ([`docs/architecture/protocols/aave-stata.md`](docs/architecture/protocols/aave-stata.md))
+- **Morpho Blue**: Isolated lending markets for USDC/cbETH and USDC/WBTC ([`docs/architecture/protocols/morpho-blue.md`](docs/architecture/protocols/morpho-blue.md))
+- **Uniswap v3**: DEX token swaps with oracle-based minimum output protection ([`docs/architecture/protocols/uniswap-v3.md`](docs/architecture/protocols/uniswap-v3.md))
+- Protocol registry & strategy presets (Conservative vs Diversified): [`docs/architecture/protocols/protocols.md`](docs/architecture/protocols/protocols.md), [`docs/architecture/core/presets.md`](docs/architecture/core/presets.md)
+- Latency visibility & UI cache control: [`docs/architecture/webapp/timing-logs.md`](docs/architecture/webapp/timing-logs.md), [`docs/guides/deployment.md`](docs/guides/deployment.md)
 
 ## On-Chain Evidence
 Real testnet transactions executed on Base Sepolia (chain ID 84532):
@@ -66,14 +66,31 @@ Real testnet transactions executed on Base Sepolia (chain ID 84532):
 | Supply 10 USDC (Planner) | Aave v3 | [`0xcc49...44ff`](https://sepolia.basescan.org/tx/0xcc49ca6da6435519fb15291b95887bbcd16f9934ce81076efff93836ed4044ff) | [`docs/evidence/webapp-evidence.md`](docs/evidence/webapp-evidence.md) |
 
 ## Repository Structure
-- `api/`: REST API (FastAPI), auth sessions, SSE event streams, OpenAPI contract
-- `contracts/`: Data contracts, JSON Schemas, OpenAPI spec, rule codes, presets, examples
-- `core/`: Policy engine, gateway, signer, audit hash-chain, protocols, risk router
-- `docs/`: Technical documentation, deployment guides, test catalogues, architecture notes
-- `evals/`: 46 offline evaluation scenarios covering 27 of 28 rule codes
-- `scripts/`: Link checker, secret scanner, smoke test, and live transaction scripts
-- `tests/`: Pytest suite (over 1,440 tests across unit, policy, gateway, storage, UI)
-- `ui/`: Zero-build single-page webapp console (plain HTML, CSS, ES modules) with single-flight read cache ([`docs/architecture/ui.md`](docs/architecture/ui.md))
+
+```text
+.
+├── api/          # FastAPI HTTP surface, auth sessions, SSE event streams, OpenAPI endpoints
+├── contracts/    # Data contracts, JSON Schemas, OpenAPI specification, rule codes, strategy presets
+├── core/         # Core policy, execution, and security architecture
+│   ├── agent/    # Untrusted LLM Reader fact extraction and Planner proposal synthesis
+│   ├── audit/    # Append-only SHA-256 hash-chained tamper-evident audit log
+│   ├── gateway/  # Execution pipeline, simulation-before-signing, concurrency lock
+│   ├── policy/   # Pure deterministic policy engine and IPS mathematical rule checks
+│   ├── protocols/# Calldata builders and protocol adapters (Aave, Morpho, Uniswap)
+│   ├── risk/     # Risk router aggregating live on-chain metrics and reference data
+│   ├── runner/   # Autonomous agent loop cycle, portfolio state, ledger tracking
+│   ├── signer/   # Isolated local key signer restricted exclusively to Base Sepolia
+│   ├── simulate/ # RPC transaction bundle simulation (eth_call) before signing
+│   ├── storage/  # Dual-backend persistence (SQLite and PostgreSQL with RLS)
+│   └── tiers/    # Permission tier state machine (T0-T2), emergency stop, approvals
+├── docs/         # Documentation index, architecture specs, guides, research, and evidence
+├── evals/        # 46 offline evaluation scenarios covering 27 of 28 rule codes
+├── scripts/      # Operational scripts: checks, evidence generation, submission packaging
+├── tests/        # Comprehensive pytest test suite (1,460+ tests across all layers)
+└── ui/           # Zero-build single-page webapp console (plain HTML, CSS, ES modules)
+```
+
+See [`docs/README.md`](docs/README.md) for the complete documentation index.
 
 ## Security Model
 - **LLM proposes, code decides**: The LLM outputs structured proposals; a pure Python engine enforces rules.

@@ -9,8 +9,8 @@ server-side audit chain check. Output: `docs/evidence/defi-evidence.md`.
 The owner key never leaves this process. Dry run (default) only signs in and reads state.
 `--execute` needs AGENT_WALLET_LIVE_CONFIRM=I_APPROVE_WEBAPP_EVIDENCE_ON_BASE_SEPOLIA.
 
-    python scripts/webapp_evidence_defi.py --url https://agent-wallet-6vuy.onrender.com
-    python scripts/webapp_evidence_defi.py --url ... --execute
+    python scripts/evidence/webapp_evidence_defi.py --url https://agent-wallet-6vuy.onrender.com
+    python scripts/evidence/webapp_evidence_defi.py --url ... --execute
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from eth_account import Account
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import webapp_evidence as base  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 CHAT_STEPS: list[tuple[str, str]] = [
     ("stata", "Deposit 5 USDC into the Aave stata vault."),
     ("morpho-wbtc", "Lend 5 USDC on Morpho Blue in the USDC/WBTC market."),
@@ -137,7 +137,10 @@ def main() -> int:
     out = [
         "# Multi-protocol evidence on the hosted app (Base Sepolia, chain 84532)",
         "",
-        f"Generated {started} by `scripts/webapp_evidence_defi.py --execute` against `{args.url}`.",
+        (
+            f"Generated {started} by `scripts/evidence/webapp_evidence_defi.py --execute` "
+            f"against `{args.url}`."
+        ),
         "",
         "The owner key stays in the script; the server holds a separate custodial agent key. The "
         "owner chose the `diversified` preset with a step-up signature bound to that preset. "

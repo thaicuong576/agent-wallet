@@ -1,7 +1,7 @@
 # Aave V3 protocol adapter: architecture note
 
 Owning module: `core.protocols` (`core/protocols/aave.py`, `core/protocols/addresses.py`).
-Specification & data contract: [`contracts/schemas/order.schema.json`](../../contracts/schemas/order.schema.json).
+Specification & data contract: [`contracts/schemas/order.schema.json`](../../../contracts/schemas/order.schema.json).
 
 ## Purpose
 The Aave V3 adapter translates a validated `Order` into a list of executable Ethereum `Call(to, data, value)` objects for Base Sepolia (Chain ID 84532). It is a pure, offline calldata encoder with no network dependencies and zero access to private keys or the signer.
@@ -29,7 +29,7 @@ flowchart TD
 
 ## Contract Addresses on Base Sepolia (Chain ID 84532)
 
-Addresses are verified on-chain against Base Sepolia RPC and sourced from primary registry artifacts documented in `docs/design/testnet-facts-aave.md`:
+Addresses are verified on-chain against Base Sepolia RPC and sourced from primary registry artifacts documented in `docs/research/testnet-facts-aave.md`:
 
 | Role | Contract Address | Primary Source |
 | :--- | :--- | :--- |

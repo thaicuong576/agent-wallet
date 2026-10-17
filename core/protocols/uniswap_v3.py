@@ -34,7 +34,7 @@ from core.protocols.tokens import (
 
 PROTOCOL_ID: Final[str] = "uniswap-v3"
 
-# Verified Base Sepolia contract addresses (docs/design/testnet-facts-defi-survey.md)
+# Verified Base Sepolia contract addresses (docs/research/testnet-facts-defi-survey.md)
 FACTORY_ADDRESS: Final[str] = "0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24"
 SWAP_ROUTER_02: Final[str] = "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4"
 QUOTER_V2: Final[str] = "0xC5290058841028F1614F3A6F0F5816cAd0df5E27"

@@ -1,6 +1,6 @@
 # Runner evidence (Base Sepolia, chain 84532)
 
-Generated 2026-10-14T15:41:12Z by `scripts/runner_evidence.py --execute`.
+Generated 2026-10-14T15:41:12Z by `scripts/evidence/runner_evidence.py --execute`.
 
 Planner: **ScriptedClient** (deterministic replay of a planner response; the second cycle simulates a planner misled by a hostile note). The Reader, runner, policy engine, gateway, simulator, signer and audit log are the real components.
 Prices are mainnet reference values, not testnet market prices.

@@ -6,7 +6,7 @@ Owning modules:
 - `core/agent/planner.py`: `FallbackPlanner` (keyword routing, swap support).
 - `core/storage`: `JobStore` implementations (`SqliteJobs`, `PgJobStore`).
 
-Specification: [`docs/design/webapp/chat-v3-spec.md`](../design/webapp/chat-v3-spec.md).
+Specification: [`docs/design/webapp/chat-v3-spec.md`](../../design/webapp/chat-v3-spec.md).
 
 ## Purpose
 

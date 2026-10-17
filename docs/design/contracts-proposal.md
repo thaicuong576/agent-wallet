@@ -99,7 +99,7 @@ Option A (self-contained schemas), append-only approval records, basis points fo
 - `contracts/rule-codes.json`
 - `contracts/examples/<name>.valid*.json` and `<name>.invalid*.json` for each of the 8, plus `decision-record.chain.json` (3 records)
 - `contracts/README.md`
-- `docs/architecture/contracts.md` (Mermaid and `erDiagram`)
+- `docs/architecture/core/contracts.md` (Mermaid and `erDiagram`)
 - `README.md`: two rows in the repository map
 - This note is updated with the final decisions after `advice-1.md`.
 

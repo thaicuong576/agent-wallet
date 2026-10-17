@@ -1,6 +1,6 @@
 # Data contracts v1: architecture note
 
-Owner: `contracts/` (schemas, OpenAPI, rule codes). Every module builds against it; no module owns a private copy of an object. How to read, validate and change them: [`contracts/README.md`](../../contracts/README.md).
+Owner: `contracts/` (schemas, OpenAPI, rule codes). Every module builds against it; no module owns a private copy of an object. How to read, validate and change them: [`contracts/README.md`](../../../contracts/README.md).
 
 ## Where contracts sit
 ```mermaid

@@ -42,4 +42,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t agent-wallet:ci .
-      - run: scripts/container_smoke.sh agent-wallet:ci
+      - run: scripts/checks/container_smoke.sh agent-wallet:ci

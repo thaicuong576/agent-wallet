@@ -200,8 +200,9 @@ def reference_risk_inputs() -> dict[str, Any]:
     """Risk inputs for the policy engine, stamped fresh from the repository's reference file.
 
     Base Sepolia has no indexer for these metrics (see core/risk/provider.py), so the same
-    reference values that scripts/live_first_tx.py uses are served, labelled `reference` in the
-    data itself. No network call. Without them every `supply` would be denied as RISK.DATA_STALE.
+    reference values that scripts/evidence/live_first_tx.py uses are served, labelled
+    `reference` in the data itself. No network call. Without them every `supply` would be
+    denied as RISK.DATA_STALE.
     """
     risk = json.loads((EXAMPLES_DIR / "risk-inputs.valid.json").read_text(encoding="utf-8"))
     risk["as_of"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

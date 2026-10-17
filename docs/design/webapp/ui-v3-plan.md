@@ -49,7 +49,7 @@ What the owner asked for, in one sentence: the person using this wallet wants to
 ## 1. Audit (a)
 
 ### Method and limits
-- Ran the app locally (`uvicorn api.main:app`, demo mode `?fixtures=1&demo=1`) and drove it in a real browser through `chrome-devtools-axi`, at 1280, 1440, 1920 and 375 px, light and dark: 5 screens x 4 widths x 2 themes = 40 captures, plus the journey states below. All screenshots are in [`docs/previews/ux-audit/`](../../previews/ux-audit/) and are of this app only.
+- Ran the app locally (`uvicorn api.main:app`, demo mode `?fixtures=1&demo=1`) and drove it in a real browser through `chrome-devtools-axi`, at 1280, 1440, 1920 and 375 px, light and dark: 5 screens x 4 widths x 2 themes = 40 captures, plus the journey states below. All screenshots are in [`docs/previews/ux-audit/`](../../previews/ux-audit) and are of this app only.
 - Journeys walked: first run (signed out, connect, add gas, activate), ask the agent to act, blocked order, order that needs approval (and Approve), emergency stop and resume, withdraw, switching threads, reading Activity and Rules. The 375 px captures cover chat, blocked, frozen, setup, drawer and stop dialog.
 - Measured: page and element scroll sizes in the browser, a 250 ms timeline of a chat send, text sizes, tap-target sizes; an automated accessibility audit (score 96, two failures); `impeccable detect` on `ui/`; an offline probe of `PortfolioReader` with a stub RPC.
 - **Not done:** the hosted app needs a wallet signature that a headless browser cannot give, so the live state is judged from code and from the owner's description. Fixture timings are not real latencies (fixtures fake 700 ms per poll and only pace orders that execute). The live silent window in D1 is therefore an estimate from the code path, not a measurement. The white scrollbar in dark mode cannot be captured in headless mode (overlay scrollbars), but its cause is verified from computed styles.
@@ -271,7 +271,7 @@ Loading: skeletons with the final row structure. Empty: one primary action ("Add
 
 ## 5. Wireframes (e)
 
-Static HTML in [`ui-v3/`](ui-v3/) (open the files in a browser), built with `DESIGN.md` tokens. Numbers are examples. Avatars are the fallback letter style, not final artwork.
+Static HTML in [`ui-v3/`](ui-v3) (open the files in a browser), built with `DESIGN.md` tokens. Numbers are examples. Avatars are the fallback letter style, not final artwork.
 
 | Screen | Image | Source |
 | :--- | :--- | :--- |
@@ -399,7 +399,7 @@ Static, derived from the token and protocol registries plus a small display tabl
 Alongside `text` (kept for compatibility): `summary` (the code-composed sentence, no "No transaction was made." prefix), `note` (the model's reply, or null), and `kind` (`moved`, `blocked`, `waiting`, `no_action`, `question`). The client uses these when present and falls back to parsing `text` otherwise. This removes string surgery in the page and lets the server own the copy.
 
 ### 7.6 Decisions endpoint for Activity
-`api.md` states that in multi mode `GET /decisions` is the session owner's own audit chain, while `docs/architecture/ui.md` still says it is not per owner and the page therefore fans out to `/jobs` plus up to ten `/jobs/{id}` calls. If the api.md statement holds (there is a test named `test_decisions_are_the_session_owners_own`), Activity can read `/decisions?limit=` directly: a UI-only change that removes eleven requests. To be confirmed in PR 6 before relying on it.
+`api.md` states that in multi mode `GET /decisions` is the session owner's own audit chain, while `docs/architecture/webapp/ui.md` still says it is not per owner and the page therefore fans out to `/jobs` plus up to ten `/jobs/{id}` calls. If the api.md statement holds (there is a test named `test_decisions_are_the_session_owners_own`), Activity can read `/decisions?limit=` directly: a UI-only change that removes eleven requests. To be confirmed in PR 6 before relying on it.
 
 ### What each field replaces
 | New | Replaces | If not approved |
@@ -433,7 +433,7 @@ Constraints from the brief: no external assets at runtime, so every icon is a sm
 
 ## 9. Delivery order (i)
 
-Each PR is independently mergeable, has before and after screenshots, tests and updates to `docs/architecture/ui.md` and `docs/design/webapp/ui-contract.md`. PRs 1 to 6 change only `ui/`, docs and tests. Backend PRs (B1 to B4) wait for the owner's approval of section 7 and can be dropped without breaking the UI.
+Each PR is independently mergeable, has before and after screenshots, tests and updates to `docs/architecture/webapp/ui.md` and `docs/design/webapp/ui-contract.md`. PRs 1 to 6 change only `ui/`, docs and tests. Backend PRs (B1 to B4) wait for the owner's approval of section 7 and can be dropped without breaking the UI.
 
 | Day | PR | Scope | Files (indicative) | Backend |
 | :--- | :--- | :--- | :--- | :--- |
@@ -467,7 +467,7 @@ Test impact to plan for: `tests/ui/test_ui.py` asserts the four tabs, the header
 
 ## 11. Out of scope and noticed
 
-- `docs/architecture/ui.md` says `GET /decisions` is not per owner; `docs/architecture/api.md` says it is in multi mode. One of them is stale (7.6).
+- `docs/architecture/webapp/ui.md` says `GET /decisions` is not per owner; `docs/architecture/webapp/api.md` says it is in multi mode. One of them is stale (7.6).
 - Fixture data is internally inconsistent (the side card shows 98 USDC idle and 2 earning while the balance thread says 90 and 10). Harmless in demos, worth one pass when fixtures are extended in PR 2 and 4.
 - The `confirming` phase is documented but never emitted; the fixtures emit it, so the demo shows a stage the live app cannot.
 - Withdraw supports USDC and ETH only. Letting the owner withdraw other tokens is a signer and gateway question, not a UI one.

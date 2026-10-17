@@ -1,6 +1,6 @@
 # Multi-protocol evidence on the hosted app (Base Sepolia, chain 84532)
 
-Generated 2026-10-16T17:25:37Z by `scripts/webapp_evidence_defi.py --execute` against `https://agent-wallet-6vuy.onrender.com`.
+Generated 2026-10-16T17:25:37Z by `scripts/evidence/webapp_evidence_defi.py --execute` against `https://agent-wallet-6vuy.onrender.com`.
 
 The owner key stays in the script; the server holds a separate custodial agent key. The owner chose the `diversified` preset with a step-up signature bound to that preset. Every action below went through the same gateway as before: policy engine, simulation, signer, hash-chained audit. Prices are Aave-oracle reference values, not market prices.
 

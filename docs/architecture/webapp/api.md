@@ -110,7 +110,7 @@ Rules enforced here: the owner address comes only from `require_session` (no rou
 | :--- | :--- |
 ### Limits and suggestions (ticket 124)
 
-`GET /protocols` answers `{items: [{id, name, category, tokens, functions, paper}]}`: the protocol registry entries (`docs/architecture/protocols.md`) that are in the owner's IPS `universe.protocols`. Read-only, owner-scoped, no addresses; owner-only functions are not listed.
+`GET /protocols` answers `{items: [{id, name, category, tokens, functions, paper}]}`: the protocol registry entries (`docs/architecture/protocols/protocols.md`) that are in the owner's IPS `universe.protocols`. Read-only, owner-scoped, no addresses; owner-only functions are not listed.
 
 `GET /limits` answers `{per_order_usd, per_day_usd, used_today_usd, approval_threshold_usd, protocols, emergency_stop, as_of}`. Limits and `protocols` come from the owner's active IPS (`limits.per_tx_usd`, `limits.per_day_usd`, `approval.escalate_above_usd`, `universe.protocols` as written in the IPS); `used_today_usd` is the rolling 24 hour executed spend from the owner's ledger (approve, mint and transfer excluded); `emergency_stop` is `ready` or `stopped`. Money is a string with two decimals. Read-only: there is no write path and no limit editing.
 
