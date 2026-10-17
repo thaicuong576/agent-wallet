@@ -308,7 +308,7 @@ out.plannerLabels = Object.fromEntries(
   out.pills.stopped = parts.pill.textContent;
 }
 
-// 3d. chat thread survival across remounts and reloads (fixtures mode, ticket T1)
+// 3d. chat thread survival across remounts and reloads (fixtures mode)
 {
   const { ctx, api } = mk({ demo: true });
   await ctx.refreshSession();

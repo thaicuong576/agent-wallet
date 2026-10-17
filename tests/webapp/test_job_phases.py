@@ -1,4 +1,4 @@
-"""Job phases (contract C1) and cancel (contract C2): ticket 122.
+"""Job phases and cancel.
 
 The executor is manual (`world.drain()`), so a job can be inspected while queued and cancelled at
 a precise point. The gateway is the scripted one of the chat tests; "never signs" is checked by

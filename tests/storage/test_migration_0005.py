@@ -1,5 +1,4 @@
-"""Migration 0005: chat_threads and chat_messages.thread_id, protected like chat_messages
-(ticket 123)."""
+"""Migration 0005: chat_threads and chat_messages.thread_id, protected like chat_messages."""
 
 from __future__ import annotations
 

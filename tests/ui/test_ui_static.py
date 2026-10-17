@@ -291,7 +291,7 @@ def test_design_tokens_come_from_design_md() -> None:
     assert "prefers-color-scheme: dark" in css
     assert "prefers-reduced-motion" in css
     assert ":focus-visible" in css
-    # The full DESIGN.md palette and the radii of the re-skin (ticket 127).
+    # The full DESIGN.md palette and the radii of the re-skin.
     for token, value in (
         ("--canvas", "#ffffff"),
         ("--canvas-soft", "#fbf9f8"),

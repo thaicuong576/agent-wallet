@@ -1,4 +1,4 @@
-"""SQLite stores of the webapp side and the SQLite StorageBackend (design 5, 13, ticket W1).
+"""SQLite stores of the webapp side and the SQLite StorageBackend (design 5, 13).
 
 Per owner, next to the gateway files: ``DATA_DIR/owners/<0x address>/webapp.sqlite`` holds the job,
 top-up and policy-selection tables. The keystore is a file, ``keystore.json``. Nothing here changes

@@ -51,7 +51,7 @@ HISTORY_MAX_CHARS = 3500
 def format_conversation_history(
     history: Sequence[Mapping[str, Any]] | None,
 ) -> list[dict[str, str]]:
-    """Format and bound conversation history for the planner payload (chat v3).
+    """Format and bound conversation history for the planner payload.
 
     Last 10 turns of the same thread, at most 3,500 characters total, oldest dropped first.
     """

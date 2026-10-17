@@ -1,8 +1,8 @@
 """Wallet sign-in, sessions and step-up challenges (design 6.1 to 6.4, 12.1, 12.2).
 
 Exposes an APIRouter (`router`), the dependencies `require_session` and `require_step_up(action)`,
-and `AuthService`. Ticket A3 mounts the router and sets `app.state.auth_service`. Nothing here logs
-a secret, token or signature. EOAs only.
+and `AuthService`. The application mounts the router and sets `app.state.auth_service`.
+Nothing here logs a secret, token or signature. EOAs only.
 """
 
 from __future__ import annotations

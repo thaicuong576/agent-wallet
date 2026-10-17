@@ -1,4 +1,4 @@
-"""Unit tests for PgPool metrics, sizing, warmup and error behavior (Ticket J)."""
+"""Unit tests for PgPool metrics, sizing, warmup and error behavior."""
 
 from __future__ import annotations
 

@@ -604,7 +604,7 @@ export function createApi({
     return fixtures ? fixtureCall(key, arg) : real(method, path, opts);
   }
 
-  // There is no policy route in contracts/openapi.yaml yet (ticket A4), so outside fixtures
+  // There is no policy route in contracts/openapi.yaml yet, so outside fixtures
   // mode these two never reach the network.
   const noPolicyRoute = () =>
     Promise.reject(new ApiError(501, "not-available", "Choosing a preset is not available yet"));

@@ -1,4 +1,4 @@
-"""Tests for timing visibility and UI cache headers (Ticket F).
+"""Tests for timing visibility and UI cache headers.
 
 Verifies:
 - configure_logging is idempotent and respects AGENT_WALLET_LOG_LEVEL;

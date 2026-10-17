@@ -83,7 +83,7 @@ function addRuleChips(el, side, codes) {
 
 // ---- live job: the cards around it ---------------------------------------------------------
 // The live progress card is ui/views/progress.js. `phase` comes from GET /jobs/{id} and each
-// agent message (contract C1).
+// agent message.
 export const ACTIVE_PHASES = new Set(["queued", "rules_check", "sent", "confirming"]);
 
 // A job that failed after the order was sent: the outcome is not known, so say so.

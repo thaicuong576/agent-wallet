@@ -1,4 +1,4 @@
-// Rules: a read-only summary of the owner's limits, from GET /limits (contract C4, board D).
+// Rules: a read-only summary of the owner's limits, from GET /limits.
 // Nothing here changes a limit: the policy engine checks every order against these values.
 // The page also holds the agent permission control and the scripted safety demo (moved from Portfolio).
 import { cta, emptyState, frozenCard } from "../lib/gauges.js";

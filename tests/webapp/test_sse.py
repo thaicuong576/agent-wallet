@@ -1,4 +1,4 @@
-"""Server-Sent Events tests (ticket C-C): formatting, route, ping, done payload."""
+"""Server-Sent Events tests: formatting, route, ping, done payload."""
 
 from __future__ import annotations
 

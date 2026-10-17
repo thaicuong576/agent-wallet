@@ -1,4 +1,4 @@
-"""Unit tests for Uniswap V3 protocol adapter (Ticket D2)."""
+"""Unit tests for Uniswap V3 protocol adapter."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Storage interfaces (Protocols). Adapters live in sub-packages added by later tickets."""
+"""Storage interfaces (Protocols). Adapters live in sqlite and postgres sub-packages."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Tests for Aave Stata (ERC-4626) protocol adapter and Aave v3 USDT integration (ticket D1)."""
+"""Tests for Aave Stata (ERC-4626) protocol adapter and Aave v3 USDT integration."""
 
 from __future__ import annotations
 

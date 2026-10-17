@@ -1,4 +1,4 @@
--- Conversation threads of the webapp (ticket 123, contract C3). A thread is an id and a title set by
+-- Conversation threads of the webapp. A thread is an id and a title set by
 -- code from the first owner message; messages of a thread point to it by `thread_id`. Messages
 -- written before this migration keep `thread_id` NULL and form the implicit default thread.
 --

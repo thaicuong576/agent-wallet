@@ -1,4 +1,4 @@
-"""Migration 0004: chat_messages with row-level security and no grant to API roles (ticket 115)."""
+"""Migration 0004: chat_messages with row-level security and no grant to API roles."""
 
 from __future__ import annotations
 

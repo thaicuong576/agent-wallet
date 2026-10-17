@@ -218,7 +218,7 @@ export function sidePanel(ctx) {
   return { node, load };
 }
 
-// ---- history rail (contract C3) ----------------------------------------------------------
+// ---- history rail ------------------------------------------------------------------------
 const THREAD_STATUS = { running: "Running", done: "Done", blocked: "Blocked", pending: "Waiting" };
 const GROUPS = ["Today", "Yesterday", "Earlier"];
 

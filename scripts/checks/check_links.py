@@ -13,7 +13,7 @@ import sys
 import urllib.parse
 from typing import NamedTuple
 
-# Explicitly allowed pending files being written by other tickets (e.g. S1)
+# Explicitly allowed pending submission files
 ALLOWED_PENDING_PATHS = {
     "docs/submission/02-presentation-deck.md",
     "docs/submission/03-demo-video-script.md",

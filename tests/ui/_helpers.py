@@ -29,12 +29,12 @@ DESIGN_ROUTES = {
     "/emergency-stop/release",
     "/orders/{order_id}/approve",
     "/orders/{order_id}/reject",
-    # Webapp v2 (docs/design/webapp/v2-contract.md C1 to C5)
+    # Webapp v2 (docs/design/webapp/v2-contract.md)
     "/chat/threads",
     "/chat/suggestions",
     "/limits",
     "/jobs/{job_id}/cancel",
-    # Chat v3 (spec PR C: SSE stream)
+    # Chat progress SSE stream
     "/chat/stream/{job_id}",
 }
 # Links that open in a new tab or are handed to the wallet; the page never fetches them.

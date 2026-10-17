@@ -1,4 +1,4 @@
-"""Chat routes: talk to the agent and read the conversation (ticket 115).
+"""Chat routes: talk to the agent and read the conversation.
 
 `POST /chat` starts a job of kind `chat`; the same one-active-job rule and the same hourly limit as
 `/runs` apply (409 and 429). The owner comes from the session only. The route proposes through the
@@ -8,7 +8,7 @@ every order the planner returns still goes through the policy engine.
 `GET /chat` returns the owner's messages oldest first. The steps under an agent message are
 rebuilt from the audit records the gateway wrote for that job, never from model prose.
 
-Threads (ticket 123, contract C3): `GET /chat/threads` lists the owner's conversations,
+Threads: `GET /chat/threads` lists the owner's conversations,
 newest first, `POST /chat/threads` opens an empty one (or reuses the owner's newest thread if
 it has no messages), and `POST /chat` / `GET /chat` take an optional `thread_id`. Without it the
 implicit default thread (the messages written before threads existed) is used. A thread id of

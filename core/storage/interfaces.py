@@ -2,7 +2,7 @@
 
 The gateway, runner and API see only these Protocols. The existing split is kept: a read protocol
 for the gateway and agent side, a write protocol that only OwnerControls receives. Adapters
-(SQLite in ticket P1, Postgres in P2) must not change the behaviour of the classes they wrap.
+(SQLite and Postgres) must not change the behaviour of the classes they wrap.
 """
 
 from __future__ import annotations

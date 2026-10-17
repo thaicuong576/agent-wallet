@@ -1,4 +1,4 @@
-// Measurements and unit tests for Ticket H: UI read cache.
+// Measurements and unit tests for UI read cache.
 // Prints one JSON object of named results; tests/ui/test_ui.py asserts them.
 import fs from "node:fs";
 import os from "node:os";

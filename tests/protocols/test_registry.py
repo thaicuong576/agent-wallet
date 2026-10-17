@@ -1,4 +1,4 @@
-"""Protocol registry, token registry and valuation (ticket D0)."""
+"""Protocol registry, token registry and valuation."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
--- Chat message intent (ticket B, chat v3).
+-- Chat message intent.
 -- Adds nullable `intent` column to `chat_messages` (question | clarify | action | refusal).
 -- Idempotent, no backfill needed.
 
