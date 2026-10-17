@@ -331,3 +331,57 @@ def test_db_accumulator_per_request_isolation(
     calls, ms = db_stats()
     assert calls == 0
     assert ms == 0
+
+
+def test_request_memo_isolation_and_deduplication(tmp_path: Any) -> None:
+    from unittest.mock import MagicMock
+
+    from fastapi import FastAPI
+
+    from api.main import TimingMiddleware, global_stop_flag, request_memo
+
+    app = FastAPI()
+    app.add_middleware(TimingMiddleware)
+
+    settings_mock = MagicMock()
+    settings_mock.global_stop.return_value = False
+
+    stop_fn = global_stop_flag(tmp_path, {}, settings=settings_mock)
+
+    observations: list[dict[str, Any]] = []
+
+    @app.get("/memo-test")
+    def memo_test() -> dict[str, Any]:
+        # Inside request, request_memo is a dict
+        memo = request_memo()
+        assert isinstance(memo, dict)
+
+        # Call stop_fn twice inside the same request
+        res1 = stop_fn()
+        res2 = stop_fn()
+
+        observations.append(
+            {"res1": res1, "res2": res2, "calls": settings_mock.global_stop.call_count}
+        )
+        return {"ok": True}
+
+    client = TestClient(app)
+
+    # Outside request, request_memo() is None
+    assert request_memo() is None
+
+    # Request 1: calls twice, underlying check called only once
+    client.get("/memo-test")
+    assert len(observations) == 1
+    assert observations[0]["res1"] is False
+    assert observations[0]["res2"] is False
+    assert observations[0]["calls"] == 1
+
+    # Outside request, request_memo() is None again
+    assert request_memo() is None
+
+    # Request 2: underlying check called fresh (never cached across requests)
+    client.get("/memo-test")
+    assert len(observations) == 2
+    assert observations[1]["calls"] == 2
+

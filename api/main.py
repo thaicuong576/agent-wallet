@@ -95,6 +95,15 @@ rpc_ms: contextvars.ContextVar[int] = contextvars.ContextVar("rpc_ms", default=0
 _request_rpc_acc: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
     "_request_rpc_acc", default=None
 )
+_request_memo: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "_request_memo", default=None
+)
+
+
+def request_memo() -> dict[str, Any] | None:
+    """Return the request-scoped memo dictionary for the current request, or None if outside one."""
+    return _request_memo.get()
+
 
 rpc_log = logging.getLogger("agent_wallet.rpc")
 http_log = logging.getLogger("agent_wallet.http")
@@ -211,12 +220,18 @@ def global_stop_flag(
     """
 
     def stopped() -> bool:
+        memo = _request_memo.get()
+        if memo is not None and "global_stop" in memo:
+            return bool(memo["global_stop"])
         try:
-            return (
+            val = (
                 env.get("AGENT_WALLET_GLOBAL_STOP", "") == "1"
                 or (data_dir / "GLOBAL_STOP").exists()
                 or (settings is not None and bool(settings.global_stop()))
             )
+            if memo is not None:
+                memo["global_stop"] = val
+            return val
         except Exception:  # noqa: BLE001 - fail closed
             return True
 
@@ -272,6 +287,10 @@ def build_webapp(
     ips_path = pathlib.Path(env.get("IPS_PATH") or DEFAULT_IPS_PATH)
 
     def ips_for(owner: str, preset_id: str | None) -> LoadedIps:
+        memo = _request_memo.get()
+        memo_key = f"ips:{owner}:{preset_id}"
+        if memo is not None and memo_key in memo:
+            return memo[memo_key]  # type: ignore[no-any-return]
         if preset_id is None and backend is not None:
             try:
                 latest = backend.open_tenant(owner).policy_selection.latest()
@@ -282,9 +301,15 @@ def build_webapp(
         preset = preset_id or "conservative"
         preset_file = PRESETS_DIR / f"{preset}.json"
         if preset_file.exists():
-            return load_ips(preset_file)
+            loaded = load_ips(preset_file)
+            if memo is not None:
+                memo[memo_key] = loaded
+            return loaded
         if preset == "conservative" and ips_path.exists():
-            return load_ips(ips_path)
+            loaded = load_ips(ips_path)
+            if memo is not None:
+                memo[memo_key] = loaded
+            return loaded
         raise ValueError(f"Unknown preset_id: {preset}")
 
     secret = env.get("AGENT_WALLET_KEYSTORE_SECRET")
@@ -362,6 +387,8 @@ class TimingMiddleware:
         token_db_acc = _request_db_acc.set(db_acc)
         token_db_calls = db_calls.set(0)
         token_db_ms = db_ms.set(0)
+        memo: dict[str, Any] = {}
+        token_memo = _request_memo.set(memo)
         t0 = time.perf_counter()
         status_code = 500
 
@@ -393,6 +420,7 @@ class TimingMiddleware:
             _request_db_acc.reset(token_db_acc)
             db_calls.reset(token_db_calls)
             db_ms.reset(token_db_ms)
+            _request_memo.reset(token_memo)
             method = scope.get("method", "GET")
             http_log.info(
                 "method=%s path=%s status=%d elapsed_ms=%d rpc_calls=%d rpc_ms=%d "
@@ -469,6 +497,7 @@ __all__ = [
     "db_ms",
     "db_stats",
     "http_rpc",
+    "request_memo",
     "rpc_calls",
     "rpc_ms",
 ]
