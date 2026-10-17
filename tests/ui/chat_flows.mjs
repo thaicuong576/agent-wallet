@@ -1158,4 +1158,70 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
   };
 }
 
+// 21. reproduction T3: New chat -> send -> list returns without the new thread / with legacy thread newest
+{
+  const nowIso = new Date().toISOString();
+  let threadsCallCount = 0;
+  const { ctx } = make({
+    state: {
+      threads: [
+        { id: "default", title: "Earlier chat", last_message_at: nowIso, status: "done" },
+      ],
+      byThread: {
+        default: [msg("user", "Legacy message"), msg("agent", "Legacy reply", [])],
+        tnew: [],
+      },
+    },
+    onSend: (body) => ({
+      messages: [msg("user", body.message), msg("agent", "New thread reply", [])],
+    }),
+  });
+
+  // Intercept api.threads to simulate latency and list returning without new thread / with legacy thread newest
+  ctx.api.threads = async () => {
+    threadsCallCount++;
+    await tick(20);
+    return {
+      items: [
+        { id: "default", title: "Earlier chat", last_message_at: nowIso, status: "done" },
+      ],
+    };
+  };
+
+  globalThis.location.hash = "#/chat";
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+
+  // Open New chat
+  await fire(button(root, "+ New chat"), "click");
+  await tick(30);
+
+  const threadAfterNew = ctx.state.threadId;
+  const hashAfterNew = globalThis.location.hash;
+
+  // Type message in new thread and send
+  const box = input(root);
+  box.value = "Hello in new thread";
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(100);
+
+  const threadAfterSend = ctx.state.threadId;
+  const hashAfterSend = globalThis.location.hash;
+  const activeRail = byClass(root, "rail-row")
+    .filter((r) => r.className.includes("active"))
+    .map((r) => r.textContent);
+
+  out.newChatDefaultJumpRepro = {
+    threadsCallCount,
+    threadAfterNew,
+    hashAfterNew,
+    threadAfterSend,
+    hashAfterSend,
+    activeRail,
+    jumpedToDefault: threadAfterSend === "default" || hashAfterSend === "#/chat/default",
+    stayedInNewThread: threadAfterSend === "tnew" && hashAfterSend === "#/chat/tnew",
+  };
+}
+
 console.log(JSON.stringify(out));

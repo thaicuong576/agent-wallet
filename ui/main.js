@@ -128,11 +128,13 @@ export function threadFromHash(hash) {
   const raw = String(hash || "").replace(/^#\/?/, "");
   const [route, id] = raw.split("/");
   if (route === "chat" && id) {
+    let decoded = id;
     try {
-      return decodeURIComponent(id);
+      decoded = decodeURIComponent(id);
     } catch (_) {
-      return id;
+      decoded = id;
     }
+    return decoded === "default" ? null : decoded;
   }
   return null;
 }

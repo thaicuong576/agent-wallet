@@ -28,6 +28,40 @@ def _ts(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _normalize_iso(value: datetime | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        s = str(value).strip()
+        if not s:
+            return ""
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(s)
+        except ValueError:
+            return s
+    dt_utc = dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+    return dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_ts(value: datetime | str | None) -> datetime:
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    s = str(value or "").strip()
+    if not s:
+        return datetime.min.replace(tzinfo=UTC)
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return datetime.min.replace(tzinfo=UTC)
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
+
+
 class SqliteChat:
     """ChatStore over one SQLite file. A connection per call, no shared state."""
 
@@ -150,14 +184,19 @@ class SqliteChat:
                 f"SELECT m.created_at, {status_col} AS job_status FROM chat_messages m {join}"
                 " WHERE m.thread_id IS ? ORDER BY m.seq DESC LIMIT 1"
             )
-            for head in db.execute("SELECT id, title, created_at FROM chat_threads").fetchall():
+            for head in db.execute(
+                "SELECT id, title, created_at FROM chat_threads ORDER BY rowid DESC"
+            ).fetchall():
                 last = db.execute(last_sql, (head["id"],)).fetchone()
+                raw_ts = last["created_at"] if last else head["created_at"]
                 items.append(
                     {
                         "id": head["id"],
                         "title": head["title"],
-                        "last_message_at": last["created_at"] if last else head["created_at"],
+                        "last_message_at": _normalize_iso(raw_ts),
                         "status": thread_status(last["job_status"] if last else None),
+                        "_dt": _parse_ts(raw_ts),
+                        "_empty": last is None,
                     }
                 )
             last = db.execute(last_sql, (None,)).fetchone()
@@ -166,15 +205,29 @@ class SqliteChat:
                     "SELECT text FROM chat_messages WHERE thread_id IS NULL AND role = 'user'"
                     " ORDER BY seq LIMIT 1"
                 ).fetchone()
+                raw_ts = last["created_at"]
                 items.append(
                     {
                         "id": DEFAULT_THREAD,
                         "title": thread_title(first["text"]) if first else NEW_THREAD_TITLE,
-                        "last_message_at": last["created_at"],
+                        "last_message_at": _normalize_iso(raw_ts),
                         "status": thread_status(last["job_status"]),
+                        "_dt": _parse_ts(raw_ts),
+                        "_empty": False,
                     }
                 )
-        items.sort(key=lambda t: (t["last_message_at"], t["id"]), reverse=True)
+        items.sort(
+            key=lambda t: (
+                t["_dt"],
+                1 if t["_empty"] else 0,
+                0 if t["id"] == DEFAULT_THREAD else 1,
+                t["id"],
+            ),
+            reverse=True,
+        )
+        for t in items:
+            t.pop("_dt", None)
+            t.pop("_empty", None)
         return items[: max(int(limit), 0)]
 
     def attach_job(self, thread_id: str | None, job_id: str) -> None:
