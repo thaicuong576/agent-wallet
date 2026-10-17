@@ -384,4 +384,3 @@ def test_request_memo_isolation_and_deduplication(tmp_path: Any) -> None:
     client.get("/memo-test")
     assert len(observations) == 2
     assert observations[1]["calls"] == 2
-

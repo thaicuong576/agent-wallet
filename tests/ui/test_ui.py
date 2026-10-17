@@ -152,7 +152,6 @@ def test_load_records_one_request_replaces_n() -> None:
     assert res.get("fallbackJobCallsCount") == 2
 
 
-
 @pytest.mark.parametrize("name", UI_FILES)
 def test_static_files_are_served(client: TestClient, name: str) -> None:
     res = client.get(f"/ui/{name}")

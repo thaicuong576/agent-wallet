@@ -569,7 +569,6 @@ class JobService:
             for row in self.store(tenant).list(limit)
         ]
 
-
     # -- views
 
     def _view(
@@ -1047,10 +1046,7 @@ def list_jobs(
     records: int = 0,
 ) -> dict[str, Any]:
     with_records = records == 1
-    return {
-        "items": get_webapp(request).jobs.list(tenant, with_records=with_records)
-    }
-
+    return {"items": get_webapp(request).jobs.list(tenant, with_records=with_records)}
 
 
 __all__ = ["JobInProgress", "JobLimits", "JobService", "RateLimited", "SqliteJobs", "router"]

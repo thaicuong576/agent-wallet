@@ -769,4 +769,3 @@ def test_get_jobs_records_parameter_isolation_and_shape(tmp_path):
     assert items_b[0]["job_id"] == job_b_id
     # Owner A never sees owner B's records or jobs
     assert job_a_id not in [j["job_id"] for j in items_b]
-
