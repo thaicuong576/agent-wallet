@@ -65,12 +65,16 @@ class FakeEl {
   addEventListener(t, f) {
     (this.listeners[t] = this.listeners[t] || []).push(f);
   }
+  focus() {
+    globalThis.document.activeElement = this;
+  }
 }
 globalThis.__innerHTMLUsed = false;
 globalThis.document = {
   createElement: (t) => new FakeEl(t),
   getElementById: () => null,
   querySelectorAll: () => [],
+  activeElement: null,
 };
 globalThis.location = { search: "", hash: "" };
 
@@ -162,9 +166,23 @@ function server(script = {}) {
       return reply(200, { items: state.threads || [] });
     }
     if (method === "POST" && url === "/chat/threads") {
-      const id = script.newThreadId || "tnew";
+      if (state.threads && state.threads.length > 0) {
+        const newest = state.threads[0];
+        const msgs = state.byThread ? state.byThread[newest.id] : state.items;
+        const hasMessages = msgs ? msgs.length > 0 : newest.title !== "New chat";
+        if (!hasMessages) {
+          return reply(200, { id: newest.id, title: newest.title || "New chat" });
+        }
+      }
+      const id =
+        script.newThreadId ||
+        (state.threads && state.threads.some((t) => t.id === "tnew")
+          ? "tnew" + (state.threads.length + 1)
+          : "tnew");
       const t = { id, title: "New chat", last_message_at: new Date().toISOString(), status: "done" };
-      if (state.threads) state.threads.unshift(t);
+      if (!state.threads) state.threads = [];
+      state.threads.unshift(t);
+      if (state.byThread && !state.byThread[id]) state.byThread[id] = [];
       return reply(201, { id, title: "New chat" });
     }
     if (method === "POST" && url === "/jobs/" + JOB + "/cancel") {
@@ -180,6 +198,10 @@ function server(script = {}) {
       }
       const out = script.onSend(body, state);
       if (out.problem) return reply(out.problem.status, out.problem.body, out.problem.headers);
+      if (body.thread_id && state.byThread) {
+        state.byThread[body.thread_id] = state.byThread[body.thread_id] || [];
+        state.byThread[body.thread_id].push(msg("user", body.message));
+      }
       state.pending = out;
       state.polls = 0;
       return reply(202, { job_id: JOB, status: "queued" });
@@ -956,6 +978,183 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
     t2DuringRunSendBtn,
     t2TextAfterJobDone,
     t1TextFinal,
+  };
+}
+
+// 18. nClicksNewChat: N clicks on New chat produce 1 thread, 1 post, composer focused
+{
+  const nowIso = new Date().toISOString();
+  const { srv, ctx } = make({
+    state: {
+      threads: [
+        { id: "t1", title: "Thread 1", last_message_at: nowIso, status: "done" },
+      ],
+      byThread: {
+        t1: [msg("user", "Hello t1"), msg("agent", "Reply t1", [])],
+      },
+    },
+    onSend: () => ({ messages: [] }),
+  });
+  globalThis.location.hash = "#/chat/t1";
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+
+  const newBtn = button(root, "+ New chat");
+  const box = input(root);
+
+  // Click '+ New chat' 5 times concurrently / in rapid succession
+  await Promise.all([
+    fire(newBtn, "click"),
+    fire(newBtn, "click"),
+    fire(newBtn, "click"),
+    fire(newBtn, "click"),
+    fire(newBtn, "click"),
+  ]);
+  await tick(50);
+
+  const posts = postsTo(srv, "/chat/threads").length;
+  const focused = globalThis.document.activeElement === box;
+  const currentThreadId = ctx.state.threadId;
+
+  // Another click while on empty thread does not POST
+  await fire(newBtn, "click");
+  await tick(50);
+  const postsAfterEmptyClick = postsTo(srv, "/chat/threads").length;
+
+  out.nClicksNewChat = {
+    postCalls: posts,
+    postCallsAfterEmptyClick: postsAfterEmptyClick,
+    focused,
+    threadId: currentThreadId,
+    threadCount: srv.state.threads.length,
+  };
+}
+
+// 19. staleHistoryIgnored: delayed history for t1 does not paint over t2
+{
+  const nowIso = new Date().toISOString();
+  let resolveT1History;
+  const t1Promise = new Promise((resolve) => {
+    resolveT1History = resolve;
+  });
+
+  const { ctx } = make({
+    state: {
+      threads: [
+        { id: "t1", title: "Thread 1", last_message_at: nowIso, status: "done" },
+        { id: "t2", title: "Thread 2", last_message_at: "2026-01-01T10:00:00Z", status: "done" },
+      ],
+      byThread: {
+        t1: [msg("user", "Hello from thread 1"), msg("agent", "Agent reply in thread 1", [])],
+        t2: [msg("user", "Hello from thread 2"), msg("agent", "Agent reply in thread 2", [])],
+      },
+    },
+    onSend: () => ({ messages: [] }),
+  });
+
+  const origChat = ctx.api.chat;
+  let t1HistoryCalled = 0;
+  ctx.api.chat = async (limit, tid) => {
+    if (tid === "t1") {
+      t1HistoryCalled++;
+      await t1Promise;
+      return origChat(limit, tid);
+    }
+    return origChat(limit, tid);
+  };
+
+  globalThis.location.hash = "#/chat/t1";
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  // Wait until t1 history is in-flight (waiting for t1Promise)
+  while (t1HistoryCalled === 0) {
+    await tick(10);
+  }
+
+  // Switch to t2 immediately while t1 history is still in-flight
+  const rows = byClass(root, "rail-row");
+  const t2Row = rows.find((r) => r.textContent.includes("Thread 2"));
+  await fire(t2Row, "click");
+  await tick(30);
+
+  // Resolve delayed t1 history
+  resolveT1History();
+  await tick(50);
+
+  const t2BubblesAfterT1 = bubbles(root).map((b) => b.textContent);
+
+  out.staleHistoryIgnored = {
+    t1HistoryCalled,
+    stillShowsT2: t2BubblesAfterT1.some((t) => t.includes("Thread 2") || t.includes("thread 2")),
+    doesNotShowT1: !t2BubblesAfterT1.some((t) => t.includes("Thread 1") || t.includes("thread 1")),
+    currentThreadId: ctx.state.threadId,
+  };
+}
+
+// 20. titleRefreshAfterFirstMessage: rail and header title update immediately after first message is accepted
+{
+  const nowIso = new Date().toISOString();
+  let railTitleBeforeJobDone = null;
+  let headerTitleBeforeJobDone = null;
+
+  const { ctx } = make({
+    state: {
+      threads: [
+        { id: "t_existing", title: "Existing chat", last_message_at: nowIso, status: "done" },
+      ],
+      byThread: {
+        t_existing: [msg("user", "Earlier"), msg("agent", "Done", [])],
+      },
+      jobScript: [
+        { status: "running", phase: "rules_check" },
+        { status: "running", phase: "sent" },
+        { status: "succeeded", phase: "done" },
+      ],
+    },
+    onSend: (body) => ({
+      messages: [msg("user", body.message), msg("agent", "Here is your balance.", [])],
+    }),
+  });
+  globalThis.location.hash = "#/chat/t_existing";
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+
+  // Click + New chat to create a new thread
+  await fire(button(root, "+ New chat"), "click");
+  await tick(30);
+
+  const newThreadId = ctx.state.threadId;
+
+  // Intercept api.job to inspect rail and header titles while job is still running (poll 1)
+  const origJob = ctx.api.job;
+  let jobPollCount = 0;
+  ctx.api.job = async (id) => {
+    jobPollCount++;
+    if (jobPollCount === 1) {
+      const activeRow = byClass(root, "rail-row").find((r) => r.className.includes("active"));
+      railTitleBeforeJobDone = activeRow ? activeRow.textContent : "";
+      headerTitleBeforeJobDone = (find(root, (n) => n.className.includes("chat-title"))[0] || {}).textContent;
+    }
+    return origJob(id);
+  };
+
+  const box = input(root);
+  box.value = "What is my balance?";
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(100);
+
+  out.titleRefreshAfterFirstMessage = {
+    newThreadId,
+    railTitleBeforeJobDone,
+    headerTitleBeforeJobDone,
+    updatedImmediately: Boolean(
+      headerTitleBeforeJobDone &&
+      headerTitleBeforeJobDone.includes("What is my balance") &&
+      railTitleBeforeJobDone &&
+      railTitleBeforeJobDone.includes("What is my balance")
+    ),
   };
 }
 

@@ -871,6 +871,25 @@ class PgChatStore:
             )
         return {"id": thread_id, "title": NEW_THREAD_TITLE}
 
+    def newest_empty_thread(self) -> dict[str, Any] | None:
+        with self._pool.tenant(self._owner) as cur:
+            cur.execute(
+                "SELECT id, title FROM chat_threads WHERE owner = %s "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (self._owner,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            thread_id, title = str(row[0]), str(row[1])
+            cur.execute(
+                "SELECT 1 FROM chat_messages WHERE owner = %s AND thread_id = %s LIMIT 1",
+                (self._owner, thread_id),
+            )
+            if cur.fetchone() is not None:
+                return None
+            return {"id": thread_id, "title": title}
+
     def thread_exists(self, thread_id: str) -> bool:
         if thread_id == DEFAULT_THREAD:
             return True

@@ -29,7 +29,7 @@ New table `chat_threads` (migration 0005, RLS like `chat_messages`); `chat_messa
 | Route | Request | Response |
 | :--- | :--- | :--- |
 | `GET /chat/threads` | `?limit=` (default 30) | `{"items":[{"id","title","last_message_at","status"}]}` newest first; `status` is `running`, `done`, `blocked`, `pending` from the latest job |
-| `POST /chat/threads` | `{}` | `201 {"id","title":"New chat"}` |
+| `POST /chat/threads` | `{}` | `201 {"id","title":"New chat"}` (or `200` reusing owner's newest empty thread) |
 | `POST /chat` | adds optional `thread_id`; absent = default thread | unchanged |
 | `GET /chat` | adds optional `thread_id` | unchanged shape |
 

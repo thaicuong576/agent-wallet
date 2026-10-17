@@ -161,3 +161,21 @@ def test_owners_never_see_each_others_threads(backend) -> None:
     assert b.chat.list(thread_id=thread["id"]) == []
     b.chat.attach_job(thread["id"], "a" * 32)  # a foreign id changes nothing
     assert [m["text"] for m in a.chat.list(thread_id=thread["id"])] == ["secret"]
+
+
+def test_newest_empty_thread_returns_empty_and_ignores_non_empty(stores) -> None:
+    assert stores.chat.newest_empty_thread() is None
+    thread1 = stores.chat.create_thread(NOW)
+    assert stores.chat.newest_empty_thread() == {"id": thread1["id"], "title": "New chat"}
+    stores.chat.append("user", "hello", "a" * 32, NOW)
+    stores.chat.attach_job(thread1["id"], "a" * 32)
+    assert stores.chat.newest_empty_thread() is None
+    thread2 = stores.chat.create_thread(NOW + timedelta(seconds=1))
+    assert stores.chat.newest_empty_thread() == {"id": thread2["id"], "title": "New chat"}
+
+
+def test_newest_empty_thread_isolated_between_owners(backend) -> None:
+    a, b = backend.open(OWNER_A), backend.open(OWNER_B)
+    t = a.chat.create_thread(NOW)
+    assert a.chat.newest_empty_thread() == {"id": t["id"], "title": "New chat"}
+    assert b.chat.newest_empty_thread() is None

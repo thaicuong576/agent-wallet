@@ -245,6 +245,10 @@ class ChatStore(Protocol):
         """Insert an empty thread titled ``New chat`` and return ``{"id", "title"}``."""
         ...
 
+    def newest_empty_thread(self) -> dict[str, Any] | None:
+        """The owner's newest thread if it has no messages, or None."""
+        ...
+
     def thread_exists(self, thread_id: str) -> bool:
         """True for ``"default"`` and for a thread of this owner; a foreign id is unknown."""
         ...

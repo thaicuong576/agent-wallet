@@ -683,10 +683,48 @@ def test_thread_status_follows_the_latest_job(world, alice):
 
 
 def test_threads_are_newest_first_and_limited(world, alice):
-    ids = [alice.post("/chat/threads", {}).json()["id"] for _ in range(3)]
+    world.env.llm = ScriptedClient(json.dumps({"action": "no_action", "reason": "x"}))
+    ids = []
+    for i in range(3):
+        tid = alice.post("/chat/threads", {}).json()["id"]
+        ids.append(tid)
+        alice.post("/chat", {"message": f"message in {i}", "thread_id": tid})
+        world.drain()
     assert {t["id"] for t in threads(alice)} == set(ids)
     assert len(alice.get("/chat/threads?limit=2").json()["items"]) == 2
     assert alice.get("/chat/threads?limit=0").status_code == 422
+
+
+def test_post_thread_idempotency_empty_reuse_and_non_empty_creates(world, alice, bob):
+    world.env.llm = ScriptedClient(json.dumps({"action": "no_action", "reason": "x"}))
+    r1 = alice.post("/chat/threads", {})
+    assert r1.status_code == 201
+    tid1 = r1.json()["id"]
+    assert r1.json()["title"] == "New chat"
+
+    r2 = alice.post("/chat/threads", {})
+    assert r2.status_code == 200
+    assert r2.json() == {"id": tid1, "title": "New chat"}
+    assert [t["id"] for t in threads(alice)] == [tid1]
+
+    alice.post("/chat", {"message": "hello", "thread_id": tid1})
+    world.drain()
+
+    r3 = alice.post("/chat/threads", {})
+    assert r3.status_code == 201
+    tid2 = r3.json()["id"]
+    assert tid2 != tid1
+    assert r3.json()["title"] == "New chat"
+
+    r4 = alice.post("/chat/threads", {})
+    assert r4.status_code == 200
+    assert r4.json() == {"id": tid2, "title": "New chat"}
+
+    rbob = bob.post("/chat/threads", {})
+    assert rbob.status_code == 201
+    tid_bob = rbob.json()["id"]
+    assert tid_bob not in (tid1, tid2)
+    assert [t["id"] for t in threads(bob)] == [tid_bob]
 
 
 def test_unknown_thread_is_404_and_nothing_is_started(world, alice):

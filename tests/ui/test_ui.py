@@ -950,3 +950,31 @@ def test_chat_ui_has_no_new_storage_or_external_urls() -> None:
         text = (UI / name).read_text(encoding="utf-8")
         assert "localStorage" not in text and "sessionStorage" not in text, name
         assert not re.findall(r"https?://(?!sepolia\.basescan\.org)", text), name
+
+
+@needs_node
+def test_chat_new_thread_n_clicks_idempotent_and_focuses() -> None:
+    n = chat_flows()["nClicksNewChat"]
+    assert n["postCalls"] == 1
+    assert n["postCallsAfterEmptyClick"] == 1
+    assert n["focused"] is True
+    assert n["threadCount"] == 2
+    assert n["threadId"] == "tnew"
+
+
+@needs_node
+def test_chat_stale_history_ignored() -> None:
+    s = chat_flows()["staleHistoryIgnored"]
+    assert s["t1HistoryCalled"] == 1
+    assert s["stillShowsT2"] is True
+    assert s["doesNotShowT1"] is True
+    assert s["currentThreadId"] == "t2"
+
+
+@needs_node
+def test_chat_title_refresh_after_first_message() -> None:
+    t = chat_flows()["titleRefreshAfterFirstMessage"]
+    assert t["newThreadId"] == "tnew"
+    assert t["updatedImmediately"] is True
+    assert "What is my balance" in t["headerTitleBeforeJobDone"]
+    assert "What is my balance" in t["railTitleBeforeJobDone"]
