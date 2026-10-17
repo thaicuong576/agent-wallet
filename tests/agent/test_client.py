@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import json
 import urllib.request
+from unittest.mock import MagicMock
 
 import pytest
 
-from core.agent.client import LLMClient, LLMError, OpenAIClient, ScriptedClient
+from core.agent.client import (
+    LLMClient,
+    LLMError,
+    OpenAIClient,
+    ReplyExtractor,
+    ScriptedClient,
+)
 
 
 def test_openai_client_missing_key_raises_error(monkeypatch):
@@ -157,3 +164,197 @@ def test_scripted_client_callable_and_mapping():
 
     callable_client = ScriptedClient(echo_caller)
     assert callable_client.complete("sys", "hello") == "Echo: hello"
+
+
+# ---------------------------------------------------------------- ReplyExtractor tests
+
+
+def test_reply_extractor_split_at_every_possible_chunk_boundary() -> None:
+    full_json = (
+        '{"reply": "Hello world! All split boundaries give the same answer.", "action": "propose"}'
+    )
+    expected = "Hello world! All split boundaries give the same answer."
+
+    # 1. Single character chunks
+    extractor_single = ReplyExtractor()
+    out_single = "".join(extractor_single.feed(ch) for ch in full_json)
+    assert out_single == expected
+
+    # 2. Various chunk sizes
+    for chunk_size in (1, 2, 3, 5, 7, 11, 19, 50, 100):
+        chunks = [full_json[i : i + chunk_size] for i in range(0, len(full_json), chunk_size)]
+        extractor = ReplyExtractor()
+        assert "".join(extractor.feed(c) for c in chunks) == expected
+
+
+def test_reply_extractor_escapes_split_across_chunks() -> None:
+    raw_content = 'line1\nline2"quote"\\slash/tab\ttest\u00e9\u0041done'
+    # Escaped JSON representation
+    escaped_json = (
+        '{"reply": "line1\\nline2\\"quote\\"\\\\slash\\/tab\\ttest\\u00e9\\u0041done", "extra": 1}'
+    )
+
+    # Split across chunk boundaries at each character
+    extractor = ReplyExtractor()
+    out = "".join(extractor.feed(ch) for ch in escaped_json)
+    assert out == raw_content
+
+    # Specifically test escape sequence split across boundaries
+    part1 = '{"reply": "hello \\'
+    part2 = "nworld \\u0"
+    part3 = '0e9 cafe"}'
+    ext = ReplyExtractor()
+    assert ext.feed(part1) == "hello "
+    assert ext.feed(part2) == "\nworld "
+    assert ext.feed(part3) == "é cafe"
+
+
+def test_reply_extractor_nested_reply_ignored() -> None:
+    json_str = '{"order": {"reply": "nested fake reply"}, "reply": "top level real reply"}'
+    ext = ReplyExtractor()
+    out = "".join(ext.feed(ch) for ch in json_str)
+    assert out == "top level real reply"
+
+    # Also test nested after top level
+    json_str2 = '{"reply": "first top level", "details": {"reply": "ignore nested"}}'
+    ext2 = ReplyExtractor()
+    out2 = "".join(ext2.feed(ch) for ch in json_str2)
+    assert out2 == "first top level"
+
+
+def test_reply_extractor_null_reply() -> None:
+    json_str = '{"reply": null, "action": "no_action"}'
+    ext = ReplyExtractor()
+    out = "".join(ext.feed(ch) for ch in json_str)
+    assert out == ""
+
+    # With whitespace
+    json_str_ws = '{"reply"  :   null  , "action": "no_action"}'
+    ext_ws = ReplyExtractor()
+    out_ws = "".join(ext_ws.feed(ch) for ch in json_str_ws)
+    assert out_ws == ""
+
+
+def test_reply_extractor_reply_absent() -> None:
+    json_str = '{"action": "no_action", "reason": "portfolio already balanced"}'
+    ext = ReplyExtractor()
+    out = "".join(ext.feed(ch) for ch in json_str)
+    assert out == ""
+
+
+def test_reply_extractor_garbage_input_never_raises() -> None:
+    garbage_cases = [
+        "{not valid json at all",
+        "random string without braces",
+        '{"reply": [1, 2, 3]}',
+        '{"reply": {}}',
+        '{"reply": "unterminated',
+        '{"reply": "\\uZZZZ"}',
+        '{"reply": "\\x"}',
+        "",
+        "{",
+        "}",
+        "---",
+    ]
+    for g in garbage_cases:
+        ext = ReplyExtractor()
+        try:
+            res = ext.feed(g)
+            assert isinstance(res, str)
+        except Exception as exc:  # noqa: BLE001
+            pytest.fail(f"ReplyExtractor raised on garbage {g!r}: {exc}")
+
+
+# ------------------------------------------------ OpenAIClient.complete_stream tests
+
+
+class _FakeDelta:
+    def __init__(self, content: str | None) -> None:
+        self.content = content
+
+
+class _FakeChoice:
+    def __init__(self, content: str | None) -> None:
+        self.delta = _FakeDelta(content)
+
+
+class _FakeChunk:
+    def __init__(self, content: str | None) -> None:
+        self.choices = [_FakeChoice(content)] if content is not None else []
+
+
+def test_openai_client_complete_stream_returns_full_text(monkeypatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-mock-key")
+    chunks = [
+        _FakeChunk('{"reply": "'),
+        _FakeChunk("Hello "),
+        _FakeChunk("world"),
+        _FakeChunk('", "action": "no_action"}'),
+    ]
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = iter(chunks)
+
+    def fake_factory(**kwargs):
+        assert kwargs["api_key"] == "sk-mock-key"
+        return mock_client
+
+    client = OpenAIClient(sdk_factory=fake_factory)
+    collected_tokens: list[str] = []
+    res = client.complete_stream("sys", "usr", on_token=collected_tokens.append)
+
+    assert res == '{"reply": "Hello world", "action": "no_action"}'
+    assert collected_tokens == [
+        '{"reply": "',
+        "Hello ",
+        "world",
+        '", "action": "no_action"}',
+    ]
+
+    call_kwargs = mock_client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["stream"] is True
+    assert call_kwargs["temperature"] == 0.0
+    assert call_kwargs["model"] == "gpt-4o-mini"
+
+
+def test_openai_client_complete_stream_redacts_key_on_error(monkeypatch) -> None:
+    secret_key = "mock-super-secret-key-complete-stream-xyz"
+    monkeypatch.setenv("OPENAI_API_KEY", secret_key)
+
+    def failing_factory(**kwargs):
+        raise RuntimeError(f"Connection failed for Authorization: Bearer {secret_key}")
+
+    client = OpenAIClient(sdk_factory=failing_factory)
+    with pytest.raises(LLMError) as exc_info:
+        client.complete_stream("sys", "usr")
+
+    err_str = str(exc_info.value)
+    assert secret_key not in err_str
+    assert "[REDACTED" in err_str
+
+
+def test_openai_client_complete_stream_iteration_error_redacts_key(monkeypatch) -> None:
+    secret_key = "mock-stream-error-key-12345"
+    monkeypatch.setenv("OPENAI_API_KEY", secret_key)
+
+    def failing_stream():
+        yield _FakeChunk("start")
+        raise RuntimeError(f"Stream dropped with key: {secret_key}")
+
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = failing_stream()
+
+    client = OpenAIClient(sdk_factory=lambda **kw: mock_client)
+    with pytest.raises(LLMError) as exc_info:
+        client.complete_stream("sys", "usr")
+
+    err_str = str(exc_info.value)
+    assert secret_key not in err_str
+    assert "[REDACTED_KEY]" in err_str
+
+
+def test_openai_client_complete_stream_repr_has_no_key() -> None:
+    secret_key = "mock-complete-stream-repr-secret"
+    client = OpenAIClient(api_key=secret_key, sdk_factory=lambda **kw: MagicMock())
+    assert secret_key not in repr(client)
+    assert secret_key not in str(client)

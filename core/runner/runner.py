@@ -122,6 +122,7 @@ class Runner:
         instruction: str,
         now: datetime,
         conversation_history: Sequence[Mapping[str, Any]] | None = None,
+        on_token: Callable[[str], None] | None = None,
     ) -> InstructionResult:
         """One owner chat instruction: plan, then propose the orders one at a time.
 
@@ -155,6 +156,7 @@ class Runner:
             None,
             owner_instruction=instruction,
             conversation_history=conversation_history,
+            on_token=on_token,
         )
         timing_log.info("phase=planner elapsed=%.4fs", time.perf_counter() - t0)
 

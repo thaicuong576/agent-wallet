@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from api.jobs import _Live, _ts
 from api.sse import (
     DEFAULT_SEPARATOR,
     ServerSentEvent,
@@ -210,3 +211,149 @@ async def test_disconnect_never_cancels_job(alice: Owner) -> None:
     assert row is not None
     assert row["status"] == "running"
     assert row["error_code"] is None
+
+
+@pytest.mark.anyio
+async def test_stream_scripted_job_emits_phase_tokens_done_and_polling_unchanged(
+    alice: Owner,
+) -> None:
+    import anyio
+
+    jobs = alice.world.env.jobs
+    job_id = "d" * 32
+    store = jobs.store(alice.tenant)
+    store.create(job_id, "chat", datetime.now(UTC))
+    store.update(job_id, status="running")
+
+    live = _Live()
+    with jobs._live_lock:
+        jobs._live[job_id] = live
+
+    req = MagicMock()
+    req.is_disconnected = AsyncMock(return_value=False)
+    req.app.state.webapp = alice.world.app.state.webapp
+
+    chunks: list[bytes] = []
+
+    async def run_stream():
+        async for chunk in stream_chat_events(
+            req, alice.tenant, job_id, ping_interval=10.0, poll_interval=0.01
+        ):
+            chunks.append(chunk)
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(run_stream)
+        await anyio.sleep(0.02)
+
+        # Append tokens while job is running
+        with jobs._live_lock:
+            live.tokens.append("Hello ")
+            live.tokens.append("world!")
+        await anyio.sleep(0.03)
+
+        # Finish job
+        store.update(
+            job_id,
+            status="executed",
+            finished_at=_ts(datetime.now(UTC)),
+        )
+        await anyio.sleep(0.03)
+
+    raw = b"".join(chunks).decode("utf-8")
+    events = parse_sse_events(raw)
+
+    event_types = [e["event"] for e in events]
+    assert "phase" in event_types
+    assert "token" in event_types
+    assert "done" in event_types
+    assert event_types.index("phase") < event_types.index("token") < event_types.index("done")
+
+    # Tokens in order
+    token_events = [e for e in events if e["event"] == "token"]
+    assert len(token_events) == 2
+    assert json.loads(token_events[0]["data"]) == {"text": "Hello "}
+    assert json.loads(token_events[1]["data"]) == {"text": "world!"}
+
+    # Increasing ids
+    ids = [int(e["id"]) for e in events if e.get("id") is not None]
+    assert ids == sorted(ids)
+    assert len(set(ids)) == len(ids)
+
+    # Done payload equals polling GET /jobs/{job_id}
+    done_event = [e for e in events if e["event"] == "done"][0]
+    done_payload = json.loads(done_event["data"])
+    poll_job = alice.get(f"/jobs/{job_id}").json()
+    assert done_payload == poll_job
+
+
+@pytest.mark.anyio
+async def test_stream_reset_after_fallback(alice: Owner) -> None:
+    import anyio
+
+    jobs = alice.world.env.jobs
+    job_id = "e" * 32
+    store = jobs.store(alice.tenant)
+    store.create(job_id, "chat", datetime.now(UTC))
+    store.update(job_id, status="running")
+
+    live = _Live()
+    with jobs._live_lock:
+        jobs._live[job_id] = live
+
+    req = MagicMock()
+    req.is_disconnected = AsyncMock(return_value=False)
+    req.app.state.webapp = alice.world.app.state.webapp
+
+    chunks: list[bytes] = []
+
+    async def run_stream():
+        async for chunk in stream_chat_events(
+            req, alice.tenant, job_id, ping_interval=10.0, poll_interval=0.01
+        ):
+            chunks.append(chunk)
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(run_stream)
+        await anyio.sleep(0.02)
+
+        # Send partial tokens
+        with jobs._live_lock:
+            live.tokens.append("partial ")
+            live.tokens.append("token ")
+        await anyio.sleep(0.03)
+
+        # Fallback clears tokens
+        with jobs._live_lock:
+            live.tokens.clear()
+        await anyio.sleep(0.03)
+
+        # Fallback finishes job
+        store.update(
+            job_id,
+            status="executed",
+            finished_at=_ts(datetime.now(UTC)),
+        )
+        await anyio.sleep(0.03)
+
+    raw = b"".join(chunks).decode("utf-8")
+    events = parse_sse_events(raw)
+
+    event_types = [e["event"] for e in events]
+    assert "token" in event_types
+    assert "reset" in event_types
+    assert "done" in event_types
+
+    # Reset event emitted with data={}
+    reset_events = [e for e in events if e["event"] == "reset"]
+    assert len(reset_events) == 1
+    assert json.loads(reset_events[0]["data"]) == {}
+
+    # Reset comes after the tokens that were cleared
+    first_token_idx = event_types.index("token")
+    reset_idx = event_types.index("reset")
+    done_idx = event_types.index("done")
+    assert first_token_idx < reset_idx < done_idx
+
+    # Event IDs strictly increase
+    ids = [int(e["id"]) for e in events if e.get("id") is not None]
+    assert ids == sorted(ids)

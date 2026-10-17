@@ -22,6 +22,14 @@ In accordance with system boundaries, `core.agent` never imports `core.signer`, 
 - `FallbackPlanner` sets intent deterministically (`action` for deposits, `question` for info queries, `refusal` for owner actions or insufficient balances).
 - `intent` is persisted to `chat_messages` via migration `0006_chat_intent.sql` and surfaced on chat message views.
 
+### Streaming response tokens (Ticket D, chat v3)
+- When `on_token` callback is provided to `Planner.plan(...)`, the planner calls `complete_stream` on clients that implement it (`OpenAIClient`), feeding incremental chunks into `ReplyExtractor`.
+- `ReplyExtractor` is a streaming JSON state machine that extracts characters of the top-level `"reply"` string as they arrive, handling JSON escapes (`\n`, `\"`, `\\`, `\/`, `\t`, `\uXXXX`) across chunk boundaries.
+- Nested `"reply"` keys inside candidate orders and `null` replies are ignored. On any syntax error or unexpected token, the extractor halts emission safely without raising.
+- Each extracted token piece is sanitized (removing ASCII control characters, matching `clean_reply`) before reaching `on_token`.
+- Candidate orders never reach `on_token`. The complete streamed text is buffered on the server and validated against `PLANNER_OUTPUT_SCHEMA` and `order.schema.json` identically to non-streamed calls.
+- If final JSON decoding or schema validation fails after tokens were streamed, nothing special is required: the final `done` SSE payload carries the code-written text and the UI replaces the streamed text.
+
 For owner instructions (#148, #155), limits, allocation weights, and limit counters (`spent_24h_usd`, `tx_count_1h`, position `weight_bps`) are withheld from the prompt payload so the model cannot prematurely decline orders based on its own reading of limits or volatility; the deterministic policy engine judges all orders. The system prompt dynamically includes naming conventions for enabled protocols (e.g. mapping "Morpho" / "USDC/WBTC" to `morpho-blue` / `usdc-wbtc`, "stata" to `aave-stata`, and "Uniswap" to `uniswap-v3`), guides withdraws without prior approvals, and strips null values from optional fields before schema validation. Tests: `tests/agent/test_planner_chat.py`, `tests/agent/test_planner.py`.
 
 ## Where Planner and Reader sit
@@ -111,3 +119,5 @@ erDiagram
 | Schema-invalid output is rejected without repair guessing | `tests/agent/test_planner.py::test_planner_rejects_missing_fields_without_repair_guessing`, `test_planner_rejects_float_amount_without_repair_guessing` |
 | Tokens and recipients outside IPS universe are flagged and denied by policy | `tests/agent/test_planner.py::test_planner_flags_token_outside_ips_universe_policy_decides`, `test_planner_flags_recipient_outside_ips_universe_policy_decides` |
 | All 12 hostile injection corpus vectors are detected and neutralized | `tests/agent/test_injection_corpus.py::test_reader_detects_all_corpus_hostile_strings`, `test_hostile_text_never_becomes_unasked_order_field` |
+| ReplyExtractor decodes reply incrementally and handles split escapes | `tests/agent/test_client.py::test_reply_extractor_split_at_every_possible_chunk_boundary`, `test_reply_extractor_escapes_split_across_chunks` |
+| Planner streaming passes plain reply tokens without leaking candidate orders | `tests/agent/test_planner_chat.py::test_planner_plan_streaming_tokens_arrive_in_order_and_result_equals_non_streaming`, `test_planner_plan_streaming_orders_text_never_reaches_on_token` |

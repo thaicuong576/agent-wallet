@@ -19,7 +19,7 @@ import threading
 import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Executor, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -343,6 +343,7 @@ class _Live:
     cancel: bool = False
     skipped_by_cancel: bool = False
     order_id: str | None = None
+    tokens: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------- service
@@ -537,6 +538,13 @@ class JobService:
     def _forget(self, job_id: str) -> None:
         with self._live_lock:
             self._live.pop(job_id, None)
+
+    def tokens_since(self, job_id: str, index: int) -> list[str]:
+        with self._live_lock:
+            live = self._live.get(job_id)
+            if live is None:
+                return []
+            return list(live.tokens[index:])
 
     def list(self, tenant: Tenant, limit: int = 20) -> list[dict[str, Any]]:
         return [
@@ -814,17 +822,35 @@ class JobService:
         portfolio = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
         ips = tenant.gateway.policy.ips
         message = args["message"]
+
+        def on_token(token: str) -> None:
+            if not token:
+                return
+            with self._live_lock:
+                live = self._live.get(job_id)
+                if live is None:
+                    return
+                current_len = sum(len(t) for t in live.tokens)
+                if current_len >= 4000:
+                    return
+                avail = 4000 - current_len
+                live.tokens.append(token[:avail])
+
         try:
             result = self._runner(tenant, job_id, portfolio, ips, label, planner).run_instruction(
-                message, now, conversation_history=history
+                message, now, conversation_history=history, on_token=on_token
             )
         except LLMError:
+            with self._live_lock:
+                live = self._live.get(job_id)
+                if live is not None:
+                    live.tokens.clear()
             # Nothing is proposed before the model answers, so the fallback cannot duplicate.
             label, planner = "fallback", FallbackPlanner()
             fallback = FALLBACK_LLM_ERROR
             store.update(job_id, planner_client=label)
             result = self._runner(tenant, job_id, portfolio, ips, label, planner).run_instruction(
-                message, now, conversation_history=history
+                message, now, conversation_history=history, on_token=on_token
             )
         records = result.records
         status, error = self._apply_cancel(job_id, *classify(records, "chat"))
