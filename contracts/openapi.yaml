@@ -530,8 +530,8 @@ paths:
       summary: The owner's chat messages, oldest first, with the steps of each agent message.
       description: >-
         A step is rebuilt from the audit records of the message's job (never from model prose).
-        The agent text is composed by code from the outcomes; a model `reply` appears in it under
-        the label "Agent says" and is never proof of an outcome.
+        The agent text is composed by code from the outcomes; a model `reply` appears directly
+        and is never proof of an outcome.
       security: [{ SessionCookie: [] }]
       parameters:
         - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }

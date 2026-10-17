@@ -645,7 +645,7 @@ class Planner:
         )
 
 
-_OWNER_ONLY_WORDS = re.compile(r"\b(withdraw|send|transfer|mint|swap|sell)\b")
+_OWNER_ONLY_WORDS = re.compile(r"\b(withdraw|send|transfer|mint)\b")
 _DEPOSIT_WORDS = re.compile(r"\b(put|supply|deposit|invest|lend|earn|stake|work)\b")
 
 

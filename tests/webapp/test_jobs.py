@@ -416,10 +416,24 @@ def test_mint_calls_per_hour_counts_every_outcome(tmp_path):
 
 
 def test_limits_are_in_one_place_and_configurable():
-    assert (JobLimits().runs_per_hour, JobLimits().mint_calls_per_hour) == (6, 4)
+    assert (
+        JobLimits().runs_per_hour,
+        JobLimits().mint_calls_per_hour,
+        JobLimits().chat_inquiries_per_hour,
+    ) == (6, 4, 60)
+    assert JobLimits().per_hour("chat_action") == 6
+    assert JobLimits().per_hour("chat_inquiry") == 60
     assert JobLimits().note_max_chars == 2000
     assert JobLimits.from_env({"AGENT_WALLET_MINT_CALLS_PER_HOUR": "9"}).mint_calls_per_hour == 9
     assert JobLimits.from_env({"AGENT_WALLET_MINT_CALLS_PER_HOUR": "junk"}).mint_calls_per_hour == 4
+    assert (
+        JobLimits.from_env({"AGENT_WALLET_CHAT_INQUIRIES_PER_HOUR": "100"}).chat_inquiries_per_hour
+        == 100
+    )
+    assert (
+        JobLimits.from_env({"AGENT_WALLET_CHAT_INQUIRIES_PER_HOUR": "junk"}).chat_inquiries_per_hour
+        == 60
+    )
 
 
 def test_note_length_capped(tmp_path):

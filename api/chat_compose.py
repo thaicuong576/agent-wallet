@@ -1,7 +1,7 @@
-"""Chat text and steps, composed by code from audit records (ticket 115).
+"""Chat text and steps, composed by code from audit records (ticket 115, chat-v3 one voice).
 
-Nothing here comes from model prose except the optional `reply`, which is appended under its own
-label ("Agent says") and is never part of a step. A step is rebuilt from the audit record the
+Nothing here comes from model prose except the optional `reply`, which is shown directly without
+the "Agent says" label and is never part of a step. A step is rebuilt from the audit record the
 gateway wrote, so what the owner sees as an outcome is what was decided and signed.
 """
 
@@ -219,75 +219,99 @@ def compose_agent_text(
     done = [r for r in steps_rec if r.get("outcome") == "executed"]
     parts: list[str] = []
 
+    clean_reply = reply.strip() if isinstance(reply, str) and reply.strip() else None
+    clean_reason = (
+        plan_reason.strip() if isinstance(plan_reason, str) and plan_reason.strip() else None
+    )
+
     if stop_text is not None:
-        parts.append(f"I did not act: {stop_text}.")
-    elif not steps_rec:
+        text = f"I did not act: {stop_text}."
+        if fallback in FALLBACK_NOTES:
+            text += " " + FALLBACK_NOTES[fallback]
+        return text[:TEXT_MAX_CHARS]
+
+    if not steps_rec:
         if validation_errors:
-            parts.append(
+            text = (
                 "I could not turn that into a valid order, so nothing was done. "
                 "No order was proposed and nothing was signed."
             )
-        elif reply:
-            parts.append("No transaction was made.")
-        else:
-            parts.append("I did not propose any transaction.")
-    else:
-        if done:
-            doing = _join([action_phrase(r["order"], past=True) for r in done])
-            parts.append(_sentence("I " + doing))
-        problem = next(
-            (r for r in steps_rec if r.get("outcome") not in ("executed", "no_action")), None
-        )
-        if problem is not None:
-            order = problem["order"]
-            outcome = problem.get("outcome")
-            phrase = action_phrase(order, past=False)
-            if outcome == "pending_approval":
-                parts.append(
-                    f"To {phrase} I need your approval: it is waiting in Approvals."
-                    if done
-                    else f"I prepared an order to {phrase}. It is waiting for your approval "
-                    "in Approvals."
-                )
-            elif outcome == "failed":
-                parts.append(
-                    f"I tried to {phrase}, but {_error(problem)}. Nothing was lost."
-                    if not done
-                    else f"Then I tried to {phrase}, but {_error(problem)}."
-                )
+            if fallback in FALLBACK_NOTES:
+                text += " " + FALLBACK_NOTES[fallback]
+            return text[:TEXT_MAX_CHARS]
+        if clean_reply:
+            if fallback in FALLBACK_NOTES:
+                text = f"{FALLBACK_NOTES[fallback]}\n\n{clean_reply}"
             else:
-                lead = "I did not do the rest" if done else "I did not act"
-                parts.append(f"{lead}: {_why(problem)}.")
-            skipped = [r for r in steps_rec if not r.get("order")]
-            if skipped and not _cancelled(skipped):
-                parts.append(
-                    "The next step was not attempted."
-                    if len(skipped) == 1
-                    else f"The next {len(skipped)} steps were not attempted."
-                )
-        cancelled = [r for r in steps_rec if not r.get("order") and _cancelled([r])]
-        if cancelled:
-            parts.append(
-                "You cancelled the run, so the next step was not attempted."
-                if len(cancelled) == 1
-                else f"You cancelled the run, so the next {len(cancelled)} steps were not "
-                "attempted."
-            )
-        hashes = [
-            str((r.get("execution") or {}).get("tx_hash"))
-            for r in done
-            if (r.get("execution") or {}).get("tx_hash")
-        ]
-        if hashes:
-            parts.append("Transactions: " + ", ".join(hashes) + ".")
+                text = clean_reply
+            return text[:TEXT_MAX_CHARS]
+        if clean_reason:
+            if fallback in FALLBACK_NOTES:
+                text = f"{FALLBACK_NOTES[fallback]}\n\n{clean_reason}"
+            else:
+                text = clean_reason
+            return text[:TEXT_MAX_CHARS]
+        text = "I did not propose any transaction."
+        if fallback in FALLBACK_NOTES:
+            text += " " + FALLBACK_NOTES[fallback]
+        return text[:TEXT_MAX_CHARS]
 
+    if done:
+        doing = _join([action_phrase(r["order"], past=True) for r in done])
+        parts.append(_sentence("I " + doing))
+    problem = next(
+        (r for r in steps_rec if r.get("outcome") not in ("executed", "no_action")), None
+    )
+    if problem is not None:
+        order = problem["order"]
+        outcome = problem.get("outcome")
+        phrase = action_phrase(order, past=False)
+        if outcome == "pending_approval":
+            parts.append(
+                f"To {phrase} I need your approval: it is waiting in Approvals."
+                if done
+                else f"I prepared an order to {phrase}. It is waiting for your approval "
+                "in Approvals."
+            )
+        elif outcome == "failed":
+            parts.append(
+                f"I tried to {phrase}, but {_error(problem)}. Nothing was lost."
+                if not done
+                else f"Then I tried to {phrase}, but {_error(problem)}."
+            )
+        else:
+            lead = "I did not do the rest" if done else "I did not act"
+            parts.append(f"{lead}: {_why(problem)}.")
+        skipped = [r for r in steps_rec if not r.get("order")]
+        if skipped and not _cancelled(skipped):
+            parts.append(
+                "The next step was not attempted."
+                if len(skipped) == 1
+                else f"The next {len(skipped)} steps were not attempted."
+            )
+    cancelled = [r for r in steps_rec if not r.get("order") and _cancelled([r])]
+    if cancelled:
+        parts.append(
+            "You cancelled the run, so the next step was not attempted."
+            if len(cancelled) == 1
+            else f"You cancelled the run, so the next {len(cancelled)} steps were not attempted."
+        )
+    hashes = [
+        str((r.get("execution") or {}).get("tx_hash"))
+        for r in done
+        if (r.get("execution") or {}).get("tx_hash")
+    ]
+    if hashes:
+        parts.append("Transactions: " + ", ".join(hashes) + ".")
+
+    facts = " ".join(parts)
     if fallback in FALLBACK_NOTES:
-        parts.append(FALLBACK_NOTES[fallback])
-    text = " ".join(parts)
-    if reply:
-        text += "\n\n" + AGENT_SAYS + reply
-    elif plan_reason and not steps_rec and stop_text is None and not validation_errors:
-        text += "\n\n" + AGENT_SAYS + plan_reason
+        facts += " " + FALLBACK_NOTES[fallback]
+
+    if clean_reply:
+        text = f"{clean_reply}\n\n{facts}"
+    else:
+        text = facts
     return text[:TEXT_MAX_CHARS]
 
 

@@ -86,13 +86,13 @@ The jobs table never holds an order body, a note or a key. A partial unique inde
 | Process restart | `interrupted` | none |
 | Another job is active / hourly limit used | no job (`409 job-in-progress` / `429 rate-limited`) | n/a |
 
-Limits (one place, `JobLimits`): 6 runs or chat messages (one shared count) per owner per hour, 4 mint calls per owner per hour (`AGENT_WALLET_MINT_CALLS_PER_HOUR`), note at most 2,000 characters. The count is of job rows, so every mint attempt counts whatever its outcome.
+Limits (one place, `JobLimits`): 6 runs or action chats (shared count `chat_action`), 60 chat inquiries per owner per hour (`chat_inquiry`, refunded if zero gateway proposals), 4 mint calls per owner per hour (`AGENT_WALLET_MINT_CALLS_PER_HOUR`), note at most 2,000 characters.
 
 ## Planners
 
 `auto` uses `OpenAIClient` when `OPENAI_API_KEY` is set and falls back to `FallbackPlanner` on `LLMError` (nothing is proposed before the LLM answers, so the retry cannot duplicate an order). Without a key the fallback is used directly. `scripted_hostile` is a scripted client that emits a schema-valid supply far above the per-transaction limit, to show the gateway denying it. Records of the audit chain have a closed schema and cannot carry `planner_client`; the label is on the job and on every record summary returned by `GET /jobs/{job_id}`.
 
-## Chat (ticket 115)
+## Chat (ticket 115, chat-v3)
 
 ```mermaid
 flowchart LR
@@ -104,17 +104,17 @@ flowchart LR
   P -->|orders, reply| RN[Runner.run_instruction]
   RN -->|one by one, origin=planner| GW[Gateway]
   GW --> AU[(audit chain)]
-  W -->|text composed by code| C
+  W -->|one voice text composed by code| C
   B -->|GET /chat| R
   R -->|steps rebuilt by job id| AU
 ```
 
 - **Storage.** `chat_messages(owner, id, role, text, job_id, created_at, thread_id)` and `chat_threads(owner, id, title, created_at)` (threads: ticket 123, migration `0005_chat_threads.sql`) (SQLite: `webapp.sqlite`; Postgres: migration `0004_chat.sql`, row level security, no grant to API roles). Ids and text only: the steps are rebuilt from the audit records of `job_id` (the job row's `seqs`), so no order body, key or model transcript is stored.
 - **Planner channel.** The message is passed as `owner_instruction` (`{channel: "owner_chat", trust: "untrusted_text", text}`), separate from Reader `market_facts`. It is untrusted for rule purposes: every order goes through the policy engine with `origin="planner"`, the planner schema rejects `mint`, `transfer` and the `owner` recipient, and the chat job has no path to the owner functions.
-- **Contract.** The planner may return `orders` (an ordered list; the single `order` form still works) and a short `reply` (plain text, at most 600 characters). At most four orders are accepted; a plan with more is refused whole. The `reply` is shown as "Agent says" and is never proof of an outcome.
+- **Contract.** The planner may return `orders` (an ordered list; the single `order` form still works) and a short `reply` (plain text, at most 600 characters). At most four orders are accepted; a plan with more is refused whole. The `reply` is shown directly with one voice (lead-in line before code facts for actions, whole text for questions) and is never proof of an outcome.
 - **Execution.** `Runner.run_instruction` proposes the orders one at a time and stops at the first that is not `executed` (`denied`, `failed` or `pending_approval`). Each order left over is written to the audit log as a `no_action` record `Skipped <function> (<amount> <token>): <why>`, which the step builder shows as a `skipped` step. A question-only message records one `no_action` (`Chat request: the planner proposed no order.`); the model's words are never written to the audit log.
-- **Fallback.** With no `OPENAI_API_KEY`, or on `LLMError`, the labelled `FallbackPlanner` answers and the message says so. It reads the text by keywords: a deposit request (put, supply, deposit, invest, lend, earn, stake, work; amount from "N USDC", capped by idle USDC, default the per-transaction limit) becomes `approve` then `supply`; a question gets the wallet and Aave balance as a reply; withdraw, send, transfer, mint, swap and sell are declined in words.
-- **Limits.** Chat and run jobs share one count per owner per hour (`JobStore.create(..., count_kinds=("run", "chat"))`) and the one-active-job rule.
+- **Fallback.** With no `OPENAI_API_KEY`, or on `LLMError`, the labelled `FallbackPlanner` answers and the message says so. It reads the text by keywords: a deposit request (put, supply, deposit, invest, lend, earn, stake, work; amount from "N USDC", capped by idle USDC, default the per-transaction limit) becomes `approve` then `supply`; a question gets the wallet and Aave balance as a reply; withdraw, send, transfer and mint are declined in words (swap is supported by the registry).
+- **Limits.** `chat_action` and run jobs share 6 per owner per hour (`JobStore.create(..., count_kinds=("run", "chat_action"))`); `chat_inquiry` has its own limit 60 per hour; chat jobs ending with zero gateway proposals are recorded as `chat_inquiry` and refund the action bucket; the one-active-job rule applies to all.
 - **Stops and gas.** An owner or global stop ends the chat job `denied` before the planner is called, with a plain message and one `no_action` record; below the gas floor the job fails with `GAS_BELOW_FLOOR` and a plain message.
 
 ## Top-ups (design 8.1)
