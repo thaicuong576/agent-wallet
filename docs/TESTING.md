@@ -33,7 +33,7 @@ flowchart TD
 Run the entire offline test suite and evaluation harness in under two minutes with no keys or network required:
 
 ```sh
-# 1. Run full test suite (1,376 tests)
+# 1. Run full test suite (1,386 tests)
 make test
 
 # 2. Run static linters and repository hygiene checks
@@ -76,9 +76,9 @@ Collected directly via `pytest --collect-only -q` per area:
 | Area / Directory | Test Count | Key Test Files | What Is Tested |
 | :--- | :---: | :--- | :--- |
 | `tests/policy/` | **101** | `test_engine.py`, `test_limits.py`, `test_rules.py` | 100% pure evaluation of IPS rules, spending caps, and rule code assignments |
-| `tests/webapp/` | **355** | `test_routes.py`, `test_auth.py`, `test_stepup.py`, `test_sse.py`, `test_storage_backends.py` | Session routes, SIWE sign-in, CSRF validation, step-up challenge-response, SSE streaming |
-| `tests/ui/` | **261** | `test_ui.py`, `test_overview.py`, `test_holdings.py`, `test_dialogs.py`, `test_progress.py` | Contract route alignment, token avatar math, holding groupings, DOM flow verification |
-| `tests/storage/` | **158** | `test_postgres.py`, `test_sqlite.py`, `test_migrate.py`, `test_rls.py`, `test_pg_no_string_sql.py` | Dual storage backends, advisory locks, schema migrations, fail-closed behavior, RLS isolation |
+| `tests/webapp/` | **356** | `test_routes.py`, `test_auth.py`, `test_stepup.py`, `test_sse.py`, `test_storage_backends.py` | Session routes, SIWE sign-in, CSRF validation, step-up challenge-response, SSE streaming |
+| `tests/ui/` | **264** | `test_ui.py`, `test_overview.py`, `test_holdings.py`, `test_dialogs.py`, `test_progress.py` | Contract route alignment, token avatar math, holding groupings, DOM flow verification |
+| `tests/storage/` | **163** | `test_postgres.py`, `test_sqlite.py`, `test_migrate.py`, `test_rls.py`, `test_pg_no_string_sql.py` | Dual storage backends, advisory locks, schema migrations, fail-closed behavior, RLS isolation |
 | `tests/protocols/` | **79** | `test_aave.py`, `test_aave_stata.py`, `test_morpho.py`, `test_uniswap.py` | Calldata builders, protocol specs, spenders, approval encodings, slippage math |
 | `tests/gateway/` | **73** | `test_gateway.py`, `test_wiring.py`, `test_idempotency.py` | Gateway pipeline, simulate-before-sign, tier gating, audit chain recording |
 | `tests/agent/` | **67** | `test_reader.py`, `test_planner.py`, `test_prompt_injection.py` | Untrusted news parsing, prompt injection defense, structured order proposals |
@@ -91,8 +91,8 @@ Collected directly via `pytest --collect-only -q` per area:
 | `tests/e2e/` | **18** | `test_e2e_flow.py`, `test_multi_owner_flow.py` | Complete end-to-end multi-step scenarios with mocked chain responses |
 | `tests/signer/` | **14** | `test_signer.py`, `test_chain_id.py` | Local private key signing, Base Sepolia (84532) chain restriction, zero key leak |
 | `tests/evals/` | **9** | `test_eval_driver.py`, `test_report_generator.py` | Evaluation runner logic, driver mechanics, markdown report rendering |
-| `tests/*.py` (Root) | **55** | `test_signer_boundary.py`, `test_intent_boundary.py`, `test_contracts.py`, `test_check_links.py`, `test_container_files.py`, `test_http_stdlib.py`, `test_health.py` | AST boundary scans, container configuration, markdown link checker, HTTP stdlib purity |
-| **Total Test Count** | **1,376** | — | **Full pytest collection across all suites** |
+| `tests/*.py` (Root) | **56** | `test_signer_boundary.py`, `test_intent_boundary.py`, `test_contracts.py`, `test_check_links.py`, `test_container_files.py`, `test_http_stdlib.py`, `test_health.py` | AST boundary scans, container configuration, markdown link checker, HTTP stdlib purity |
+| **Total Test Count** | **1,386** | — | **Full pytest collection across all suites** |
 
 ---
 
@@ -197,7 +197,7 @@ jobs:
 
 1. **`make check`** triggers:
    - `make lint` (`ruff check .`)
-   - `make test` (`pytest -q` executing all 1,376 tests against SQLite and PostgreSQL service container)
+   - `make test` (`pytest -q` executing all 1,386 tests against SQLite and PostgreSQL service container)
    - `make links` (`python scripts/check_links.py` checking all relative links and markdown anchors)
    - `make secrets` (`python scripts/check_no_secrets.py` ensuring no private keys, seed phrases, or credentials exist in code or fixtures)
 2. **`docker`** builds `Dockerfile` and executes `scripts/container_smoke.sh` to verify non-root UID 10001 execution, `/app/data` volume permissions, and `/health` response.
@@ -210,7 +210,7 @@ All primary developer tasks are wrapped in thin Makefile targets:
 
 | Target | Command | Purpose |
 | :--- | :--- | :--- |
-| `make test` | `$(PY) -m pytest -q` | Run the complete 1,376 pytest test suite |
+| `make test` | `$(PY) -m pytest -q` | Run the complete 1,386 pytest test suite |
 | `make lint` | `$(PY) -m ruff check .` | Check linting and code style rules |
 | `make format` | `$(PY) -m ruff format .` | Format code with Ruff |
 | `make check` | `lint test links secrets` | Comprehensive CI check (tests, style, links, secrets) |
