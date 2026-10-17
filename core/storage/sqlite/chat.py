@@ -69,7 +69,8 @@ class SqliteChat:
         CREATE TABLE IF NOT EXISTS chat_messages(
             seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE,
             role TEXT NOT NULL CHECK (role IN ('user', 'agent')),
-            text TEXT NOT NULL, job_id TEXT, created_at TEXT NOT NULL, thread_id TEXT);
+            text TEXT NOT NULL, job_id TEXT, created_at TEXT NOT NULL, thread_id TEXT,
+            intent TEXT);
         CREATE TABLE IF NOT EXISTS chat_threads(
             id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL);
     """
@@ -81,6 +82,8 @@ class SqliteChat:
             columns = {r["name"] for r in db.execute("PRAGMA table_info(chat_messages)")}
             if "thread_id" not in columns:  # a file created before ticket 123
                 db.execute("ALTER TABLE chat_messages ADD COLUMN thread_id TEXT")
+            if "intent" not in columns:
+                db.execute("ALTER TABLE chat_messages ADD COLUMN intent TEXT")
             db.execute(
                 "CREATE INDEX IF NOT EXISTS chat_messages_thread_seq"
                 " ON chat_messages(thread_id, seq)"
@@ -100,6 +103,7 @@ class SqliteChat:
         job_id: str | None,
         created_at: datetime,
         thread_id: str | None = None,
+        intent: str | None = None,
     ) -> dict[str, Any]:
         message_id = uuid.uuid4().hex
         stamp = _ts(created_at)
@@ -114,28 +118,46 @@ class SqliteChat:
                 ).fetchone()
                 thread = None if row is None else row["thread_id"]
             db.execute(
-                "INSERT INTO chat_messages(id, role, text, job_id, created_at, thread_id)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (message_id, role, text, job_id, stamp, thread),
+                "INSERT INTO chat_messages(id, role, text, job_id, created_at, thread_id, intent)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (message_id, role, text, job_id, stamp, thread, intent),
             )
-        return {
+        out: dict[str, Any] = {
             "id": message_id,
             "role": role,
             "text": text,
             "job_id": job_id,
             "created_at": stamp,
         }
+        if intent is not None:
+            out["intent"] = intent
+        return out
 
     def list(self, limit: int = 50, thread_id: str | None = None) -> list[dict[str, Any]]:
         thread = None if thread_id in (None, DEFAULT_THREAD) else thread_id
         with self._connect() as db:
             rows = db.execute(
-                "SELECT id, role, text, job_id, created_at FROM ("
+                "SELECT id, role, text, job_id, created_at, intent FROM ("
                 " SELECT * FROM chat_messages WHERE thread_id IS ? ORDER BY seq DESC LIMIT ?)"
                 " ORDER BY seq",
                 (thread, max(int(limit), 0)),
             ).fetchall()
-        return [dict(r) for r in rows]
+        messages: list[dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            if d.get("intent") is None:
+                d.pop("intent", None)
+            messages.append(d)
+        return messages
+
+    def get_thread_id(self, job_id: str) -> str | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT thread_id FROM chat_messages WHERE job_id = ? AND role = 'user'"
+                " ORDER BY seq LIMIT 1",
+                (job_id,),
+            ).fetchone()
+            return None if row is None else row["thread_id"]
 
     def create_thread(self, created_at: datetime) -> dict[str, Any]:
         thread_id = uuid.uuid4().hex

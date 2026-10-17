@@ -33,7 +33,7 @@ flowchart TD
 Run the entire offline test suite and evaluation harness in under two minutes with no keys or network required:
 
 ```sh
-# 1. Run full test suite (1,386 tests)
+# 1. Run full test suite (1,412 tests)
 make test
 
 # 2. Run static linters and repository hygiene checks
@@ -76,12 +76,12 @@ Collected directly via `pytest --collect-only -q` per area:
 | Area / Directory | Test Count | Key Test Files | What Is Tested |
 | :--- | :---: | :--- | :--- |
 | `tests/policy/` | **101** | `test_engine.py`, `test_limits.py`, `test_rules.py` | 100% pure evaluation of IPS rules, spending caps, and rule code assignments |
-| `tests/webapp/` | **356** | `test_routes.py`, `test_auth.py`, `test_stepup.py`, `test_sse.py`, `test_storage_backends.py` | Session routes, SIWE sign-in, CSRF validation, step-up challenge-response, SSE streaming |
+| `tests/webapp/` | **359** | `test_routes.py`, `test_auth.py`, `test_stepup.py`, `test_sse.py`, `test_storage_backends.py` | Session routes, SIWE sign-in, CSRF validation, step-up challenge-response, SSE streaming |
 | `tests/ui/` | **264** | `test_ui.py`, `test_overview.py`, `test_holdings.py`, `test_dialogs.py`, `test_progress.py` | Contract route alignment, token avatar math, holding groupings, DOM flow verification |
-| `tests/storage/` | **163** | `test_postgres.py`, `test_sqlite.py`, `test_migrate.py`, `test_rls.py`, `test_pg_no_string_sql.py` | Dual storage backends, advisory locks, schema migrations, fail-closed behavior, RLS isolation |
+| `tests/storage/` | **171** | `test_postgres.py`, `test_sqlite.py`, `test_migrate.py`, `test_rls.py`, `test_pg_no_string_sql.py` | Dual storage backends, advisory locks, schema migrations, fail-closed behavior, RLS isolation |
 | `tests/protocols/` | **79** | `test_aave.py`, `test_aave_stata.py`, `test_morpho.py`, `test_uniswap.py` | Calldata builders, protocol specs, spenders, approval encodings, slippage math |
 | `tests/gateway/` | **73** | `test_gateway.py`, `test_wiring.py`, `test_idempotency.py` | Gateway pipeline, simulate-before-sign, tier gating, audit chain recording |
-| `tests/agent/` | **67** | `test_reader.py`, `test_planner.py`, `test_prompt_injection.py` | Untrusted news parsing, prompt injection defense, structured order proposals |
+| `tests/agent/` | **82** | `test_reader.py`, `test_planner.py`, `test_prompt_injection.py` | Untrusted news parsing, prompt injection defense, structured order proposals |
 | `tests/risk/` | **46** | `test_router.py`, `test_onchain.py`, `test_reference.py`, `test_stale.py` | Risk input routing, oracle data staleness checks, market utilization ceilings |
 | `tests/runner/` | **42** | `test_runner.py`, `test_cycle.py`, `test_no_action.py` | Execution loop, portfolio reading, `no_action` audit recording, intent isolation |
 | `tests/api/` | **31** | `test_api.py`, `test_problem_details.py` | Core FastAPI routes, RFC 7807 problem details responses, OpenAPI conformance |
@@ -92,7 +92,7 @@ Collected directly via `pytest --collect-only -q` per area:
 | `tests/signer/` | **14** | `test_signer.py`, `test_chain_id.py` | Local private key signing, Base Sepolia (84532) chain restriction, zero key leak |
 | `tests/evals/` | **9** | `test_eval_driver.py`, `test_report_generator.py` | Evaluation runner logic, driver mechanics, markdown report rendering |
 | `tests/*.py` (Root) | **56** | `test_signer_boundary.py`, `test_intent_boundary.py`, `test_contracts.py`, `test_check_links.py`, `test_container_files.py`, `test_http_stdlib.py`, `test_health.py` | AST boundary scans, container configuration, markdown link checker, HTTP stdlib purity |
-| **Total Test Count** | **1,386** | — | **Full pytest collection across all suites** |
+| **Total Test Count** | **1,412** | — | **Full pytest collection across all suites** |
 
 ---
 

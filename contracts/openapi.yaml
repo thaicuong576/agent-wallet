@@ -917,6 +917,7 @@ components:
         created_at: { $ref: "#/components/schemas/UtcTimestamp" }
         steps: { type: array, items: { $ref: "#/components/schemas/ChatStep" } }
         phase: { type: string, description: "Phase of the message's job (see Job). `done` for user messages." }
+        intent: { type: [string, "null"], enum: [question, clarify, action, refusal, null], description: "Planner intent of the message (agent only)." }
     ChatThread:
       type: object
       required: [id, title, last_message_at, status]

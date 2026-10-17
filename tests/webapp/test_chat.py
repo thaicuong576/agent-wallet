@@ -620,7 +620,7 @@ def test_chat_job_row_and_table_hold_no_order_body(world, alice, tmp_path):
     path = (db or alice.tenant.paths.state.parent) / "webapp.sqlite"
     with sqlite3.connect(path) as conn:
         cols = [c[1] for c in conn.execute("PRAGMA table_info(chat_messages)")]
-    assert cols == ["seq", "id", "role", "text", "job_id", "created_at", "thread_id"]
+    assert cols == ["seq", "id", "role", "text", "job_id", "created_at", "thread_id", "intent"]
 
 
 def test_openapi_documents_the_chat_routes():
@@ -754,3 +754,123 @@ def test_threads_need_a_session_and_the_csrf_header(world, alice):
     assert anon.get("/chat/threads").status_code == 401
     no_csrf = alice.client.post("/chat/threads", json={})
     assert no_csrf.status_code == 403 and slug(no_csrf) == "csrf"
+
+
+# ---------------------------------------------------------------- ticket B: thread context & intent
+
+
+def test_multiturn_chat_captures_history_with_recorded_outcome_not_raw_reply(world, alice):
+    # Turn 1: "Lend 5 USDC on Aave"
+    # Agent executes approve + supply with a raw reply
+    world.env.llm = ScriptedClient(
+        plan(*approve_then_supply(5_000_000), reply="Raw model prose: I am lending your money.")
+    )
+    say(alice, "Lend 5 USDC on Aave")
+    items_t1 = conversation(alice)
+    assert len(items_t1) == 2
+    user_msg, agent_msg = items_t1[0], items_t1[1]
+    assert user_msg["role"] == "user"
+    assert user_msg["text"] == "Lend 5 USDC on Aave"
+    assert agent_msg["role"] == "agent"
+    assert agent_msg.get("intent") == "action"
+
+    # Turn 2: "same on Morpho"
+    # Capture the planner payload with a fake LLM client
+    capturing_client = ScriptedClient(
+        json.dumps(
+            {
+                "action": "no_action",
+                "intent": "clarify",
+                "reason": "Which Morpho market?",
+                "reply": "Which Morpho market would you like to use?",
+            }
+        )
+    )
+    world.env.llm = capturing_client
+    say(alice, "same on Morpho")
+
+    # Check captured payload in Turn 2
+    assert len(capturing_client.calls) == 1
+    payload = json.loads(capturing_client.calls[0]["user"])
+    history = payload.get("conversation_history")
+    assert isinstance(history, list)
+    assert len(history) == 2
+    assert history[0]["role"] == "user"
+    assert history[0]["text"] == "Lend 5 USDC on Aave"
+    assert history[1]["role"] == "agent"
+    # Crucial: recorded outcome sentence written by code, NEVER raw model text!
+    assert "Raw model prose" not in history[1]["text"]
+    assert "approved 5 USDC" in history[1]["text"]
+    assert "supplied 5 USDC" in history[1]["text"]
+    # Current message is in owner_instruction, NOT repeated in history
+    assert payload["owner_instruction"]["text"] == "same on Morpho"
+
+    # Check conversation items
+    items_t2 = conversation(alice)
+    assert len(items_t2) == 4
+    latest_agent = items_t2[-1]
+    assert latest_agent["role"] == "agent"
+    assert latest_agent.get("intent") == "clarify"
+    assert latest_agent["text"] == "Which Morpho market would you like to use?"
+
+
+def test_thread_and_owner_isolation_in_conversation_history(world, alice, bob):
+    # Alice thread 1
+    t1 = alice.post("/chat/threads", {}).json()["id"]
+    world.env.llm = ScriptedClient(
+        json.dumps(
+            {"action": "no_action", "reason": "ok", "intent": "question", "reply": "thread 1"}
+        )
+    )
+    alice.post("/chat", {"message": "Alice in thread 1", "thread_id": t1})
+    world.drain()
+
+    # Alice thread 2
+    t2 = alice.post("/chat/threads", {}).json()["id"]
+    alice_client = ScriptedClient(
+        json.dumps(
+            {"action": "no_action", "reason": "ok", "intent": "question", "reply": "thread 2"}
+        )
+    )
+    world.env.llm = alice_client
+    alice.post("/chat", {"message": "Alice in thread 2", "thread_id": t2})
+    world.drain()
+
+    # Verify Alice thread 2 history does NOT see thread 1
+    payload_a2 = json.loads(alice_client.calls[0]["user"])
+    assert payload_a2["conversation_history"] == []
+
+    # Bob asks a question
+    bob_client = ScriptedClient(
+        json.dumps(
+            {"action": "no_action", "reason": "ok", "intent": "question", "reply": "Bob reply"}
+        )
+    )
+    world.env.llm = bob_client
+    say(bob, "Bob question")
+    payload_bob = json.loads(bob_client.calls[0]["user"])
+    assert payload_bob["conversation_history"] == []
+
+
+def test_intent_validation_and_dropping_orders_in_chat_job(world, alice):
+    # Model returns orders but intent is 'clarify': orders must be dropped
+    orders = approve_then_supply()
+    world.env.llm = ScriptedClient(
+        json.dumps(
+            {
+                "action": "propose",
+                "orders": orders,
+                "intent": "clarify",
+                "reason": "Clarification needed",
+                "reply": "Did you mean Aave or Morpho?",
+            }
+        )
+    )
+    say(alice, "Lend 10 USDC")
+    items = conversation(alice)
+    latest_agent = items[-1]
+    assert latest_agent["role"] == "agent"
+    assert latest_agent.get("intent") == "clarify"
+    # No orders were proposed/executed, steps is empty
+    assert latest_agent.get("steps") == []
+    assert "Did you mean Aave or Morpho?" in latest_agent["text"]

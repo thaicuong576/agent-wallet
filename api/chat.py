@@ -77,7 +77,7 @@ def _view(tenant: Tenant, message: dict[str, Any], jobs: Any) -> dict[str, Any]:
         if row is not None:
             steps = steps_from_records(_records(tenant, row["seqs"]))
             phase = jobs.phase(tenant, row)
-    return {
+    view: dict[str, Any] = {
         "id": message["id"],
         "role": message["role"],
         "text": message["text"],
@@ -86,6 +86,9 @@ def _view(tenant: Tenant, message: dict[str, Any], jobs: Any) -> dict[str, Any]:
         "steps": steps,
         "phase": phase,
     }
+    if message.get("intent") is not None:
+        view["intent"] = message["intent"]
+    return view
 
 
 @router.post("/chat", status_code=202, tags=["chat"])
@@ -94,7 +97,7 @@ def post_chat(
 ) -> dict[str, str]:
     _known_thread(tenant, body.thread_id)
     jobs = get_webapp(request).jobs
-    job_id = jobs.start(tenant, "chat", {"message": body.message})
+    job_id = jobs.start(tenant, "chat", {"message": body.message, "thread_id": body.thread_id})
     if body.thread_id is not None:
         try:
             tenant.stores.chat.attach_job(body.thread_id, job_id)

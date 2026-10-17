@@ -232,6 +232,7 @@ class ChatStore(Protocol):
         job_id: str | None,
         created_at: datetime,
         thread_id: str | None = None,
+        intent: str | None = None,
     ) -> dict[str, Any]:
         """Store one message (``role`` is ``user`` or ``agent``) and return it with its id."""
         ...
@@ -261,6 +262,10 @@ class ChatStore(Protocol):
     def attach_job(self, thread_id: str | None, job_id: str) -> None:
         """Move the messages of ``job_id`` into a thread and, while it is still titled
         ``New chat``, title it with the first 40 characters of the owner's message."""
+        ...
+
+    def get_thread_id(self, job_id: str) -> str | None:
+        """The thread id of a message by its job id, or None."""
         ...
 
 

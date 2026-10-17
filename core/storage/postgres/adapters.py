@@ -816,13 +816,16 @@ class PgChatStore:
 
     @staticmethod
     def _row(row: tuple[Any, ...]) -> dict[str, Any]:
-        return {
+        out = {
             "id": str(row[0]),
             "role": str(row[1]),
             "text": str(row[2]),
             "job_id": None if row[3] is None else str(row[3]),
             "created_at": _iso(row[4]),
         }
+        if len(row) > 5 and row[5] is not None:
+            out["intent"] = str(row[5])
+        return out
 
     def append(
         self,
@@ -831,6 +834,7 @@ class PgChatStore:
         job_id: str | None,
         created_at: datetime,
         thread_id: str | None = None,
+        intent: str | None = None,
     ) -> dict[str, Any]:
         message_id = uuid.uuid4().hex
         thread = None if thread_id == DEFAULT_THREAD else thread_id
@@ -845,29 +849,43 @@ class PgChatStore:
                 row = cur.fetchone()
                 thread = None if row is None else row[0]
             cur.execute(
-                "INSERT INTO chat_messages (owner, id, role, text, job_id, created_at, thread_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (self._owner, message_id, role, text, job_id, _utc(created_at), thread),
+                "INSERT INTO chat_messages "
+                "(owner, id, role, text, job_id, created_at, thread_id, intent) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (self._owner, message_id, role, text, job_id, _utc(created_at), thread, intent),
             )
-        return {
+        out = {
             "id": message_id,
             "role": role,
             "text": text,
             "job_id": job_id,
             "created_at": _iso(created_at),
         }
+        if intent is not None:
+            out["intent"] = intent
+        return out
 
     def list(self, limit: int = 50, thread_id: str | None = None) -> list[dict[str, Any]]:
         thread = None if thread_id in (None, DEFAULT_THREAD) else thread_id
         with self._pool.tenant(self._owner) as cur:
             cur.execute(
-                "SELECT id, role, text, job_id, created_at FROM ("
-                "SELECT id, role, text, job_id, created_at, seq FROM chat_messages "
+                "SELECT id, role, text, job_id, created_at, intent FROM ("
+                "SELECT id, role, text, job_id, created_at, seq, intent FROM chat_messages "
                 "WHERE owner = %s AND thread_id IS NOT DISTINCT FROM %s "
                 "ORDER BY seq DESC LIMIT %s) recent ORDER BY seq",
                 (self._owner, thread, max(int(limit), 0)),
             )
             return [self._row(r) for r in cur.fetchall()]
+
+    def get_thread_id(self, job_id: str) -> str | None:
+        with self._pool.tenant(self._owner) as cur:
+            cur.execute(
+                "SELECT thread_id FROM chat_messages WHERE owner = %s AND job_id = %s "
+                "AND role = 'user' ORDER BY seq LIMIT 1",
+                (self._owner, job_id),
+            )
+            row = cur.fetchone()
+            return None if row is None else row[0]
 
     def create_thread(self, created_at: datetime) -> dict[str, Any]:
         thread_id = uuid.uuid4().hex
