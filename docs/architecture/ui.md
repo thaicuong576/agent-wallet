@@ -173,6 +173,47 @@ sequenceDiagram
 - `GET /decisions` is not per owner in single mode; Activity and the approvals card read the owner's recent jobs, and the in-browser chain check stays fixtures-only.
 - The `confirming` phase is documented but not emitted by the backend; the fixtures emit it, so the demo shows a stage the live app cannot.
 
+## UI Read Cache (Single Flight, Short Memo, Peek)
+
+To prevent tab switching from starting with empty skeleton cards and eliminate redundant concurrent requests across views (such as the side panel and Overview loading `api.portfolio()` simultaneously), `ui/api.js` incorporates a lightweight in-memory read cache around 6 idempotent GET reads: `agent`, `portfolio`, `ips`, `tier`, `limits`, and `auditVerify`.
+
+```mermaid
+flowchart TD
+  subgraph Views ["UI Views (Overview, Side, Activity, Rules)"]
+    V1["peek(name)"]
+    V2["fresh request: api.portfolio(), api.agent(), ..."]
+  end
+
+  subgraph Cache ["ui/api.js Read Cache"]
+    P["peek: return last successful value (any age)"]
+    C1{"In-flight request?"}
+    C2{"Memo < 8s?"}
+    M["Return memoized promise / copy"]
+    S["Single flight: share in-flight promise"]
+    F["Network fetch via real()"]
+    INV["Invalidate cache on writes & session change"]
+  end
+
+  V1 --> P
+  V2 --> C1
+  C1 -- Yes --> S
+  C1 -- No --> C2
+  C2 -- Yes --> M
+  C2 -- No --> F
+  F --> M
+  Writes["User writes (chatSend, stop, tier change, mint, withdraw, ...)"] --> INV
+  SignOut["Session change / sign out"] --> INV
+  INV -.-> Cache
+```
+
+### Cache Properties
+1. **Single Flight**: Concurrent calls to the same endpoint return the exact same in-flight promise. A cold load of Overview and Side panel requests `/portfolio` and `/agent` only once each instead of twice.
+2. **Short Memo (8s)**: Reads younger than 8 seconds resolve immediately without network requests, allowing smooth switching between Overview, Activity, Rules, and Chat within 5 seconds.
+3. **Peek (Stale then Fresh)**: `api.peek(name)` returns the latest successful cached copy (regardless of age). Views paint immediately from peek rather than blank skeletons, then fetch fresh data in the background and repaint only if data changed (preventing flicker). If a background refresh fails, stale data is preserved and only the failure state is indicated.
+4. **Invalidation on Writes**: Any state-mutating request (POST/PUT writes such as `chatSend`, `stop`, `release`, `setTier`, `mint`, `withdraw`, `approve`, `reject`) immediately clears the cache.
+5. **Session Isolation**: The cache is dropped on sign-out (`signedOut()` in `main.js` hooks `api.clearCache()`) and when session identity changes (`GET /me` returns a different owner address), preventing cross-owner data leaks.
+6. **Live Data Kept Live**: Chat history, thread suggestions, orders/jobs, and approvals are never cached or peeked.
+
 ## Files
 | File | Role |
 | :--- | :--- |

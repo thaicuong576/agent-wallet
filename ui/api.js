@@ -67,7 +67,62 @@ export function createApi({
 } = {}) {
   const doFetch = fetchImpl || ((...a) => globalThis.fetch(...a));
 
+  // Read cache (real mode only; fixtures mode stays untouched).
+  // Caches GET reads of: agent, portfolio, ips, tier, limits, auditVerify.
+  const CACHE_TTL_MS = 8000;
+  const memo = new Map();
+  const inFlight = new Map();
+  let currentSessionOwner = null;
+  let cacheEpoch = 0;
+
+  function clearCache() {
+    cacheEpoch++;
+    memo.clear();
+    inFlight.clear();
+  }
+
+  function deepCopy(val) {
+    if (val === undefined) return undefined;
+    if (typeof structuredClone === "function") {
+      try {
+        return structuredClone(val);
+      } catch (_) {}
+    }
+    return JSON.parse(JSON.stringify(val));
+  }
+
+  function cachedRead(name, fetchFn) {
+    if (fixtures) return fetchFn();
+    const entry = memo.get(name);
+    const now = Date.now();
+    if (entry && now - entry.time < CACHE_TTL_MS) {
+      return Promise.resolve(deepCopy(entry.value));
+    }
+    if (inFlight.has(name)) {
+      return inFlight.get(name).then((v) => deepCopy(v));
+    }
+    const epoch = cacheEpoch;
+    const p = (async () => {
+      try {
+        const data = await fetchFn();
+        if (epoch === cacheEpoch) {
+          memo.set(name, { value: deepCopy(data), time: Date.now() });
+        }
+        return data;
+      } finally {
+        if (inFlight.get(name) === p) {
+          inFlight.delete(name);
+        }
+      }
+    })();
+    inFlight.set(name, p);
+    return p.then((v) => deepCopy(v));
+  }
+
   async function real(method, path, { body, headers } = {}) {
+    if (method !== "GET") {
+      clearCache();
+    }
     const h = { Accept: "application/json", "X-AW-CSRF": "1", ...(headers || {}) };
     const init = { method, credentials: "same-origin", headers: h };
     if (body !== undefined) {
@@ -83,11 +138,22 @@ export function createApi({
     }
     if (!res.ok) {
       const retryAfter = res.headers && res.headers.get ? res.headers.get("Retry-After") : null;
-      if (res.status === 401 && onUnauthorized) onUnauthorized(path);
+      if (res.status === 401) {
+        clearCache();
+        currentSessionOwner = null;
+        if (onUnauthorized) onUnauthorized(path);
+      }
       throw new ApiError(res.status, slugOf(data), data && data.title, data && data.detail, {
         problem: data,
         retryAfter,
       });
+    }
+    if (path === ROUTES.me && method === "GET" && data && typeof data.address === "string") {
+      const addr = data.address.toLowerCase();
+      if (currentSessionOwner && currentSessionOwner !== addr) {
+        clearCache();
+      }
+      currentSessionOwner = addr;
     }
     return data;
   }
@@ -541,7 +607,14 @@ export function createApi({
     fixtures,
     // Shared helpers for modules that own their route (ui/limits.js): the same fetch path and the
     // same fixture files as every other call.
-    request: (method, path, opts) => real(method, path, opts),
+    request: (method, path, opts) => {
+      if (!fixtures && method === "GET" && path === ROUTES.limits && (!opts || !opts.body)) {
+        return cachedRead("limits", () => real(method, path, opts));
+      }
+      return real(method, path, opts);
+    },
+    peek: (name) => (!fixtures && memo.has(name) ? deepCopy(memo.get(name).value) : undefined),
+    clearCache: () => clearCache(),
     fixtureFile: (name) => file(name),
     nonce: (address) => call("nonce", "POST", ROUTES.nonce, { body: { address } }),
     verify: (address, nonce, signature) =>
@@ -550,7 +623,7 @@ export function createApi({
     stepUp: (action, params) =>
       call("stepUp", "POST", ROUTES.stepUp, { body: { action, params: params || {} } }),
     me: () => call("me", "GET", ROUTES.me),
-    agent: () => call("agent", "GET", ROUTES.agent),
+    agent: () => (fixtures ? fixtureCall("agent") : cachedRead("agent", () => real("GET", ROUTES.agent))),
     registerTopup: (txHash) => {
       if (!HEX64.test(txHash)) return Promise.reject(new ApiError(0, "", "Not a transaction hash"));
       return call("topup", "POST", ROUTES.topups, { body: { tx_hash: txHash } });
@@ -613,7 +686,7 @@ export function createApi({
       call("threads", "GET", ROUTES.threads + "?limit=" + encodeURIComponent(limit)),
     newThread: () => call("newThread", "POST", ROUTES.threads, { body: {} }),
     suggestions: () => call("suggestions", "GET", ROUTES.suggestions),
-    limits: () => call("limits", "GET", ROUTES.limits),
+    limits: () => (fixtures ? fixtureCall("limits") : cachedRead("limits", () => real("GET", ROUTES.limits))),
     cancelJob: (jobId) =>
       JOB_ID.test(jobId)
         ? call("cancel", "POST", ROUTES.cancel.replace("{job_id}", jobId), {}, jobId)
@@ -623,17 +696,21 @@ export function createApi({
         ? call("job", "GET", ROUTES.job.replace("{job_id}", jobId), {}, jobId)
         : Promise.reject(new ApiError(0, "", "Not a job id")),
     jobs: () => call("jobs", "GET", ROUTES.jobs),
-    auditVerify: () => call("auditVerify", "GET", ROUTES.auditVerify),
-    portfolio: () => call("portfolio", "GET", ROUTES.portfolio),
+    auditVerify: () =>
+      fixtures ? fixtureCall("auditVerify") : cachedRead("auditVerify", () => real("GET", ROUTES.auditVerify)),
+    portfolio: () =>
+      fixtures ? fixtureCall("portfolio") : cachedRead("portfolio", () => real("GET", ROUTES.portfolio)),
     // GET /tier is the single-owner global state; in the webapp the tier and the stop flag of the
     // signed-in owner come with GET /me, so outside fixtures mode that is the route used.
     tier: () =>
       fixtures
         ? fixtureCall("tier")
-        : real("GET", ROUTES.me).then((m) => ({
-            tier: m.tier,
-            emergency_stop: Boolean(m.emergency_stop),
-          })),
+        : cachedRead("tier", () =>
+            real("GET", ROUTES.me).then((m) => ({
+              tier: m.tier,
+              emergency_stop: Boolean(m.emergency_stop),
+            }))
+          ),
     // Raising the tier needs `stepUp` (X-Step-Up for action tier_raise); lowering does not.
     setTier: (tier, stepUp, presetId) =>
       call(
@@ -648,7 +725,7 @@ export function createApi({
         },
         presetId ? { tier, preset_id: presetId } : tier,
       ),
-    ips: () => call("ips", "GET", ROUTES.ips),
+    ips: () => (fixtures ? fixtureCall("ips") : cachedRead("ips", () => real("GET", ROUTES.ips))),
     decisions: (limit = 50) =>
       call("decisions", "GET", ROUTES.decisions + "?limit=" + encodeURIComponent(limit)),
     stop: () => call("stop", "POST", ROUTES.stop, {}),

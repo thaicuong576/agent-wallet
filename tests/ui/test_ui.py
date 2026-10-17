@@ -119,6 +119,18 @@ def harness() -> dict:
     return json.loads(out.stdout)
 
 
+@functools.lru_cache(maxsize=1)
+def cache_flows() -> dict:
+    out = subprocess.run(
+        [NODE, str(ROOT / "tests" / "ui" / "cache_flows.mjs")],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return json.loads(out.stdout)
+
+
 @pytest.mark.parametrize("name", UI_FILES)
 def test_static_files_are_served(client: TestClient, name: str) -> None:
     res = client.get(f"/ui/{name}")
@@ -1032,3 +1044,69 @@ def test_chat_v3_ticket_e_features() -> None:
     assert "Couldn't load this chat." in e["errorText"]
     assert "Retry" in e["errorText"]
     assert any("Err msg" in b for b in e["recoveredBubbles"])
+
+
+@needs_node
+def test_ui_read_cache_measurements() -> None:
+    r = cache_flows()
+    # (a) Cold load of Overview + side panel: single flight merges /portfolio and /agent
+    assert r["coldLoad"]["portfolio"] == 1
+    assert r["coldLoad"]["agent"] == 1
+    assert r["coldLoad"]["total"] == 8
+    # (b) Flow Overview -> Activity -> Overview -> Chat -> Overview within 5s
+    assert r["fiveSecFlow"]["total"] == 19
+    assert r["fiveSecFlow"]["byRoute"]["GET /portfolio"] == 1
+    assert r["fiveSecFlow"]["byRoute"]["GET /agent"] == 1
+    assert r["fiveSecFlow"]["byRoute"]["GET /limits"] == 1
+    assert r["fiveSecFlow"]["byRoute"]["GET /audit/verify"] == 1
+    # (c) Time from clicking tab to first painted content:
+    # First visit: skeleton immediate, content after fetch
+    assert r["latencySimulation"]["v1SkeletonImmediate"] is True
+    assert r["latencySimulation"]["v1HasContent"] is True
+    # Second visit: paints immediately from peek (no skeleton!), repaints after fetch
+    assert r["latencySimulation"]["v2SkeletonImmediate"] is False
+    assert r["latencySimulation"]["v2ContentImmediate"] is True
+    assert r["latencySimulation"]["v2ContentAfterFetch"] is True
+
+
+@needs_node
+def test_ui_read_cache_semantics() -> None:
+    r = cache_flows()
+    # 1. Single flight
+    assert r["singleFlight"]["portRequests"] == 1
+    assert r["singleFlight"]["sameValue"] is True
+    assert r["singleFlight"]["isDistinctObject"] is True
+
+    # 2. Memo expiry (8 seconds)
+    assert r["memoExpiry"]["reqsUnder8s"] == 1
+    assert r["memoExpiry"]["reqsAfter8s"] == 2
+
+    # 3. Write invalidates
+    assert r["writeInvalidates"]["beforeWrite"] == 1
+    assert r["writeInvalidates"]["afterWrite"] == 2
+    assert r["writeInvalidates"]["afterStop"] == 3
+    assert r["writeInvalidates"]["afterMint"] == 4
+
+    # 4. Failed read not cached
+    assert r["failedReadNotCached"]["caught"] is True
+    assert r["failedReadNotCached"]["peekAfterFail"] is True
+    assert r["failedReadNotCached"]["recoveredTotal"] == "1000.00"
+
+    # 5. Cache cleared on session change
+    assert r["sessionChange"]["peekOwner1HasData"] is True
+    assert r["sessionChange"]["peekAfterSignOutIsUndefined"] is True
+    assert r["sessionChange"]["peekOwner2BeforeReadIsUndefined"] is True
+    assert r["sessionChange"]["owner2Total"] == "5555.00"
+
+    # 6. View paints from peek and then repaints
+    assert r["paintPeekThenRepaint"]["hasSkeletonOnSecondVisit"] is False
+    assert "$1000.00" in r["paintPeekThenRepaint"]["hero2PeekText"]
+    assert "$9999.00" in r["paintPeekThenRepaint"]["hero2FreshText"]
+
+    # 7. Stale response dropped when view unmounted
+    assert r["staleResponseDropped"]["completedWithoutCrash"] is True
+
+    # 8. Hostile API strings are not parsed as HTML
+    assert r["hostileStrings"]["innerHTMLUsed"] is False
+    assert r["hostileStrings"]["overviewHasScriptText"] is True
+    assert r["hostileStrings"]["activityHasScriptText"] is True

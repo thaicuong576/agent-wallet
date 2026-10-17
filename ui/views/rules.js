@@ -113,31 +113,47 @@ export function render(ctx) {
     return li;
   }
 
-  async function load() {
-    body.replaceChildren(skeletonRows(el));
-    const me = await ctx.refreshSession();
-    if (!me) {
-      body.replaceChildren(
-        emptyState(el, "Connect a wallet to see your rules.", null, { label: "Set up your agent", hash: "#/setup" }, "div"),
-      );
+  function peekSafe(name) {
+    if (!api || typeof api.peek !== "function") return undefined;
+    const v = api.peek(name);
+    if (!v || typeof v.then === "function") return undefined;
+    return v;
+  }
+
+  let rulesGen = 0;
+  let lastRulesSig = null;
+  let paintedLimits = null;
+  let paintedTier = null;
+
+  function paintRules(limits, tier, err) {
+    const sig = JSON.stringify({
+      limits,
+      tier,
+      err: err ? String(err) : null,
+    });
+    if (sig === lastRulesSig) return;
+    lastRulesSig = sig;
+
+    if (!limits) {
+      if (err) {
+        body.replaceChildren(
+          el("p", "msg error", "Your limits could not be loaded: " + ctx.describeError(err) + " Nothing is shown rather than a guess."),
+        );
+      }
       return;
     }
-    let limits;
-    try {
-      limits = await getLimits(api);
-    } catch (e) {
-      body.replaceChildren(
-        el("p", "msg error", "Your limits could not be loaded: " + ctx.describeError(e) + " Nothing is shown rather than a guess."),
-      );
-      return;
-    }
+
+    paintedLimits = limits;
+    paintedTier = tier;
+
     let perm = null;
     try {
-      perm = permissionCard(await api.tier());
-    } catch (e) {
-      perm = null; // a failed tier read only leaves the permission card out
+      perm = permissionCard(tier);
+    } catch (_) {
+      perm = null;
     }
     extra.replaceChildren(...(perm ? [perm] : []), demo);
+
     const parts = [];
     if (limits.emergency_stop === "stopped") parts.push(frozenCard(el));
     const table = el("div", "rules-table");
@@ -148,7 +164,62 @@ export function render(ctx) {
       table.append(li);
     }
     parts.push(table, extra, el("p", "note", "Read-only here. Changing limits will be a separate, signed step."));
+    if (err) {
+      parts.push(
+        el("p", "msg error", "Your limits could not be refreshed: " + ctx.describeError(err)),
+      );
+    }
     body.replaceChildren(...parts);
+  }
+
+  async function load() {
+    const myGen = ++rulesGen;
+    const peekLimits = peekSafe("limits");
+    let hadPeek = false;
+
+    if (ctx.state && ctx.state.me && peekLimits !== undefined) {
+      hadPeek = true;
+      paintRules(peekLimits, peekSafe("tier") || null, null);
+    } else {
+      body.replaceChildren(skeletonRows(el));
+      lastRulesSig = null;
+    }
+
+    const me = await ctx.refreshSession();
+    if (myGen !== rulesGen || root.isConnected === false) return;
+    if (!me) {
+      body.replaceChildren(
+        emptyState(el, "Connect a wallet to see your rules.", null, { label: "Set up your agent", hash: "#/setup" }, "div"),
+      );
+      return;
+    }
+
+    let limits = null;
+    let limitsErr = null;
+    try {
+      limits = await getLimits(api);
+    } catch (e) {
+      limitsErr = e;
+    }
+    if (myGen !== rulesGen || root.isConnected === false) return;
+
+    let tier = null;
+    try {
+      tier = await api.tier();
+    } catch (_) {
+      tier = paintedTier || peekSafe("tier") || null;
+    }
+    if (myGen !== rulesGen || root.isConnected === false) return;
+
+    if (limitsErr) {
+      if (hadPeek && paintedLimits) {
+        paintRules(paintedLimits, tier, limitsErr);
+      } else {
+        paintRules(null, null, limitsErr);
+      }
+    } else {
+      paintRules(limits, tier, null);
+    }
   }
 
   ctx.onChange(() => {

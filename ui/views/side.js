@@ -139,23 +139,78 @@ export function sidePanel(ctx) {
     }
   }
 
+  function peekSafe(name) {
+    if (!api || typeof api.peek !== "function") return undefined;
+    const v = api.peek(name);
+    if (!v || typeof v.then === "function") return undefined;
+    return v;
+  }
+
+  let sideGen = 0;
+  let lastPaintSig = null;
+  let cachedAgent = null;
+  let cachedPort = null;
+  let cachedIps = null;
+  let cachedAudit = null;
+
+  function paintAll(a, p, i, v, auditErr) {
+    const sig = JSON.stringify({
+      a,
+      p,
+      i,
+      v,
+      auditErr: auditErr || "",
+    });
+    if (sig === lastPaintSig) return;
+    lastPaintSig = sig;
+    if (a !== undefined) agent = a;
+    paintWallet(agent, p);
+    paintLimit(p, i);
+    paintGas(agent);
+    paintAudit(v, auditErr);
+  }
+
   async function load() {
+    const myGen = ++sideGen;
     const [a, p, i, v] = await Promise.allSettled([
       api.agent(),
       api.portfolio(),
       api.ips(),
       api.auditVerify(),
     ]);
-    agent = a.status === "fulfilled" ? a.value : null;
-    const port = p.status === "fulfilled" ? p.value : null;
-    paintWallet(agent, port);
-    paintLimit(port, i.status === "fulfilled" ? i.value : null);
-    paintGas(agent);
-    paintAudit(v.status === "fulfilled" ? v.value : null, v.status === "rejected" ? ctx.describeError(v.reason) : "");
+    if (node.isConnected === false || myGen !== sideGen) return;
+
+    if (a.status === "fulfilled") cachedAgent = a.value;
+    if (p.status === "fulfilled") cachedPort = p.value;
+    if (i.status === "fulfilled") cachedIps = i.value;
+    if (v.status === "fulfilled") cachedAudit = v.value;
+
+    const freshAuditErr = v.status === "rejected" ? ctx.describeError(v.reason) : "";
+    paintAll(
+      cachedAgent,
+      cachedPort,
+      cachedIps,
+      cachedAudit,
+      freshAuditErr,
+    );
   }
 
-  // Skeletons first, so the column never jumps empty.
-  for (const c of [wallet, limit, gas, audit]) c.append(el("p", "note", "Loading…"));
+  // Paint from peek immediately if available; otherwise skeletons first.
+  const peekAgent = peekSafe("agent");
+  const peekPort = peekSafe("portfolio");
+  const peekIps = peekSafe("ips");
+  const peekAudit = peekSafe("auditVerify");
+
+  if (peekAgent !== undefined || peekPort !== undefined || peekIps !== undefined || peekAudit !== undefined) {
+    cachedAgent = peekAgent ?? null;
+    cachedPort = peekPort ?? null;
+    cachedIps = peekIps ?? null;
+    cachedAudit = peekAudit ?? null;
+    paintAll(cachedAgent, cachedPort, cachedIps, cachedAudit, "");
+  } else {
+    for (const c of [wallet, limit, gas, audit]) c.append(el("p", "note", "Loading…"));
+  }
+
   ctx.onChange(() => {
     if (node.isConnected !== false && ctx.state.me) load();
   });

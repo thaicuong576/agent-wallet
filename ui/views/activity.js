@@ -48,9 +48,31 @@ export function render(ctx) {
   list.setAttribute("aria-live", "polite");
   root.append(head, frozen, tools, verdict, chips, list);
 
+  function peekSafe(name) {
+    if (!api || typeof api.peek !== "function") return undefined;
+    const v = api.peek(name);
+    if (!v || typeof v.then === "function") return undefined;
+    return v;
+  }
+
+  let actGen = 0;
+
   async function load() {
+    const myGen = ++actGen;
     list.replaceChildren(...activitySkeleton(el, 3));
+    const peekTier = peekSafe("tier");
+    if (peekTier && peekTier.emergency_stop) {
+      frozen.replaceChildren(frozenCard(el));
+    }
+    const peekAgent = peekSafe("agent");
+    if (peekAgent) {
+      price.hidden = false;
+      price.textContent =
+        "Reference price: " + String(peekAgent.price_source).replace(/_/g, " ") + ". Not testnet market prices.";
+    }
+
     const me = await ctx.refreshSession();
+    if (myGen !== actGen || root.isConnected === false) return;
     if (!me) {
       list.replaceChildren(
         emptyState(el, "Connect a wallet to see decisions.", null, { label: "Set up your agent", hash: "#/setup" }),
@@ -60,19 +82,31 @@ export function render(ctx) {
     chain.check();
     api
       .tier()
-      .then((t) => frozen.replaceChildren(...(t.emergency_stop ? [frozenCard(el)] : [])))
-      .catch(() => frozen.replaceChildren());
+      .then((t) => {
+        if (myGen === actGen && root.isConnected !== false) {
+          frozen.replaceChildren(...(t.emergency_stop ? [frozenCard(el)] : []));
+        }
+      })
+      .catch(() => {
+        if (myGen === actGen && root.isConnected !== false && !peekTier) {
+          frozen.replaceChildren();
+        }
+      });
     try {
       const items = await loadRecords(ctx, 50);
+      if (myGen !== actGen || root.isConnected === false) return;
       const jobs = await api.jobs().catch(() => ({ items: [] }));
+      if (myGen !== actGen || root.isConnected === false) return;
       const latest = (jobs.items || []).find((j) => j.kind === "run");
       const label = plannerLabel(latest);
       planner.hidden = !label;
       planner.textContent = label || "";
       const agent = await api.agent().catch(() => null);
-      price.hidden = !agent;
-      price.textContent = agent
-        ? "Reference price: " + String(agent.price_source).replace(/_/g, " ") + ". Not testnet market prices."
+      if (myGen !== actGen || root.isConnected === false) return;
+      const activeAgent = agent || peekAgent;
+      price.hidden = !activeAgent;
+      price.textContent = activeAgent
+        ? "Reference price: " + String(activeAgent.price_source).replace(/_/g, " ") + ". Not testnet market prices."
         : "";
       list.replaceChildren();
       if (!items.length) {
@@ -94,13 +128,32 @@ export function render(ctx) {
         }
       }
     } catch (e) {
-      list.replaceChildren(el("li", "msg error", ctx.describeError(e)));
+      if (myGen === actGen && root.isConnected !== false) {
+        list.replaceChildren(el("li", "msg error", ctx.describeError(e)));
+      }
     }
   }
 
   refresh.addEventListener("click", load);
   verify.addEventListener("click", async () => {
-    showVerdict("warn", "Checking the audit chain…", "");
+    const peekAudit = peekSafe("auditVerify");
+    if (peekAudit) {
+      if (peekAudit.ok) {
+        showVerdict(
+          "ok",
+          "✓ Hash chain intact (" + peekAudit.records + " records verified)",
+          "Verified by the server: every record links to the one before it.",
+        );
+      } else {
+        showVerdict(
+          "bad",
+          "✕ Hash chain broken at record " + peekAudit.first_bad_seq,
+          "The record with seq " + peekAudit.first_bad_seq + " does not match the hash of the record before it.",
+        );
+      }
+    } else {
+      showVerdict("warn", "Checking the audit chain…", "");
+    }
     try {
       const v = await api.auditVerify();
       if (v.ok) {
@@ -117,7 +170,9 @@ export function render(ctx) {
         );
       }
     } catch (e) {
-      showVerdict("bad", "Could not check the chain", ctx.describeError(e));
+      if (!peekAudit) {
+        showVerdict("bad", "Could not check the chain", ctx.describeError(e));
+      }
     }
   });
   browserCheck.addEventListener("click", async () => {
