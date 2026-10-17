@@ -1,6 +1,6 @@
 # Architecture: Chat SSE Stream
 
-Owner: `api/sse.py` (backend), `ui/sse.js` (frontend).
+Owner: `api/sse.py` (backend), `ui/lib/sse.js` (frontend).
 
 Server-Sent Events progress streaming for chat jobs (ticket C-C, spec PR C), providing real-time job phase updates without waiting for polling intervals, while preserving resilient polling fallback.
 
@@ -9,8 +9,8 @@ Server-Sent Events progress streaming for chat jobs (ticket C-C, spec PR C), pro
 ```mermaid
 flowchart LR
   subgraph Frontend ["ui/"]
-    CV["views/chat.js<br/>follow(jobId)"]
-    SSE_UI["ui/sse.js<br/>fetchEventSource"]
+    CV["views/chat/index.js<br/>follow(jobId)"]
+    SSE_UI["ui/lib/sse.js<br/>fetchEventSource"]
     PC["views/progress.js<br/>progress card"]
     POLL["main.js<br/>ctx.pollJob"]
   end
@@ -43,11 +43,11 @@ flowchart LR
    - Emits a final `done` event with the full job payload once terminal status is reached.
    - Cleanly terminates on client disconnect without cancelling the job.
 
-2. **`ui/sse.js`**:
+2. **`ui/lib/sse.js`**:
    - Plain JavaScript SSE parser and stream consumer adapted from `Azure/fetch-event-source` (MIT).
    - Supports `ReadableStream`, custom headers (e.g. `X-AW-CSRF`), `Last-Event-ID` resumption, and `AbortController` cancellation.
    - Zero third-party dependencies.
 
-3. **`ui/views/chat.js`**:
+3. **`ui/views/chat/index.js`**:
    - `follow(jobId)` uses `streamJob` to follow `phase` events in real-time.
    - If streaming fails, is rejected, or is unsupported, seamlessly falls back to `ctx.pollJob(jobId)` without user-visible difference.

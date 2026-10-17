@@ -1,6 +1,6 @@
 # Architecture: REST API backend
 
-Owner: `api` (`api/app.py`, `api/main.py`). The HTTP interface implementing the single API contract between the minimal UI, the eval harness, and the backend as specified in `contracts/openapi.yaml`.
+Owner: `api` (`api/app.py`, `api/routes/`, `api/main.py`). The HTTP interface implementing the single API contract between the minimal UI, the eval harness, and the backend as specified in `contracts/openapi.yaml`.
 
 ## Component architecture
 
@@ -91,11 +91,11 @@ The wallet-session routes of design 12.2 are mounted by `create_app` on every st
 | `/topups/{tx_hash}` | `GET` | session | `api/wallet.py` |
 | `/presets` | `GET` | none | `api/wallet.py` (one placeholder preset; ticket A4 replaces it) |
 | `/audit/verify` | `GET` | session | `api/wallet.py` (`verify_chain` on the owner's chain) |
-| `/agent/mint`, `/runs` | `POST` | session | `api/jobs.py` |
-| `/agent/withdraw` | `POST` | session plus step-up `withdraw` | `api/jobs.py` |
-| `/jobs`, `/jobs/{job_id}` | `GET` | session | `api/jobs.py` |
-| `/jobs/{job_id}/cancel` | `POST` | session (CSRF header as every write) | `api/jobs.py` (ticket 122) |
-| `/chat` | `POST` | session (CSRF header as every write) | `api/chat.py` (starts a job of kind `chat` in `api/jobs.py`) |
+| `/agent/mint`, `/runs` | `POST` | session | `api/jobs/` |
+| `/agent/withdraw` | `POST` | session plus step-up `withdraw` | `api/jobs/` |
+| `/jobs`, `/jobs/{job_id}` | `GET` | session | `api/jobs/` |
+| `/jobs/{job_id}/cancel` | `POST` | session (CSRF header as every write) | `api/jobs/` (ticket 122) |
+| `/chat` | `POST` | session (CSRF header as every write) | `api/chat.py` (starts a job of kind `chat` in `api/jobs/`) |
 | `/chat?limit=50&thread_id=` | `GET` | session | `api/chat.py` |
 | `/chat/stream/{job_id}` | `GET` | session | `api/sse.py` (Server-Sent Events: `phase`, `done`, 15 s comment ping) |
 | `/chat/threads?limit=30` | `GET` | session | `api/chat.py` |
@@ -104,7 +104,7 @@ The wallet-session routes of design 12.2 are mounted by `create_app` on every st
 | `/protocols` | `GET` | session | `api/limits.py` (registry entries the owner's IPS enables; see `protocols.md`) |
 | `/chat/suggestions` | `GET` | session | `api/limits.py` (prompts chosen by code from state, no LLM call; contract C5) |
 
-Rules enforced here: the owner address comes only from `require_session` (no route has an owner parameter or body field; extra body fields are `422`); a foreign `job_id` or `tx_hash` is `404`; problems use the 12.1 slugs (`job-in-progress` 409 with the active `job_id`, `rate-limited` 429 with `Retry-After`, `custody-unavailable` 503); `origin="owner"` appears only in `api/jobs.py`.
+Rules enforced here: the owner address comes only from `require_session` (no route has an owner parameter or body field; extra body fields are `422`); a foreign `job_id` or `tx_hash` is `404`; problems use the 12.1 slugs (`job-in-progress` 409 with the active `job_id`, `rate-limited` 429 with `Retry-After`, `custody-unavailable` 503); `origin="owner"` appears only in `api/jobs/`.
 
 | Claim | Proving check |
 | :--- | :--- |
@@ -150,7 +150,7 @@ An order already inside `propose` is never interrupted or undone, and cancel nev
 
 | Claim | Proving check |
 | :--- | :--- |
-| Phase per status and per intent, on jobs and chat; cancel queued, between two and three orders, `409` after `sent` and when finished, `404`, CSRF, cross-tenant, signer never named in `api/jobs.py` | `pytest tests/webapp/test_job_phases.py -q` |
+| Phase per status and per intent, on jobs and chat; cancel queued, between two and three orders, `409` after `sent` and when finished, `404`, CSRF, cross-tenant, signer never named in `api/jobs/` | `pytest tests/webapp/test_job_phases.py -q` |
 
 ### Chat progress stream (ticket C-C)
 

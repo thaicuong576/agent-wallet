@@ -1,6 +1,6 @@
 # Planner and Reader architecture note
 
-Owner module: `core.agent` (`core/agent/reader.py`, `core/agent/planner.py`, `core/agent/client.py`).
+Owner module: `core.agent` (`core/agent/reader.py`, `core/agent/planner/`, `core/agent/client.py`).
 
 The `core.agent` package implements the Dual-LLM pattern with prompt-injection defense based on [CaMeL (Google DeepMind, 2025)](https://arxiv.org/abs/2503.18813). An isolated Reader converts untrusted external text into structured, schema-bound facts with instruction filtering. The Planner consumes portfolio state, IPS summaries, and sanitized facts to propose candidate orders strictly adhering to `contracts/schemas/order.schema.json`.
 

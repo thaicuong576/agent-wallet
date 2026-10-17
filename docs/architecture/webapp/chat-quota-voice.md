@@ -1,9 +1,9 @@
 # Chat Quota Buckets and One-Voice Composition
 
 Owning modules:
-- `api/jobs.py`: `JobLimits`, `JobService` (quota check, action/inquiry classification, refund).
+- `api/jobs/`: `JobLimits`, `JobService` (quota check, action/inquiry classification, refund).
 - `api/chat_compose.py`: `compose_agent_text` (one-voice composition).
-- `core/agent/planner.py`: `FallbackPlanner` (keyword routing, swap support).
+- `core/agent/planner/`: `FallbackPlanner` (keyword routing, swap support).
 - `core/storage`: `JobStore` implementations (`SqliteJobs`, `PgJobStore`).
 
 Specification: [`docs/design/webapp/chat-v3-spec.md`](../../design/webapp/chat-v3-spec.md).

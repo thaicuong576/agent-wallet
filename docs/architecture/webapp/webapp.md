@@ -8,9 +8,9 @@ Source of truth: `docs/design/webapp/system-design.md` sections 5, 8, 10, 11, 12
 | :--- | :--- |
 | `api/wallet.py` | `WebappServices`, `current_tenant` (the session owner's tenant), `WalletService` (live balances, gas floor, top-up verification through an injected RPC callable), the top-up service over `tenant.stores.topups`, routes `/me`, `/agent`, `/topups`, `/presets`, `/audit/verify` |
 | `api/readcache.py` | `ReadCache`: in-process cache for state reads (`/portfolio`, `/agent`, `/audit/verify`) with single flight, tenant isolation, version invalidation, and bounded memory (ticket G) |
-| `api/jobs.py` | `JobService` (`start`, `get`, `list`, `mark_interrupted_on_startup`), `JobLimits` (the job rows live in `tenant.stores.jobs`; `SqliteJobs` is re-exported from `core/storage/sqlite/webapp.py`), routes `/agent/mint`, `/agent/withdraw`, `/runs`, `/jobs` |
+| `api/jobs/` | `JobService` (`start`, `get`, `list`, `mark_interrupted_on_startup`), `JobLimits` (the job rows live in `tenant.stores.jobs`; `SqliteJobs` is re-exported from `core/storage/sqlite/webapp.py`), routes `/agent/mint`, `/agent/withdraw`, `/runs`, `/jobs` |
 | `api/chat.py`, `api/chat_compose.py` | `POST /chat`, `GET /chat`; step and message text composed by code from audit records (ticket 115) |
-| `core/agent/planner.py` | `FallbackPlanner`: deterministic, labelled `fallback`; reads an owner chat message by keywords |
+| `core/agent/planner/` | `FallbackPlanner`: deterministic, labelled `fallback`; reads an owner chat message by keywords |
 | `core/runner/runner.py` | `Runner.run_instruction`: one owner chat message, planned and proposed order by order |
 | `api/main.py` | In `AGENT_WALLET_MODE=multi`, builds the services from the environment (RPC URL, keystore secret, `DATABASE_URL` or data directory) and the `StorageBackend` |
 | `core/gateway/tenant.py` | `TenantRegistry(settings, rpc, backend=...)` builds every per-owner object from `backend.open_tenant(owner)` |
@@ -159,7 +159,7 @@ To avoid redundant sequential JSON-RPC calls to Base Sepolia and repeated hash c
 | Gas floor before mint, run and withdraw | `test_jobs.py::test_gas_below_floor_fails_before_anything_is_proposed` |
 | Cross-owner isolation | `tests/webapp/test_routes.py::test_session_a_cannot_read_owner_b_state` and the other isolation tests |
 | Read cache: TTL, single flight, copies, isolation, version recompute | `tests/webapp/test_readcache.py`, `tests/webapp/test_wallet.py` (`portfolio_state_cached`, `agent_state_cached`, `audit_verify_cached`) |
-| `origin="owner"` only in `api/jobs.py` | `test_jobs.py::test_origin_owner_literal_only_in_jobs_module` |
+| `origin="owner"` only in `api/jobs/` | `test_jobs.py::test_origin_owner_literal_only_in_jobs_module` |
 | Keystore, chain and jobs survive a restart on both backends | `tests/webapp/test_storage_backends.py::test_restart_keeps_keystore_and_chain`, `test_running_job_is_interrupted_after_restart` |
 | Sign-in creates the tenant and a keystore row | `test_storage_backends.py::test_sign_in_creates_tenant_and_keystore` |
 | A second owner cannot read the first owner's rows | `test_storage_backends.py::test_second_owner_cannot_read_first_owners_rows` |
