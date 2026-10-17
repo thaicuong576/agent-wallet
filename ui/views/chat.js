@@ -25,42 +25,144 @@ const ENDED_STATUS = new Set(["succeeded", "denied", "failed", "interrupted"]);
 // Transaction hashes are shown only as BaseScan links on the step cards, not in the prose.
 const TX_LIST = /\s*Transactions?: 0x[0-9a-f]{64}(?:, 0x[0-9a-f]{64})*\.?/g;
 
+export function extractClarificationOptions(text) {
+  if (typeof text !== "string") return [];
+  const clean = text.trim();
+  if (!clean) return [];
+
+  // 1. Check for listed options (bulleted or numbered)
+  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+  const listItems = [];
+  for (const line of lines) {
+    const m = line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/);
+    if (m) {
+      const item = m[1].replace(/[.,;]+$/, "").trim();
+      if (item) listItems.push(item);
+    }
+  }
+  if (listItems.length >= 2 && listItems.length <= 3) {
+    if (listItems.every((item) => item.length > 0 && item.length <= 50)) {
+      return listItems;
+    }
+  }
+
+  // 2. Check for question with "A or B" or "A, B, or C"
+  const questionMatch = clean.match(/([^.?!:\n]+)\?\s*$/);
+  if (questionMatch) {
+    let q = questionMatch[1].trim();
+    if (q.includes(":")) {
+      q = q.split(":").pop().trim();
+    }
+    const prefixMatch = q.match(/^(?:Do you want(?: to)?|Would you like(?: to)?|Should I(?: deposit| swap| supply| withdraw| send| use)?(?:\s+(?:in|into|to|from))?|Choose between|Did you mean)\s+(.+)$/i);
+    const target = prefixMatch ? prefixMatch[1] : q;
+
+    if (/\bor\b/i.test(target)) {
+      const parts = target.split(/\s*,\s*or\s+|\s+or\s+|\s*,\s*/i)
+        .map((p) => p.replace(/^["'`(\s]+|["'`)?.,;]+$/g, "").trim())
+        .filter(Boolean);
+      if (parts.length >= 2 && parts.length <= 3) {
+        if (parts.every((p) => p.length > 0 && p.length <= 50)) {
+          return parts;
+        }
+      }
+    }
+  }
+
+  return [];
+}
+
+export function populateAgentBubble(ctx, li, message, opts = {}) {
+  const { el } = ctx;
+  li.replaceChildren();
+  li.append(el("span", "who", "Agent"));
+
+  const frame = el("div", "text");
+  const raw = typeof message.text === "string" ? message.text : "";
+  const rawChunks = raw.split("\n\n");
+  const chunks = rawChunks.map((c) => c.replace(TX_LIST, "").trim()).filter(Boolean);
+
+  const steps = Array.isArray(message.steps) ? message.steps : [];
+
+  const leadIn = [];
+  const outcome = [];
+
+  for (const chunk of chunks) {
+    if (chunk.startsWith(AGENT_SAYS)) {
+      leadIn.push(chunk.slice(AGENT_SAYS.length).trim());
+    } else {
+      outcome.push(chunk);
+    }
+  }
+
+  if (!leadIn.length && outcome.length > 1 && steps.length) {
+    leadIn.push(outcome.shift());
+  }
+
+  if (steps.length) {
+    for (const text of leadIn) {
+      frame.append(el("p", "agent-lead", text));
+    }
+    const list = el("ol", "steps");
+    for (const s of steps) list.append(stepCard(ctx, s, opts));
+    frame.append(list);
+    for (const text of outcome) {
+      frame.append(el("p", "agent-outcome", text));
+    }
+    const codes = new Set(steps.flatMap((s) => (Array.isArray(s.rule_codes) ? s.rule_codes : [])));
+    if ([...codes].some((c) => NEEDS_ACTIVATION.has(c))) {
+      const hint = el("p", "hint", "Your agent is not allowed to act yet.");
+      hint.append(cta(el, "Activate your agent", "#/setup", "primary"));
+      frame.append(hint);
+    } else if ([...codes].some((c) => STOPPED.has(c))) {
+      frame.append(el("p", "hint", "The agent is frozen. Use Resume in the top bar."));
+    }
+  } else {
+    for (const chunk of chunks) {
+      const text = chunk.startsWith(AGENT_SAYS) ? chunk.slice(AGENT_SAYS.length).trim() : chunk;
+      frame.append(el("p", "", text));
+    }
+  }
+
+  li.append(frame);
+
+  if (opts.onTry && message.intent === "clarify") {
+    const options = extractClarificationOptions(raw);
+    if (options.length >= 2 && options.length <= 3) {
+      const chipsBox = el("div", "clarify-options");
+      chipsBox.setAttribute("role", "group");
+      chipsBox.setAttribute("aria-label", "Clarification options");
+      for (const opt of options) {
+        const btn = el("button", "prompt-chip clarify-chip", opt);
+        btn.type = "button";
+        btn.addEventListener("click", () => opts.onTry(opt));
+        chipsBox.append(btn);
+      }
+      li.append(chipsBox);
+    }
+  }
+
+  return li;
+}
+
 // One message bubble, with its step cards under an agent message. `opts` goes to stepCard
 // ({limits, onTry, onAsk}); every field is optional.
 export function bubble(ctx, message, opts = {}) {
   const { el } = ctx;
   const mine = message.role === "user";
   const li = el("li", "bubble " + (mine ? "user" : "agent"));
-  li.append(el("span", "who", mine ? "You" : "Agent"));
-  const text = el("div", "text");
-  const raw = typeof message.text === "string" ? message.text : "";
-  for (const chunk of raw.split("\n\n")) {
-    const part = chunk.replace(TX_LIST, "");
-    if (!part) continue;
-    if (!mine && part.startsWith(AGENT_SAYS)) {
-      const p = el("p", "says");
-      p.append(el("span", "chip", "Agent says"), " " + part.slice(AGENT_SAYS.length));
-      text.append(p);
-    } else {
-      text.append(el("p", "", part));
+  if (mine) {
+    li.append(el("span", "who", "You"));
+    const frame = el("div", "text");
+    const raw = typeof message.text === "string" ? message.text : "";
+    for (const chunk of raw.split("\n\n")) {
+      const part = chunk.replace(TX_LIST, "").trim();
+      if (!part) continue;
+      frame.append(el("p", "", part));
     }
+    li.append(frame);
+    return li;
   }
-  li.append(text);
-  const steps = Array.isArray(message.steps) ? message.steps : [];
-  if (steps.length) {
-    const list = el("ol", "steps");
-    for (const s of steps) list.append(stepCard(ctx, s, opts));
-    li.append(list);
-    const codes = new Set(steps.flatMap((s) => (Array.isArray(s.rule_codes) ? s.rule_codes : [])));
-    if ([...codes].some((c) => NEEDS_ACTIVATION.has(c))) {
-      const hint = el("p", "hint", "Your agent is not allowed to act yet.");
-      hint.append(cta(el, "Activate your agent", "#/setup", "primary"));
-      li.append(hint);
-    } else if ([...codes].some((c) => STOPPED.has(c))) {
-      li.append(el("p", "hint", "The agent is frozen. Use Resume in the top bar."));
-    }
-  }
-  return li;
+  return populateAgentBubble(ctx, li, message, opts);
 }
 
 export function render(ctx) {
@@ -203,10 +305,46 @@ export function render(ctx) {
     return limitsCache;
   }
 
+  function removeClarifyChips() {
+    const list = log.children ? [...log.children] : [];
+    for (const li of list) {
+      if (li.children) {
+        for (const c of [...li.children]) {
+          if (c.className && c.className.includes("clarify-options")) c.remove();
+        }
+      }
+    }
+  }
+
+  function showSkeleton() {
+    const skeleton = el("li", "chat-skeleton skeleton");
+    skeleton.setAttribute("role", "status");
+    skeleton.setAttribute("aria-label", "Loading chat");
+    skeleton.append(
+      el("div", "skeleton-bar"),
+      el("div", "skeleton-bar"),
+      el("div", "skeleton-bar"),
+    );
+    log.replaceChildren(skeleton);
+  }
+
+  function showThreadError(id) {
+    const box = el("li", "empty error-box");
+    const p = el("p", "", "Couldn't load this chat.");
+    const retry = el("button", "btn primary", "Retry");
+    retry.type = "button";
+    retry.addEventListener("click", () => {
+      selectThread(id, true);
+    });
+    box.append(p, retry);
+    log.replaceChildren(box);
+  }
+
   function showHistory(items, limits) {
     hasMessages = items.length > 0;
     const lastAgent = items.map((m) => m.role).lastIndexOf("agent");
     if (!items.length) {
+      if (live) dropLive();
       const li = el("li", "empty");
       li.append(
         el("p", "", "No messages yet."),
@@ -221,26 +359,47 @@ export function render(ctx) {
     }
     // Quick fixes (Try ..., Why is this blocked?) are offered on the newest agent message only.
     const quick = { limits, onTry: fill, onAsk: (q) => submit(q) };
-    log.replaceChildren(
-      ...items.map((m, i) => bubble(ctx, m, i === lastAgent ? quick : { limits })),
+    const hasLiveInDom = Boolean(
+      live && live.li && ((log.contains && log.contains(live.li)) || (log.children && log.children.includes(live.li)))
     );
+
+    if (hasLiveInDom && lastAgent !== -1) {
+      live.prog.destroy();
+      live.li.className = "bubble agent";
+      populateAgentBubble(ctx, live.li, items[lastAgent], quick);
+      const liveNode = live.li;
+      live = null;
+
+      const rendered = items.map((m, i) => (i === lastAgent ? liveNode : bubble(ctx, m, { limits })));
+      log.replaceChildren(...rendered);
+    } else {
+      if (live) dropLive();
+      log.replaceChildren(
+        ...items.map((m, i) => bubble(ctx, m, i === lastAgent ? quick : { limits })),
+      );
+    }
     const last = log.lastChild;
     if (last && typeof last.scrollIntoView === "function") last.scrollIntoView({ block: "end" });
   }
 
   // `resume`: a job still running on the server (the page was reloaded, or another thread was
   // opened) is followed again; the live card replaces its half-finished message.
-  async function loadHistory(resume = false) {
+  async function loadHistory(resume = false, selectTok = null) {
     const token = ++historyToken;
     const forId = threadId;
     try {
       const page = await api.chat(50, forId);
       if (token !== historyToken || threadId !== forId) return;
+      if (selectTok !== null && selectTok !== selectToken) return;
       const all = Array.isArray(page.items) ? page.items : [];
       const running = all.filter((m) => m.role === "agent" && ACTIVE_PHASES.has(m.phase) && m.job_id);
       const items = all.filter((m) => !running.includes(m));
-      const limits = await getLimits();
+      const needsLimits = items.some(
+        (m) => Array.isArray(m.steps) && m.steps.some((s) => s.outcome === "denied" || s.outcome === "pending")
+      );
+      const limits = needsLimits ? await getLimits() : limitsCache;
       if (token !== historyToken || threadId !== forId) return;
+      if (selectTok !== null && selectTok !== selectToken) return;
       showHistory(items, limits);
       const last = running[running.length - 1];
       if (resume && last && (!activeJob || activeJob.threadId !== threadId) && /^[0-9a-f]{32}$/.test(last.job_id)) {
@@ -248,6 +407,7 @@ export function render(ctx) {
       }
     } catch (e) {
       if (token !== historyToken || threadId !== forId) return;
+      if (selectTok !== null && selectTok !== selectToken) return;
       if (e && e.status === 404 && threadId !== null) {
         ctx.state.threadId = null;
         threadId = null;
@@ -255,6 +415,9 @@ export function render(ctx) {
         await loadThreads();
         await loadHistory(false);
         return;
+      }
+      if (selectTok !== null) {
+        throw e;
       }
       status.className = "msg error";
       status.textContent = ctx.describeError(e);
@@ -293,11 +456,16 @@ export function render(ctx) {
   // The live progress card of the job this view follows. It sits under a bubble of its own.
   function startLive() {
     const li = el("li", "bubble agent live");
+    li.append(el("span", "who", "Agent"));
+    const frame = el("div", "text");
+    const streamPara = el("p", "streaming-text", "");
+    streamPara.hidden = true;
     const prog = createProgress(el, { onStop: stop });
-    li.append(prog.node);
+    frame.append(streamPara, prog.node);
+    li.append(frame);
     log.append(li);
     scroll.scrollTop = scroll.scrollHeight;
-    return { li, prog };
+    return { li, frame, streamPara, prog };
   }
 
   function dropLive() {
@@ -312,7 +480,7 @@ export function render(ctx) {
     loadThreads();
   }
 
-  async function streamJob(jobId, onUpdate) {
+  async function streamJob(jobId, onUpdate, onToken, onReset) {
     if (api.fixtures || typeof globalThis.ReadableStream === "undefined") {
       throw new Error("SSE not available");
     }
@@ -339,7 +507,16 @@ export function render(ctx) {
         }
       },
       onmessage(ev) {
-        if (ev.event === "phase") {
+        if (ev.event === "token") {
+          try {
+            const data = JSON.parse(ev.data);
+            if (data && typeof data.text === "string" && onToken) {
+              onToken(data.text);
+            }
+          } catch (_) {}
+        } else if (ev.event === "reset") {
+          if (onReset) onReset();
+        } else if (ev.event === "phase") {
           try {
             const data = JSON.parse(ev.data);
             if (data && typeof data.phase === "string") {
@@ -377,6 +554,22 @@ export function render(ctx) {
     lock();
     let job = null;
 
+    function handleToken(text) {
+      if (threadId === forThreadId && live && live.streamPara) {
+        live.streamPara.hidden = false;
+        live.streamPara.textContent += text;
+        const near = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+        if (near) scroll.scrollTop = scroll.scrollHeight;
+      }
+    }
+
+    function handleReset() {
+      if (threadId === forThreadId && live && live.streamPara) {
+        live.streamPara.textContent = "";
+        live.streamPara.hidden = true;
+      }
+    }
+
     function handleUpdate(phase, status) {
       const p = typeof phase === "string" ? phase : status === "queued" ? "queued" : "working";
       if (activeJob) activeJob.phase = p;
@@ -394,26 +587,34 @@ export function render(ctx) {
 
     try {
       try {
-        job = await streamJob(jobId, handleUpdate);
+        job = await streamJob(jobId, handleUpdate, handleToken, handleReset);
       } catch (_) {
         job = await ctx.pollJob(jobId, (j) => handleUpdate(j.phase, j.status));
       }
     } finally {
       activeJob = null;
       cancelling = false;
-      if (threadId === forThreadId) dropLive();
     }
-    limitsAt = 0;
     if (threadId === forThreadId) {
       await loadHistory();
       if (job && (job.status === "failed" || job.status === "interrupted")) {
         if (sent) {
           // The order left the wallet and the outcome is unknown: never say "nothing was sent".
-          const li = el("li", "bubble agent");
-          const list = el("ol", "steps");
-          list.append(uncertainCard(ctx));
-          li.append(list);
-          log.append(li);
+          if (live) {
+            live.prog.destroy();
+            live.prog.node.remove();
+            live.li.className = "bubble agent";
+            const list = el("ol", "steps");
+            list.append(uncertainCard(ctx));
+            live.frame.append(list);
+            live = null;
+          } else {
+            const li = el("li", "bubble agent");
+            const list = el("ol", "steps");
+            list.append(uncertainCard(ctx));
+            li.append(list);
+            log.append(li);
+          }
         } else {
           status.className = "msg error";
           status.textContent = "The request did not finish. See the agent's message above.";
@@ -444,7 +645,11 @@ export function render(ctx) {
     lock();
   }
 
-  async function loadSuggestions() {
+  let suggestionsAt = 0;
+  async function loadSuggestions(force = false) {
+    const now = Date.now();
+    if (!force && now - suggestionsAt < 3000) return;
+    suggestionsAt = now;
     let texts = PROMPTS;
     try {
       const res = await api.suggestions();
@@ -491,9 +696,9 @@ export function render(ctx) {
     title.textContent = name || (threadId === newThreadId ? "New chat" : "Your agent");
   }
 
-  async function selectThread(id) {
+  async function selectThread(id, force = false) {
     const clean = id === "default" || !id ? null : id;
-    if (threadId === clean) return;
+    if (!force && threadId === clean) return;
     const token = ++selectToken;
     newThreadId = null;
     if (live) dropLive();
@@ -503,15 +708,24 @@ export function render(ctx) {
     rail.setActive(clean);
     status.className = "msg";
     status.textContent = "";
+    showSkeleton();
     lock();
-    await loadHistory(true);
+    const name = clean === null ? "" : rail.title(clean);
+    title.textContent = name || (clean === newThreadId ? "New chat" : "Your agent");
+    try {
+      await loadHistory(true, token);
+    } catch (e) {
+      if (token !== selectToken || threadId !== clean) return;
+      showThreadError(clean);
+    }
     if (token !== selectToken || threadId !== clean) return;
-    await loadThreads();
+    lock();
   }
 
   async function newChat() {
     status.className = "msg";
     status.textContent = "";
+    removeClarifyChips();
     if (live) dropLive();
     if (threadId !== null && !hasMessages) {
       if (input.focus) input.focus();
@@ -560,6 +774,7 @@ export function render(ctx) {
     if (busy || frozen || activeJob) return;
     const text = typeof forced === "string" ? forced : input.value.trim();
     if (!text) return;
+    removeClarifyChips();
     if (text.length > MESSAGE_MAX) {
       status.className = "msg error";
       status.textContent = "Messages are limited to " + MESSAGE_MAX + " characters.";
@@ -586,9 +801,10 @@ export function render(ctx) {
     try {
       const accepted = await api.chatSend(text, sentInThread);
       busy = false;
+      const isNew = Boolean(newThreadId);
       newThreadId = null;
       live.prog.setReceived();
-      await loadThreads();
+      if (isNew) await loadThreads();
       if (sentInThread) rail.setActive(sentInThread);
       title.textContent = (sentInThread && rail.title(sentInThread)) || (text ? text.slice(0, 40) : "") || "Your agent";
       await follow(accepted.job_id, sentInThread);

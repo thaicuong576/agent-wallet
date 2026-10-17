@@ -57,7 +57,7 @@ After Activate succeeds the view calls `ctx.go("#/chat")` and the header re-rout
 ## Screens
 | Screen | File | Contents |
 | :--- | :--- | :--- |
-| Chat | `views/chat.js`, `views/progress.js`, `views/side.js` | Conversation card: owner bubbles right (yellow), agent bubbles left (grey), step cards under an agent message, the staged progress card while a job runs, suggested prompts above the composer (from `GET /chat/suggestions`, static fallback), history rail on the left, Enter sends, 500 character counter. Right column: wallet value and idle/earning bar, today's limit, gas with Top up, audit log line |
+| Chat | `views/chat.js`, `views/progress.js`, `views/side.js` | Conversation card: owner bubbles right (yellow), unified agent bubbles left (grey frame housing text, live progress, and expandable compact step rows), live streaming text via SSE tokens, clarification chips under question bubbles, thread switch skeleton, suggested prompts above composer (cached TTL), history rail on the left, Enter sends, 500 character counter. Right column: wallet value and idle/earning bar, today's limit, gas with Top up, audit log line |
 | Overview | `views/overview.js`, `holdings.js`, `icons.js`, `views/funds.js`, `views/withdraw.js`, `views/approvals.js` | Main column: a note and the approvals card when an order waits; the hero (agent wallet value, "working for you" and "idle", the allocation bar with legend, **Add funds** and **Withdraw**); "What the agent holds" grouped by what the money is doing (idle in the wallet, lent on Aave v3, Aave vaults, Morpho Blue, swapped assets), each row with token and protocol marks, amount, value and share, and the agent's gas. Side column: your wallet, today's limit, recent activity |
 | Activity | `views/activity.js` | Every decision, newest first, as step cards; Verify audit chain with a verdict card; planner and reference-price chips |
 | Rules | `views/rules.js` | Read-only rows from `GET /limits` (`ui/limits.js`), the allowed protocols with their marks, the **Agent permission** control (lower to propose-only or read-only) and the scripted **Safety demo** |
@@ -74,7 +74,7 @@ One vocabulary for Chat, Activity and Overview:
 | `skipped` | grey, ↷ | a step not attempted because an earlier one was blocked, and "No action" |
 | `fail` | red, ! | an execution that errored |
 
-The state is also a word ("Executed", "Blocked", "Waiting for you", "Skipped", "Failed"), so it is never colour alone. Transaction hashes appear only as BaseScan links; the "Transactions: 0x..." sentence the server composes into the agent's text is hidden because the cards carry the links. "Agent says" paragraphs get an "Agent says" chip: that is the model's own words, the cards are the record.
+The state is also a word ("Executed", "Blocked", "Waiting for you", "Skipped", "Failed"), so it is never colour alone. Transaction hashes appear only as BaseScan links; the "Transactions: 0x..." sentence the server composes into the agent's text is hidden because the cards carry the links. Step cards are rendered as compact expandable rows (`<details>`) within the unified agent bubble. The legacy "Agent says" chip is removed so the model's lead-in text and outcome sentences sit cleanly around the record cards without decorative labeling.
 
 ## Never silent: the progress card (`views/progress.js`)
 Within 100 ms of Send the owner's bubble and a progress card are in the conversation (the card is created before the request leaves) and the list is scrolled to them; the Send button becomes Stop. The card is a list of rows that only ever grows, so it never promises a stage the backend cannot confirm. It maps the job `phase` that `GET /jobs/{id}` and `GET /chat` already carry (no backend change):
@@ -95,12 +95,16 @@ sequenceDiagram
   participant P as Page
   participant W as Wallet
   participant A as API
-  P->>P: Send: bubble, progress card, Stop (under 100 ms)
+  P->>P: Send: owner bubble, unified agent bubble with live card, Stop (under 100 ms)
   P->>A: POST /chat
   A-->>P: 202 job_id (card: Message received)
   alt SSE stream available
     P->>A: GET /chat/stream/{id} (text/event-stream)
     A-->>P: event: phase (card: stages)
+    A-->>P: event: token (live text streaming into unified bubble)
+    opt Model fallback / replan
+      A-->>P: event: reset (clears streamed text)
+    end
     A-->>P: event: done (job status)
   else Polling fallback
     loop 750 ms, then 1.5 s, then 3 s
@@ -108,16 +112,20 @@ sequenceDiagram
       A-->>P: status, phase (card: stages)
     end
   end
-  P->>A: GET /chat (the card is replaced by the answer and its step cards)
+  P->>A: GET /chat (unified bubble updates in-place: final text & compact step cards)
   Note over P,W: Withdraw and gas top-up: wallet prompt first, then the same staged card
 ```
 
 `GET /jobs/{id}` and each agent message in `GET /chat` carry `phase`: `queued`, `rules_check`, `sent`, `confirming`, `done`. `POST /jobs/{id}/cancel` (CSRF header) answers `202 {job_id, status: "cancelling"}`, or `409 not-cancellable` once the phase is `sent` or later; a cancelled job ends `status: "denied"`, `error_code: "OWNER_CANCELLED"`, and the steps not attempted are `outcome: "skipped"`. See [`api.md`](api.md#job-phases-and-cancel-ticket-122-contract-c1-and-c2).
 
-### Chat wiring (ticket 130, kept)
+### Chat wiring (ticket 130 & ticket E)
+- **Unified agent bubble (ticket E)**: Text and execution step results live in a single grey frame. Lead-in prose precedes compact expandable step rows (`<details class="step-details">`), followed by outcome sentences. The live bubble node is directly reused for history replacement upon job completion, guaranteeing exactly one agent bubble per turn.
+- **Live streaming & reset (ticket E)**: SSE `token` events append text directly to `p.streaming-text` using `textContent` (resisting HTML injection). SSE `reset` drops streamed text when the planner falls back. Polling fallback operates without tokens.
+- **Clarification chips (ticket E)**: When `intent === "clarify"`, up to 3 non-submitting suggestion chips are displayed under the bubble to populate the composer without auto-sending.
+- **Thread switch loading (ticket E)**: Immediate active thread highlight, clearing old messages, displaying a 3-bar shimmer skeleton (`.chat-skeleton.skeleton`, `prefers-reduced-motion` compliant), dropping stale responses via `selectToken`, and displaying a Retry button on failure.
 - **History rail** (`historyRail` in `views/side.js`): "+ New chat" and the threads from `GET /chat/threads` grouped Today, Yesterday, Earlier, each row with a title, a status word and a relative time; the implicit default conversation stays reachable as "Earlier chat". Rows are disabled while a job runs.
 - **Stop**: while a job is queued or running the Send button reads "Stop" and calls `POST /jobs/{id}/cancel`. A 409 shows "Too late to stop: this order is already sent." A job that ends `failed` after the page saw `sent` shows "It may still land. Check Activity before trying again."
-- **Limit line** on pending and blocked cards, **quick fixes** ("Try 100 USDC", "Why is this blocked?") on the newest agent message, and **prompt chips** from `GET /chat/suggestions`.
+- **Limit line** on pending and blocked cards, **quick fixes** ("Try 100 USDC", "Why is this blocked?") on the newest agent message, and **prompt chips** from `GET /chat/suggestions` (cached with 3 s TTL to eliminate duplicate calls).
 
 ### Chat thread lifecycle and routing (ticket T1)
 - **In-memory thread state (`ctx.state.threadId`)**: The active thread selection is kept strictly in memory on `ctx.state.threadId` and cleared on logout/disconnect (`ctx.signedOut()`). In keeping with the zero-storage policy, neither `localStorage` nor `sessionStorage` is touched.

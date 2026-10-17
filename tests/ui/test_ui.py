@@ -762,7 +762,7 @@ def test_chat_send_with_enter_shows_progress_then_step_cards() -> None:
     assert s["composerCleared"] is True
     assert s["sleeps"] == [750, 750]  # the fast first polls (see pollDelay)
     assert s["bubbles"] == ["bubble user", "bubble agent"]
-    assert s["cards"] == 2 and s["saysChips"] == 1
+    assert s["cards"] == 2 and s["saysChips"] == 0
     assert "Approved 10 USDC for the Aave pool." in s["text"] and "Executed" in s["text"]
     assert "Transactions:" not in s["text"]  # hashes appear only as BaseScan links
     assert s["links"] == [f"https://sepolia.basescan.org/tx/{TX_CHAT}"] * 2
@@ -803,7 +803,8 @@ def test_chat_history_prompt_chips_and_signed_out() -> None:
     assert f["history"]["bubbles"] == ["bubble user", "bubble agent"]
     assert f["history"]["getCalls"] == ["/chat?limit=50"]
     assert (
-        "Agent says" in f["history"]["text"] and "Wallet: 1000 USDC idle." in f["history"]["text"]
+        "Agent says" not in f["history"]["text"]
+        and "Wallet: 1000 USDC idle." in f["history"]["text"]
     )
     assert f["chipFilled"] == "Put 10 USDC to work in Aave"
     assert f["prompts"] == [
@@ -989,3 +990,45 @@ def test_chat_new_chat_never_jumps_to_default_on_send() -> None:
     assert r["stayedInNewThread"] is True
     assert r["threadAfterSend"] == "tnew"
     assert r["hashAfterSend"] == "#/chat/tnew"
+
+
+@needs_node
+def test_chat_v3_unified_bubble_and_measurement() -> None:
+    m = chat_flows()["measurement"]
+    # (a) API requests during send-and-finish: reduced, no duplicate calls
+    assert m["sendAndFinishTotal"] <= 10
+    assert m["sendAndFinishRequests"]["byRoute"]["POST /chat"] == 1
+    assert m["sendAndFinishRequests"]["byRoute"].get("GET /chat/threads", 0) <= 1
+    # (b) Time to first agent text is at first token (1.0s, not waiting for done at 3.0s)
+    assert m["timeToFirstAgentTextSec"] == 1.0
+    # (c) Exactly ONE agent bubble created in turn, reusing the live bubble node
+    assert m["bubblesCreatedInTurn"] == 1
+    assert m["reusedSameBubble"] is True
+    # (d) Thread switch: skeleton seen, single GET /chat request
+    assert m["threadSwitchRequests"]["total"] == 1
+    assert m["threadSwitchSkeletonSeen"] is True
+
+
+@needs_node
+def test_chat_v3_ticket_e_features() -> None:
+    e = chat_flows()["ticketE"]
+    # Clarification chips: offered when intent is clarify, fill composer,
+    # do not auto-send, removed on send
+    assert e["clarifyChips"] == ["Aave", "Compound"]
+    assert e["valueAfterClick"] == "Aave"
+    assert e["postCallsAfterClick"] == 0
+    assert e["clarifyChipsAfterSend"] == 0
+    # Live text streaming: token text appended with textContent, hostile tags stay text
+    assert e["hostileTextSeen"] == "Checking <img onerror=alert(1)>"
+    assert e["innerHTMLUsedDuringStream"] is False
+    # Reset clears streamed text
+    assert e["textAfterReset"] == ""
+    assert e["hiddenAfterReset"] is True
+    assert e["textAfterSecondToken"] == "Verified cleanly."
+    # Unified bubble: no Agent says chip, no AGENT_SAYS prefix
+    assert e["saysChipCount"] == 0
+    assert e["lastAgentHasSays"] is False
+    # Thread switch error and retry
+    assert "Couldn't load this chat." in e["errorText"]
+    assert "Retry" in e["errorText"]
+    assert any("Err msg" in b for b in e["recoveredBubbles"])
