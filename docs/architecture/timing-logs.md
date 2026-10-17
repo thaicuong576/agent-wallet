@@ -70,6 +70,11 @@ sequenceDiagram
    - Appends `Cache-Control: no-cache` to all responses under `/ui/`.
    - Preserves standard ETag validation: browsers cache assets but revalidate against the server with conditional HTTP `304 Not Modified`, ensuring deploys take effect immediately.
 
+6. **Request-Scoped Memoization (`_request_memo`)**:
+   - Scoped `ContextVar[dict[str, Any] | None]` initialized to an empty dictionary per HTTP request in `TimingMiddleware` and reset in the `finally` block.
+   - De-duplicates redundant within-request checks (e.g. `global_stop_flag`, `ips_for`).
+   - Never cached across requests: safety-critical flags and tier status are always evaluated fresh on each subsequent request.
+
 ## Verification
 
 | Requirement | Test |
@@ -82,3 +87,4 @@ sequenceDiagram
 | Chat milestones (`planner_first_token`, `chat_total`) | `tests/webapp/test_timing_logs.py::test_chat_milestones_logged` |
 | Database timing in HTTP logs & no secrets/SQL | `tests/webapp/test_timing_logs.py::test_http_timing_middleware_logs_db_metrics_and_no_sql_or_owner` |
 | Database timing per-request isolation | `tests/webapp/test_timing_logs.py::test_db_accumulator_per_request_isolation` |
+| Request-scoped memo lifecycle & within-request de-duplication | `tests/webapp/test_timing_logs.py::test_request_memo_isolation_and_deduplication` |
