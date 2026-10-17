@@ -3,7 +3,7 @@
 Autonomous AI wallet agent for FinTechathon 2026 (Topic F) managing on-chain assets on Base Sepolia inside an Investment Policy Statement (IPS) set by the owner. A deterministic policy engine evaluates every proposed order before any transaction is signed, ensuring the LLM never controls private keys or exceeds policy limits.
 
 - **Hosted Demo**: <https://agent-wallet-6vuy.onrender.com/ui/> (Base Sepolia testnet, Render free tier)
-- **Repository**: <https://github.com/FinTechathon-2026/agent-wallet>
+- **Repository**: <https://github.com/thaicuong576/agent-wallet>
 
 ```mermaid
 flowchart LR
@@ -39,7 +39,7 @@ With keys: copy `.env.example` to `.env`, set `BASE_SEPOLIA_RPC_URL`, `OPENAI_AP
 
 ## Running Tests
 ```sh
-make test                                   # 1,376 tests: unit, policy, gateway, storage, UI
+make test                                   # over 1,380 tests: unit, policy, gateway, storage, UI
 make eval                                   # 46 replay scenarios covering 27/28 rule codes
 python -m core.audit.verify docs/evidence/audit-chain.jsonl  # verifies audit hash chain
 ```
@@ -71,7 +71,7 @@ Real testnet transactions executed on Base Sepolia (chain ID 84532):
 - `docs/`: Technical documentation, deployment guides, test catalogues, architecture notes
 - `evals/`: 46 offline evaluation scenarios covering 27 of 28 rule codes
 - `scripts/`: Link checker, secret scanner, smoke test, and live transaction scripts
-- `tests/`: Pytest suite (1,376 tests across unit, policy, gateway, storage, UI)
+- `tests/`: Pytest suite (over 1,380 tests across unit, policy, gateway, storage, UI)
 - `ui/`: Zero-build single-page webapp console (plain HTML, CSS, and ES modules)
 
 ## Security Model
