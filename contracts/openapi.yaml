@@ -576,6 +576,7 @@ paths:
       operationId: createChatThread
       summary: Open an empty conversation.
       description: >-
+        Open an empty conversation, or return the owner's newest thread if it has no messages.
         The title starts as "New chat" and is set by code from the first 40 characters of the
         first owner message; the model never writes it.
       security: [{ SessionCookie: [] }]
@@ -585,6 +586,16 @@ paths:
           application/json:
             schema: { type: object, additionalProperties: false }
       responses:
+        "200":
+          description: Reused newest empty thread.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, title]
+                properties:
+                  id: { type: string }
+                  title: { type: string, maxLength: 40 }
         "201":
           description: Thread created.
           content:

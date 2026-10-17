@@ -229,6 +229,12 @@ export function createApi({
       case "newThread": {
         needSession();
         await seedThreads();
+        const sorted = fx.threads.slice().sort((a, b) => b.last_message_at.localeCompare(a.last_message_at));
+        const newest = sorted[0];
+        const hasMsgs = newest && fx.chat.some((m) => m.thread_id === newest.id);
+        if (newest && !hasMsgs) {
+          return { id: newest.id, title: newest.title };
+        }
         const t = { id: "t" + ++fx.threadSeq, title: "New chat", last_message_at: nowIso(), status: "done" };
         fx.threads.push(t);
         return { id: t.id, title: t.title };

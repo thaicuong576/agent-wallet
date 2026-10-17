@@ -65,6 +65,35 @@ def test_unreachable_database_is_storage_unavailable_and_global_stop_fails_close
         backend.close()
 
 
+def test_pg_chat_store_newest_empty_thread_offline() -> None:
+    from contextlib import contextmanager
+    from unittest.mock import MagicMock
+
+    from core.storage.postgres.adapters import PgChatStore
+
+    pool = MagicMock()
+    cur = MagicMock()
+
+    @contextmanager
+    def mock_tenant(owner):
+        yield cur
+
+    pool.tenant = mock_tenant
+    store = PgChatStore(pool, OWNER_A)
+
+    # 1. No threads
+    cur.fetchone.side_effect = [None]
+    assert store.newest_empty_thread() is None
+
+    # 2. Thread exists and is empty
+    cur.fetchone.side_effect = [("t1", "New chat"), None]
+    assert store.newest_empty_thread() == {"id": "t1", "title": "New chat"}
+
+    # 3. Thread exists and has messages
+    cur.fetchone.side_effect = [("t1", "New chat"), (1,)]
+    assert store.newest_empty_thread() is None
+
+
 # -- needs Postgres ----------------------------------------------------------------------------
 @pytest.fixture
 def be(pg_schema):  # noqa: F811

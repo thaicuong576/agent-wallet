@@ -138,6 +138,11 @@ export function render(ctx) {
   let limitsAt = 0;
   let limitsCache = null;
   let live = null; // {li, prog} while this view shows the progress card of a job
+  let historyToken = 0;
+  let threadsToken = 0;
+  let selectToken = 0;
+  let hasMessages = false;
+  let creatingThread = false;
 
   function updateHash(id) {
     const target = id ? "#/chat/" + encodeURIComponent(id) : "#/chat";
@@ -196,6 +201,7 @@ export function render(ctx) {
   }
 
   function showHistory(items, limits) {
+    hasMessages = items.length > 0;
     const lastAgent = items.map((m) => m.role).lastIndexOf("agent");
     if (!items.length) {
       const li = el("li", "empty");
@@ -222,17 +228,23 @@ export function render(ctx) {
   // `resume`: a job still running on the server (the page was reloaded, or another thread was
   // opened) is followed again; the live card replaces its half-finished message.
   async function loadHistory(resume = false) {
+    const token = ++historyToken;
+    const forId = threadId;
     try {
-      const page = await api.chat(50, threadId);
+      const page = await api.chat(50, forId);
+      if (token !== historyToken || threadId !== forId) return;
       const all = Array.isArray(page.items) ? page.items : [];
       const running = all.filter((m) => m.role === "agent" && ACTIVE_PHASES.has(m.phase) && m.job_id);
       const items = all.filter((m) => !running.includes(m));
-      showHistory(items, await getLimits());
+      const limits = await getLimits();
+      if (token !== historyToken || threadId !== forId) return;
+      showHistory(items, limits);
       const last = running[running.length - 1];
       if (resume && last && (!activeJob || activeJob.threadId !== threadId) && /^[0-9a-f]{32}$/.test(last.job_id)) {
         follow(last.job_id, threadId);
       }
     } catch (e) {
+      if (token !== historyToken || threadId !== forId) return;
       if (e && e.status === 404 && threadId !== null) {
         ctx.state.threadId = null;
         threadId = null;
@@ -445,14 +457,18 @@ export function render(ctx) {
   }
 
   async function loadThreads() {
+    const token = ++threadsToken;
     let items = [];
     try {
       const res = await api.threads();
+      if (token !== threadsToken) return;
       items = Array.isArray(res.items) ? res.items : [];
       rail.setThreads(items, true);
     } catch (_) {
+      if (token !== threadsToken) return;
       rail.setThreads([], false);
     }
+    if (token !== threadsToken) return;
     if (threadId !== null && threadId !== newThreadId && items.length > 0) {
       const exists = items.some((t) => t.id === threadId);
       if (!exists) {
@@ -473,6 +489,7 @@ export function render(ctx) {
 
   async function selectThread(id) {
     if (threadId === id) return;
+    const token = ++selectToken;
     newThreadId = null;
     if (live) dropLive();
     threadId = id;
@@ -483,6 +500,7 @@ export function render(ctx) {
     status.textContent = "";
     lock();
     await loadHistory(true);
+    if (token !== selectToken || threadId !== id) return;
     await loadThreads();
   }
 
@@ -490,11 +508,22 @@ export function render(ctx) {
     status.className = "msg";
     status.textContent = "";
     if (live) dropLive();
+    if (threadId !== null && !hasMessages) {
+      if (input.focus) input.focus();
+      return;
+    }
+    if (creatingThread) {
+      if (input.focus) input.focus();
+      return;
+    }
+    creatingThread = true;
     try {
       const t = await api.newThread();
       newThreadId = t.id;
       threadId = t.id;
       ctx.state.threadId = t.id;
+      hasMessages = false;
+      historyToken++;
       updateHash(t.id);
       rail.setActive(threadId);
       showHistory([], null);
@@ -504,6 +533,8 @@ export function render(ctx) {
     } catch (e) {
       status.className = "msg error";
       status.textContent = ctx.describeError(e);
+    } finally {
+      creatingThread = false;
     }
   }
 
@@ -533,6 +564,7 @@ export function render(ctx) {
     lock();
     status.className = "msg";
     status.textContent = "";
+    hasMessages = true;
     // Show the owner's message at once; history is reloaded from the server afterwards.
     const mine = bubble(ctx, { role: "user", text, steps: [] });
     const placeholder = log.children.length === 1 && log.children[0].className === "empty";

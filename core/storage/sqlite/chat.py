@@ -112,6 +112,21 @@ class SqliteChat:
             )
         return {"id": thread_id, "title": NEW_THREAD_TITLE}
 
+    def newest_empty_thread(self) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT id, title FROM chat_threads ORDER BY created_at DESC, rowid DESC LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return None
+            has_messages = db.execute(
+                "SELECT 1 FROM chat_messages WHERE thread_id = ? LIMIT 1",
+                (row["id"],),
+            ).fetchone()
+            if has_messages is not None:
+                return None
+            return {"id": row["id"], "title": row["title"]}
+
     def thread_exists(self, thread_id: str) -> bool:
         if thread_id == DEFAULT_THREAD:
             return True

@@ -9,10 +9,11 @@ every order the planner returns still goes through the policy engine.
 rebuilt from the audit records the gateway wrote for that job, never from model prose.
 
 Threads (ticket 123, contract C3): `GET /chat/threads` lists the owner's conversations,
-newest first, `POST /chat/threads` opens an empty one, and `POST /chat` / `GET /chat` take an
-optional `thread_id`. Without it the implicit default thread (the messages written before threads
-existed) is used. A thread id of another owner is unknown (404). The title is the first 40
-characters of the first owner message, set by code.
+newest first, `POST /chat/threads` opens an empty one (or reuses the owner's newest thread if
+it has no messages), and `POST /chat` / `GET /chat` take an optional `thread_id`. Without it the
+implicit default thread (the messages written before threads existed) is used. A thread id of
+another owner is unknown (404). The title is the first 40 characters of the first owner message,
+set by code.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.responses import StreamingResponse
 
@@ -125,9 +126,16 @@ def get_threads(
 
 @router.post("/chat/threads", status_code=201, tags=["chat"])
 def post_thread(
-    body: ThreadRequest, tenant: Annotated[Tenant, Depends(current_tenant)]
+    body: ThreadRequest,
+    response: Response,
+    tenant: Annotated[Tenant, Depends(current_tenant)],
 ) -> dict[str, str]:
+    empty = tenant.stores.chat.newest_empty_thread()
+    if empty is not None:
+        response.status_code = 200
+        return {"id": empty["id"], "title": empty["title"]}
     thread = tenant.stores.chat.create_thread(datetime.now(UTC))
+    response.status_code = 201
     return {"id": thread["id"], "title": thread["title"]}
 
 
