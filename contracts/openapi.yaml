@@ -596,6 +596,29 @@ paths:
                   id: { type: string }
                   title: { type: string, maxLength: 40 }
         "401": { $ref: "#/components/responses/Problem" }
+  /chat/stream/{job_id}:
+    get:
+      tags: [chat]
+      operationId: streamChatJob
+      summary: Stream job progress events (phase and done) via Server-Sent Events.
+      description: >-
+        Returns a text/event-stream via Starlette StreamingResponse with Cache-Control:
+        no-cache, no-transform and X-Accel-Buffering: no. Emits `phase` events on each
+        job phase change and a final `done` event whose data equals the GET /jobs/{job_id}
+        payload. A comment ping is emitted periodically. Client disconnect never cancels
+        the job.
+      security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: job_id, in: path, required: true, schema: { type: string, pattern: "^[0-9a-f]{32}$" } }
+      responses:
+        "200":
+          description: Event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401": { $ref: "#/components/responses/Problem" }
+        "404": { $ref: "#/components/responses/Problem" }
   /jobs:
     get:
       tags: [jobs]

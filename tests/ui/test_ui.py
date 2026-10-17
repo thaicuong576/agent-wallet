@@ -65,6 +65,8 @@ DESIGN_ROUTES = {
     "/chat/suggestions",
     "/limits",
     "/jobs/{job_id}/cancel",
+    # Chat v3 (spec PR C: SSE stream)
+    "/chat/stream/{job_id}",
 }
 # Links that open in a new tab or are handed to the wallet; the page never fetches them.
 ALLOWED_URLS = {

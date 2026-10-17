@@ -97,6 +97,7 @@ The wallet-session routes of design 12.2 are mounted by `create_app` on every st
 | `/jobs/{job_id}/cancel` | `POST` | session (CSRF header as every write) | `api/jobs.py` (ticket 122) |
 | `/chat` | `POST` | session (CSRF header as every write) | `api/chat.py` (starts a job of kind `chat` in `api/jobs.py`) |
 | `/chat?limit=50&thread_id=` | `GET` | session | `api/chat.py` |
+| `/chat/stream/{job_id}` | `GET` | session | `api/sse.py` (Server-Sent Events: `phase`, `done`, 15 s comment ping) |
 | `/chat/threads?limit=30` | `GET` | session | `api/chat.py` |
 | `/chat/threads` | `POST` | session (CSRF header as every write) | `api/chat.py` |
 | `/limits` | `GET` | session | `api/limits.py` (read model: IPS limits, rolling-24h spend, stop flag; contract C4) |
@@ -150,6 +151,19 @@ An order already inside `propose` is never interrupted or undone, and cancel nev
 | Claim | Proving check |
 | :--- | :--- |
 | Phase per status and per intent, on jobs and chat; cancel queued, between two and three orders, `409` after `sent` and when finished, `404`, CSRF, cross-tenant, signer never named in `api/jobs.py` | `pytest tests/webapp/test_job_phases.py -q` |
+
+### Chat progress stream (ticket C-C)
+
+`GET /chat/stream/{job_id}` returns a `text/event-stream` response via Starlette `StreamingResponse` in `api/sse.py` (`Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`). It sends:
+- `event: phase`: emitted on each job phase change (`queued`, `rules_check`, `sent`, `confirming`) with `data: {"phase": "<phase>", "elapsed_seconds": <float>}` and an incremental `id`.
+- `: ping\r\n\r\n`: emitted every 15 seconds to keep the connection alive.
+- `event: done`: emitted once when the job finishes, carrying data identical to `GET /jobs/{job_id}` for that job; the stream closes immediately after `done`.
+
+A client disconnect cleanly terminates the generator stream and never cancels the underlying job. Unknown or foreign `job_id` responds with `404 not-found`.
+
+| Claim | Proving check |
+| :--- | :--- |
+| SSE formatting, route tests (404 foreign, ping, done payload equals polling payload), client disconnect without cancelling job | `pytest tests/webapp/test_sse.py -q` |
 
 ## Owner routes in multi mode
 
