@@ -2,7 +2,9 @@
 // engine decides, and what happened is shown as step cards rebuilt from the audit log.
 // Every API string is written with textContent. "Agent says" text is the model's own words and
 // is labelled as such; the step cards, not the prose, are the record of what happened.
+import { ROUTES } from "../api.js";
 import { cta, frozenCard } from "../gauges.js";
+import { fetchEventSource } from "../sse.js";
 import { ACTIVE_PHASES, stepCard, uncertainCard } from "./cards.js";
 import { createProgress } from "./progress.js";
 import { historyRail, sidePanel } from "./side.js";
@@ -261,6 +263,59 @@ export function render(ctx) {
     loadThreads();
   }
 
+  async function streamJob(jobId, onUpdate) {
+    if (api.fixtures || typeof globalThis.ReadableStream === "undefined") {
+      throw new Error("SSE not available");
+    }
+    const url = ROUTES.chatStream.replace("{job_id}", jobId);
+    const controller = new AbortController();
+    let doneJob = null;
+
+    await fetchEventSource(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: "text/event-stream",
+        "X-AW-CSRF": "1",
+      },
+      onopen(res) {
+        if (!res || !res.ok) {
+          throw new Error(`HTTP ${res ? res.status : "error"}`);
+        }
+        const ct = res.headers?.get?.("content-type") || "";
+        if (!ct.includes("text/event-stream")) {
+          throw new Error("Not event stream");
+        }
+        if (!res.body || typeof res.body.getReader !== "function") {
+          throw new Error("No ReadableStream");
+        }
+      },
+      onmessage(ev) {
+        if (ev.event === "phase") {
+          try {
+            const data = JSON.parse(ev.data);
+            if (data && typeof data.phase === "string") {
+              onUpdate(data.phase, "running");
+            }
+          } catch (_) {}
+        } else if (ev.event === "done") {
+          try {
+            doneJob = JSON.parse(ev.data);
+          } catch (_) {}
+          controller.abort();
+        }
+      },
+      onerror(err) {
+        // Fatal or client errors bail out to polling immediately
+        throw err;
+      },
+    });
+
+    if (!doneJob) {
+      throw new Error("Stream closed without done event");
+    }
+    return doneJob;
+  }
+
   async function follow(jobId) {
     activeJob = { id: jobId, phase: "queued" };
     cancelling = false;
@@ -272,18 +327,24 @@ export function render(ctx) {
     let sent = false;
     lock();
     let job = null;
+
+    function handleUpdate(phase, status) {
+      const p = typeof phase === "string" ? phase : status === "queued" ? "queued" : "working";
+      activeJob.phase = p;
+      if (p === "sent" || p === "confirming") sent = true;
+      if (p !== "done" && (!status || !ENDED_STATUS.has(status)) && live) {
+        const near = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
+        live.prog.setPhase(p);
+        if (near) scroll.scrollTop = scroll.scrollHeight;
+      }
+    }
+
     try {
-      job = await ctx.pollJob(jobId, (j) => {
-        const phase = typeof j.phase === "string" ? j.phase : j.status === "queued" ? "queued" : "working";
-        activeJob.phase = phase;
-        if (phase === "sent" || phase === "confirming") sent = true;
-        // A finished job has no stage left: never draw a "Working" row for it.
-        if (phase !== "done" && !ENDED_STATUS.has(j.status) && live) {
-          const near = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
-          live.prog.setPhase(phase);
-          if (near) scroll.scrollTop = scroll.scrollHeight; // never pull the owner off older lines
-        }
-      });
+      try {
+        job = await streamJob(jobId, handleUpdate);
+      } catch (_) {
+        job = await ctx.pollJob(jobId, (j) => handleUpdate(j.phase, j.status));
+      }
     } finally {
       activeJob = null;
       cancelling = false;

@@ -88,7 +88,7 @@ Within 100 ms of Send the owner's bubble and a progress card are in the conversa
 | "Sending to Base Sepolia" | `sent` |
 | "Confirming on Base Sepolia" | `confirming` (documented, not emitted by the backend today) |
 
-A row shows its elapsed time once it has lasted 2 s; the head shows the total ("Working on it · 7 s"). Notes appear under the rows at 10 s ("Still working. The model can take up to 30 seconds."), 30 s and 60 s. Screen readers hear stage changes, not the ticking counter (`aria-live` on the rows, the times are `aria-hidden`). The card's own Stop is disabled until the server has answered and once an order is sent. A finished job never draws a row. Jobs are polled every 750 ms for the first seven polls, then every 1.5 s until about 28 s, then every 3 s, for about five minutes (`pollDelay` in `main.js`).
+A row shows its elapsed time once it has lasted 2 s; the head shows the total ("Working on it · 7 s"). Notes appear under the rows at 10 s ("Still working. The model can take up to 30 seconds."), 30 s and 60 s. Screen readers hear stage changes, not the ticking counter (`aria-live` on the rows, the times are `aria-hidden`). The card's own Stop is disabled until the server has answered and once an order is sent. A finished job never draws a row. In Chat, progress stages are streamed in real time via SSE (`GET /chat/stream/{job_id}`); if unsupported or upon error, it falls back to polling every 750 ms for the first seven polls, then every 1.5 s until about 28 s, then every 3 s, for about five minutes (`pollDelay` in `main.js`).
 
 ```mermaid
 sequenceDiagram
@@ -98,9 +98,15 @@ sequenceDiagram
   P->>P: Send: bubble, progress card, Stop (under 100 ms)
   P->>A: POST /chat
   A-->>P: 202 job_id (card: Message received)
-  loop 750 ms, then 1.5 s, then 3 s
-    P->>A: GET /jobs/{id}
-    A-->>P: status, phase (card: stages)
+  alt SSE stream available
+    P->>A: GET /chat/stream/{id} (text/event-stream)
+    A-->>P: event: phase (card: stages)
+    A-->>P: event: done (job status)
+  else Polling fallback
+    loop 750 ms, then 1.5 s, then 3 s
+      P->>A: GET /jobs/{id}
+      A-->>P: status, phase (card: stages)
+    end
   end
   P->>A: GET /chat (the card is replaced by the answer and its step cards)
   Note over P,W: Withdraw and gas top-up: wallet prompt first, then the same staged card
@@ -131,6 +137,7 @@ sequenceDiagram
 | `index.html` | Shell: header, tabs, chips, pill, Emergency stop, `#view`, footer line |
 | `style.css` | `DESIGN.md` tokens as CSS custom properties, dark mode, focus ring, reduced motion, the desktop and phone layouts. `icons.css`, `progress.css` and `overview.css` hold the styles of their features |
 | `main.js` | `routeFor`, header wiring, stop and resume, shared context (`makeCtx`), `describeError`, `pollDelay` |
+| `sse.js` | Plain JS Server-Sent Events client (adapted from fetch-event-source) for job progress streaming |
 | `api.js` | The only module that calls the network; `ROUTES` lists every path; `?fixtures=1` switch |
 | `gauges.js`, `explain.js`, `limits.js` | Pure helpers: gauges, retry text, relative time; rule code to sentence and unit formatting; the `/limits` read |
 | `holdings.js`, `icons.js` | The holdings grouping model; token and protocol marks |

@@ -23,10 +23,12 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.responses import StreamingResponse
 
 from api.auth import AuthProblem
 from api.chat_compose import steps_from_records
 from api.jobs import CHAT_MESSAGE_MAX_CHARS
+from api.sse import chat_stream_response
 from api.wallet import current_tenant, get_webapp
 from core.gateway.tenant import Tenant
 
@@ -127,3 +129,12 @@ def post_thread(
 ) -> dict[str, str]:
     thread = tenant.stores.chat.create_thread(datetime.now(UTC))
     return {"id": thread["id"], "title": thread["title"]}
+
+
+@router.get("/chat/stream/{job_id}", tags=["chat"])
+async def get_chat_stream(
+    job_id: str,
+    request: Request,
+    tenant: Annotated[Tenant, Depends(current_tenant)],
+) -> StreamingResponse:
+    return chat_stream_response(request, tenant, job_id)

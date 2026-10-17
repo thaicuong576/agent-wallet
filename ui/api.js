@@ -16,6 +16,7 @@ const ROUTES = {
   presets: "/presets",
   runs: "/runs",
   chat: "/chat",
+  chatStream: "/chat/stream/{job_id}",
   threads: "/chat/threads",
   suggestions: "/chat/suggestions",
   limits: "/limits",

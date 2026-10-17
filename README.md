@@ -22,6 +22,7 @@ python -m core.audit.verify docs/evidence/audit-chain.jsonl   # hash chain of th
 | Technical documentation | [`docs/technical-documentation.md`](docs/technical-documentation.md) |
 | Security self-assessment and known risks | [`docs/security/self-assessment.md`](docs/security/self-assessment.md) |
 | Architecture notes | [`docs/architecture/`](docs/architecture/) |
+| Third-party notices | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
 
 ## Quick start
 Requires Python 3.11 and, optionally, Docker.
@@ -102,6 +103,7 @@ Environment variable names only (see `.env.example`). Values live in `.env`, whi
 | `tests/` | pytest suite |
 | `scripts/` | Repository checks (secret scan) and the first-live-transaction script (dry run by default) |
 | `docs/` | Competition rules, design notes, architecture notes (see `docs/README.md`) |
+| `THIRD_PARTY_NOTICES.md` | Open-source attribution and licences (fetch-event-source, sse-starlette) |
 | `Dockerfile`, `docker-compose.yml` | Container image and one-command run |
 
 ## Submission
