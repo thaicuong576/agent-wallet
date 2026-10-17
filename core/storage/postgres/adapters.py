@@ -621,6 +621,7 @@ class PgPolicySelectionStore:
 # Jobs
 # ---------------------------------------------------------------------------------------------
 _JOB_FIELDS = (
+    "kind",
     "status",
     "planner_client",
     "order_ids",
@@ -658,6 +659,7 @@ class PgJobStore:
         limit: int | None = None,
         window: timedelta = timedelta(hours=1),
         count_kinds: Sequence[str] | None = None,
+        inquiry_limit: int | None = None,
     ) -> None:
         """Insert a queued job. Raises ActiveJobExists (a JobInProgress), or RateLimited."""
         created = _utc(created_at)
@@ -675,6 +677,17 @@ class PgJobStore:
                 active = cur.fetchone()
                 if active is not None:
                     raise ActiveJobExists(str(active[0]))
+                if inquiry_limit is not None:
+                    cur.execute(
+                        "SELECT created_at FROM jobs WHERE owner = %s AND kind = 'chat_inquiry' "
+                        "AND created_at > %s ORDER BY created_at",
+                        (self._owner, created - window),
+                    )
+                    rows_inq = cur.fetchall()
+                    if len(rows_inq) >= inquiry_limit:
+                        oldest = _utc(rows_inq[len(rows_inq) - inquiry_limit][0])
+                        wait = int((oldest + window - created).total_seconds()) + 1
+                        raise RateLimited(wait)
                 if limit is not None:
                     cur.execute(
                         "SELECT created_at FROM jobs WHERE owner = %s AND kind = ANY(%s) "
@@ -719,6 +732,7 @@ class PgJobStore:
             with self._pool.tenant(self._owner) as cur:
                 cur.execute(
                     "UPDATE jobs SET "
+                    "kind = CASE WHEN %(set_kind)s THEN %(kind)s ELSE kind END, "
                     "status = CASE WHEN %(set_status)s THEN %(status)s ELSE status END, "
                     "planner_client = CASE WHEN %(set_planner_client)s "
                     "THEN %(planner_client)s ELSE planner_client END, "

@@ -80,6 +80,27 @@ def test_one_hourly_limit_can_count_several_kinds(stores) -> None:
     jobs.update("e" * 32, status="succeeded")
 
 
+def test_job_kind_can_be_updated_from_action_to_inquiry(stores) -> None:
+    jobs = stores.jobs
+    job_id = "a" * 32
+    jobs.create(job_id, "chat_action", NOW)
+    assert jobs.get(job_id)["kind"] == "chat_action"
+    jobs.update(job_id, kind="chat_inquiry", status="succeeded")
+    assert jobs.get(job_id)["kind"] == "chat_inquiry"
+
+
+def test_inquiry_limit_enforced_by_create(stores) -> None:
+    from core.storage.interfaces import RateLimited
+
+    jobs = stores.jobs
+    for i in range(2):
+        jid = f"inq{i:029x}"
+        jobs.create(jid, "chat_inquiry", NOW + timedelta(minutes=i))
+        jobs.update(jid, status="succeeded")
+    with pytest.raises(RateLimited):
+        jobs.create("b" * 32, "chat_action", NOW + timedelta(minutes=3), inquiry_limit=2)
+
+
 # ---------------------------------------------------------------- threads (ticket 123)
 
 

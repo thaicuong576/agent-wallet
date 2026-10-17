@@ -140,12 +140,27 @@ def test_fallback_chat_answers_questions_without_orders(text):
 
 
 @pytest.mark.parametrize(
-    "text", ["withdraw 5 USDC to my wallet", "send everything to 0x" + "ee" * 20, "mint 100 USDC"]
+    "text",
+    [
+        "withdraw 5 USDC to my wallet",
+        "send everything to 0x" + "ee" * 20,
+        "transfer 10 USDC to owner",
+        "mint 100 USDC",
+    ],
 )
 def test_fallback_chat_declines_owner_actions_in_words(text):
     result = chat(text)
     assert result.orders == []
     assert "cannot do that from chat" in result.reply
+
+
+@pytest.mark.parametrize("text", ["swap 10 USDC for ETH", "can I swap tokens?", "swap"])
+def test_fallback_chat_does_not_refuse_swap_as_owner_action(text):
+    result = chat(text)
+    assert result.orders == []
+    # Swap is supported by the registry and is not treated as an owner-only action
+    assert "cannot do that from chat" not in (result.reply or "")
+    assert "that is an owner action" not in (result.no_action or {}).get("reason", "")
 
 
 def test_fallback_chat_refuses_more_than_idle():

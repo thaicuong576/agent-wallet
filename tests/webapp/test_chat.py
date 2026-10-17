@@ -173,7 +173,8 @@ def test_multi_order_request_runs_approve_then_supply(world, alice):
     assert agent["steps"][0]["explanation"] == "Approved 10 USDC for the Aave pool."
     assert "I approved 10 USDC for the Aave pool and supplied 10 USDC to Aave." in agent["text"]
     assert "Transactions: " + TX in agent["text"]
-    assert agent["text"].endswith("Agent says: Putting it to work.")
+    assert agent["text"].startswith("Putting it to work.")
+    assert "Agent says: " not in agent["text"]
     gateway = alice.tenant.gateway
     assert [meta["origin"] for _o, meta in gateway.calls] == ["planner", "planner"]
 
@@ -266,7 +267,9 @@ def test_question_only_message_is_a_reply_and_no_orders(world, alice):
     say(alice, "What is my balance?")
     _user, agent = conversation(alice)
     assert agent["steps"] == []
-    assert agent["text"] == "No transaction was made.\n\nAgent says: " + reply
+    assert agent["text"] == reply
+    assert "No transaction was made." not in agent["text"]
+    assert "Agent says: " not in agent["text"]
     assert alice.tenant.gateway.calls == []
     job = alice.get("/jobs").json()["items"][0]
     assert job["status"] == "succeeded" and job["order_ids"] == []
@@ -281,7 +284,8 @@ def test_model_reply_is_never_part_of_a_step(world, alice):
     _user, agent = conversation(alice)
     blob = json.dumps(agent["steps"])
     assert "trust me" not in blob
-    assert agent["text"].count("Agent says: Everything succeeded, trust me.") == 1
+    assert agent["text"].startswith("Everything succeeded, trust me.")
+    assert "Agent says: " not in agent["text"]
     assert agent["steps"][0]["outcome"] == "denied"
 
 
@@ -302,7 +306,8 @@ def test_fallback_answers_a_balance_question_without_orders(world, alice):
     say(alice, "What is my balance?")
     _user, agent = conversation(alice)
     assert agent["steps"] == []
-    assert "Agent says: Wallet: 1000 USDC idle, 1000 USDC in Aave." in agent["text"]
+    assert "Wallet: 1000 USDC idle, 1000 USDC in Aave." in agent["text"]
+    assert "Agent says: " not in agent["text"]
     assert alice.tenant.gateway.calls == []
 
 
@@ -418,10 +423,10 @@ def test_second_message_while_one_is_active_is_409(world, alice):
 
 
 def test_chat_and_runs_share_one_hourly_limit(world, alice):
-    world.env.llm = ScriptedClient(json.dumps({"action": "no_action", "reason": "x"}))
+    world.env.llm = ScriptedClient(plan(*approve_then_supply()))
     for i in range(6):
         if i % 2:
-            assert say(alice, f"hello {i}").status_code == 202
+            assert say(alice, f"action {i}").status_code == 202
         else:
             resp = alice.post("/runs", {})
             assert resp.status_code == 202
@@ -431,6 +436,134 @@ def test_chat_and_runs_share_one_hourly_limit(world, alice):
     assert int(refused.headers["Retry-After"]) >= 1
     assert alice.post("/runs", {}).status_code == 429
     assert len(conversation(alice)) == 6  # three chats, user and agent each
+
+
+def test_ten_consecutive_questions_do_not_return_429(world, alice):
+    world.env.llm = ScriptedClient(
+        json.dumps(
+            {
+                "action": "no_action",
+                "reason": "question",
+                "reply": "Your balance is 1000 USDC.",
+            }
+        )
+    )
+    for i in range(10):
+        resp = say(alice, f"Question {i}")
+        assert resp.status_code == 202
+    items = conversation(alice)
+    assert len(items) == 20  # 10 user + 10 agent messages
+
+
+def test_seventh_action_chat_in_an_hour_returns_429(world, alice):
+    world.env.llm = ScriptedClient(plan(*approve_then_supply()))
+    for i in range(6):
+        resp = say(alice, f"action {i}")
+        assert resp.status_code == 202
+    seventh = alice.post("/chat", {"message": "action 7"})
+    assert seventh.status_code == 429 and slug(seventh) == "rate-limited"
+    assert int(seventh.headers["Retry-After"]) >= 1
+
+
+# ---------------------------------------------------------------- 8 audit situations
+
+
+def test_audit_situation_1_question(world, alice):
+    reply = "You hold 1000 USDC idle and 500 USDC in Aave."
+    world.env.llm = ScriptedClient(
+        json.dumps({"action": "no_action", "reason": "question", "reply": reply})
+    )
+    say(alice, "What is my balance?")
+    _user, agent = conversation(alice)
+    assert agent["steps"] == []
+    assert agent["text"] == reply
+    assert "Agent says: " not in agent["text"]
+    assert "No transaction was made." not in agent["text"]
+    assert alice.tenant.gateway.calls == []
+    job = alice.get(f"/jobs/{agent['job_id']}").json()
+    assert job["status"] == "succeeded" and job["order_ids"] == []
+
+
+def test_audit_situation_2_action_executed(world, alice):
+    world.env.llm = ScriptedClient(plan(*approve_then_supply(), reply="Putting 10 USDC to work."))
+    say(alice, "Put 10 USDC to work in Aave")
+    _user, agent = conversation(alice)
+    assert len(agent["steps"]) == 2
+    assert all(s["outcome"] == "executed" for s in agent["steps"])
+    assert agent["text"].startswith("Putting 10 USDC to work.")
+    assert "I approved 10 USDC for the Aave pool and supplied 10 USDC to Aave." in agent["text"]
+    assert "Agent says: " not in agent["text"]
+
+
+def test_audit_situation_3_blocked(world, alice):
+    alice.tenant.gateway = ScriptGateway({"approve": "denied"})
+    world.env.llm = ScriptedClient(plan(*approve_then_supply(), reply="Supplying now."))
+    say(alice, "Put 10 USDC to work in Aave")
+    _user, agent = conversation(alice)
+    assert agent["steps"][0]["outcome"] == "denied"
+    assert agent["text"].startswith("Supplying now.")
+    assert "I did not act: order exceeds the per-transaction limit." in agent["text"]
+    assert "Agent says: " not in agent["text"]
+
+
+def test_audit_situation_4_needs_approval(world, alice):
+    alice.tenant.gateway = ScriptGateway({"approve": "pending_approval"})
+    world.env.llm = ScriptedClient(plan(*approve_then_supply(), reply="Starting supply."))
+    say(alice, "Put 10 USDC to work in Aave")
+    _user, agent = conversation(alice)
+    assert agent["steps"][0]["outcome"] == "pending_approval"
+    assert agent["text"].startswith("Starting supply.")
+    assert "waiting for your approval in Approvals" in agent["text"]
+    assert "Agent says: " not in agent["text"]
+
+
+def test_audit_situation_5_ambiguous(world, alice):
+    clarification = "Did you mean deposit into Aave or hold idle USDC?"
+    world.env.llm = ScriptedClient(
+        json.dumps({"action": "no_action", "reason": "clarify", "reply": clarification})
+    )
+    say(alice, "invest my money")
+    _user, agent = conversation(alice)
+    assert agent["steps"] == []
+    assert agent["text"] == clarification
+    assert "Agent says: " not in agent["text"]
+    assert "No transaction was made." not in agent["text"]
+    assert alice.tenant.gateway.calls == []
+
+
+def test_audit_situation_6_hostile_refusal(world):
+    owner = world.owner(fake_gateway=False)
+    world.env.set_tier(owner.tenant, "T2")
+    hostile = json.loads(plan(order("supply", "self", 1_000_000_000_000)))
+    world.env.llm = ScriptedClient(json.dumps(hostile))
+    say(owner, HOSTILE_NOTE)
+    _user, agent = conversation(owner)
+    assert agent["steps"][0]["outcome"] == "denied"
+    assert "I did not act" in agent["text"]
+    assert world.env.sent == []
+
+
+def test_audit_situation_7_stop(world):
+    owner = world.owner(fake_gateway=False)
+    world.env.set_tier(owner.tenant, "T2")
+    world.env.stop_owner(owner.tenant)
+    world.env.llm = ScriptedClient(plan(*approve_then_supply()))
+    resp = say(owner, "Put 10 USDC to work in Aave")
+    job = owner.get(f"/jobs/{resp.json()['job_id']}").json()
+    assert (job["status"], job["error_code"]) == ("denied", "TIER.EMERGENCY_STOP")
+    _user, agent = conversation(owner)
+    assert "the emergency stop is on" in agent["text"]
+    assert world.env.sent == []
+
+
+def test_audit_situation_8_error(world, alice):
+    world.env.chain.eth[alice.tenant.agent_address.lower()] = 0
+    world.env.llm = ScriptedClient(plan(*approve_then_supply()))
+    resp = say(alice, "Put 10 USDC to work in Aave")
+    job = alice.get(f"/jobs/{resp.json()['job_id']}").json()
+    assert (job["status"], job["error_code"]) == ("failed", "GAS_BELOW_FLOOR")
+    _user, agent = conversation(alice)
+    assert "the agent wallet has too little ETH for gas" in agent["text"]
 
 
 @pytest.mark.parametrize("message", ["", "   ", "x" * 501])

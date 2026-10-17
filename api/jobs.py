@@ -54,7 +54,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 ORDER_SCHEMA = ROOT_DIR / "contracts" / "schemas" / "order.schema.json"
 
 KINDS = ("run", "mint", "withdraw", "chat")
-# Chat and run jobs share one hourly limit (ticket 115).
+# Chat action and run jobs share one hourly limit (ticket 115, chat-v3).
+ACTION_KINDS = ("run", "chat_action")
 RUN_LIKE = ("run", "chat")
 CHAT_MESSAGE_MAX_CHARS = 500
 ACTIVE = ("queued", "running")
@@ -76,6 +77,7 @@ class JobLimits:
     """Every job limit in one place (design 3, 7.3, 10)."""
 
     runs_per_hour: int = 6
+    chat_inquiries_per_hour: int = 60
     mint_calls_per_hour: int = 4
     note_max_chars: int = 2000
 
@@ -88,12 +90,32 @@ class JobLimits:
             if re.fullmatch(r"[0-9]{1,6}", raw) and int(raw) > 0
             else cls.mint_calls_per_hour
         )
-        return cls(mint_calls_per_hour=mint)
+        raw_inq = env.get("AGENT_WALLET_CHAT_INQUIRIES_PER_HOUR", "")
+        inq = (
+            int(raw_inq)
+            if re.fullmatch(r"[0-9]{1,6}", raw_inq) and int(raw_inq) > 0
+            else cls.chat_inquiries_per_hour
+        )
+        return cls(mint_calls_per_hour=mint, chat_inquiries_per_hour=inq)
+
+    @property
+    def chat_inquiry_per_hour(self) -> int:
+        return self.chat_inquiries_per_hour
+
+    @property
+    def chat_actions_per_hour(self) -> int:
+        return self.runs_per_hour
+
+    @property
+    def chat_action_per_hour(self) -> int:
+        return self.runs_per_hour
 
     def per_hour(self, kind: str) -> int | None:
         return {
             "run": self.runs_per_hour,
             "chat": self.runs_per_hour,
+            "chat_action": self.runs_per_hour,
+            "chat_inquiry": self.chat_inquiries_per_hour,
             "mint": self.mint_calls_per_hour,
         }.get(kind)
 
@@ -342,12 +364,28 @@ class JobService:
             args["order"] = self._owner_order(tenant, kind, args)  # validated before queueing
         job_id = uuid.uuid4().hex
         try:
+            if kind == "chat":
+                create_kind = "chat_action"
+                limit = self.limits.runs_per_hour
+                count_kinds = ACTION_KINDS
+                inquiry_limit = self.limits.chat_inquiries_per_hour
+            elif kind == "run":
+                create_kind = "run"
+                limit = self.limits.runs_per_hour
+                count_kinds = ACTION_KINDS
+                inquiry_limit = None
+            else:
+                create_kind = kind
+                limit = self.limits.per_hour(kind)
+                count_kinds = None
+                inquiry_limit = None
             self.store(tenant).create(
                 job_id,
-                kind,
+                create_kind,
                 self._clock(),
-                limit=self.limits.per_hour(kind),
-                count_kinds=RUN_LIKE if kind in RUN_LIKE else None,
+                limit=limit,
+                count_kinds=count_kinds,
+                inquiry_limit=inquiry_limit,
             )
         except JobInProgress as exc:
             raise job_in_progress(exc.job_id) from None
@@ -461,7 +499,9 @@ class JobService:
     ) -> dict[str, Any]:
         out: dict[str, Any] = {
             "job_id": row["job_id"],
-            "kind": row["kind"],
+            "kind": (
+                "chat" if row["kind"] in ("chat", "chat_action", "chat_inquiry") else row["kind"]
+            ),
             "status": row["status"],
             "planner_client": row["planner_client"],
             "order_ids": row["order_ids"],
@@ -558,6 +598,8 @@ class JobService:
                 "error_code": outcome.error_code,
                 "finished_at": _ts(self._clock()),
             }
+            if kind == "chat":
+                fields["kind"] = "chat_inquiry" if not outcome.order_ids else "chat_action"
             if outcome.order_ids is not None:
                 fields["order_ids"] = outcome.order_ids
             if outcome.seqs is not None:

@@ -49,7 +49,16 @@ class SqliteJobs:
     is the atomic one-active-job rule (design 5.1, 10)."""
 
     _COLUMNS = frozenset(
-        {"status", "planner_client", "order_ids", "seqs", "error_code", "started_at", "finished_at"}
+        {
+            "kind",
+            "status",
+            "planner_client",
+            "order_ids",
+            "seqs",
+            "error_code",
+            "started_at",
+            "finished_at",
+        }
     )
     _SCHEMA = """
         CREATE TABLE IF NOT EXISTS jobs(
@@ -82,6 +91,7 @@ class SqliteJobs:
         limit: int | None = None,
         window: timedelta = timedelta(hours=1),
         count_kinds: Sequence[str] | None = None,
+        inquiry_limit: int | None = None,
     ) -> None:
         """Insert a queued job. Raises JobInProgress, or RateLimited when `limit` is reached."""
         with self._connect() as db:
@@ -92,8 +102,18 @@ class SqliteJobs:
                 ).fetchone()
                 if active is not None:
                     raise JobInProgress(active["job_id"])
+                since = _ts(created_at - window)
+                if inquiry_limit is not None:
+                    rows_inq = db.execute(
+                        "SELECT created_at FROM jobs WHERE kind = 'chat_inquiry'"
+                        " AND created_at > ? ORDER BY created_at",
+                        (since,),
+                    ).fetchall()
+                    if len(rows_inq) >= inquiry_limit:
+                        oldest = _parse(rows_inq[len(rows_inq) - inquiry_limit]["created_at"])
+                        wait = int((oldest + window - created_at).total_seconds()) + 1
+                        raise RateLimited(wait)
                 if limit is not None:
-                    since = _ts(created_at - window)
                     kinds = list(count_kinds or (kind,))
                     marks = ", ".join("?" for _ in kinds)  # placeholders only, values are bound
                     rows = db.execute(

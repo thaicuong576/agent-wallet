@@ -176,6 +176,7 @@ class JobStore(Protocol):
         limit: int | None = None,
         window: timedelta = timedelta(hours=1),
         count_kinds: Sequence[str] | None = None,
+        inquiry_limit: int | None = None,
     ) -> None:
         """Insert a queued job atomically.
 
