@@ -1,4 +1,4 @@
-"""Static and node checks for the token and protocol icons (ui/icons.js, ui/icons.css)."""
+"""Static and node checks for the token and protocol icons (ui/lib/icons.js, ui/css/icons.css)."""
 
 import functools
 import json
@@ -23,12 +23,12 @@ def read(path: pathlib.Path) -> str:
 
 
 def icons_js_stems() -> list[str]:
-    return re.findall(r'file: "([A-Za-z0-9_-]+)"', read(UI / "icons.js"))
+    return re.findall(r'file: "([A-Za-z0-9_-]+)"', read(UI / "lib" / "icons.js"))
 
 
 def test_every_icon_file_in_icons_js_exists():
     stems = icons_js_stems()
-    assert stems, "no token file names found in ui/icons.js"
+    assert stems, "no token file names found in ui/lib/icons.js"
     for stem in set(stems):
         assert (TOKENS / f"{stem}.svg").is_file(), stem
 
@@ -50,7 +50,7 @@ def test_every_svg_and_the_commit_are_in_icons_doc():
 
 
 def test_icons_js_has_no_html_storage_or_urls():
-    text = read(UI / "icons.js")
+    text = read(UI / "lib" / "icons.js")
     for banned in (
         "innerHTML",
         "outerHTML",
@@ -63,7 +63,7 @@ def test_icons_js_has_no_html_storage_or_urls():
 
 
 def test_icons_css_has_no_import_remote_url_caps_or_shadow():
-    text = read(UI / "icons.css")
+    text = read(UI / "css" / "icons.css")
     for banned in ("@import", "url(http", "text-transform", "box-shadow"):
         assert banned not in text, banned
 

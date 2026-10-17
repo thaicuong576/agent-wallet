@@ -1,6 +1,6 @@
 // Gas top-up: the owner sends test ETH from their wallet to the agent address (the agent cannot
 // top up its own ETH). Shared by Setup, Portfolio and the Chat side panel.
-import { formatWei } from "../explain.js";
+import { formatWei } from "../lib/explain.js";
 import { txLink } from "./cards.js";
 
 // Send `wei` to the agent, register the hash, and wait until the server confirms it.

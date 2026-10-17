@@ -110,14 +110,14 @@ def test_skeletons_have_the_final_layout_and_a_status_for_screen_readers() -> No
 
 
 def test_skeleton_motion_stops_under_reduced_motion() -> None:
-    css = (UI / "style.css").read_text(encoding="utf-8")
+    css = (UI / "css" / "style.css").read_text(encoding="utf-8")
     assert "@keyframes shimmer" in css
     reduced = css[css.index("@media (prefers-reduced-motion: reduce)") :]
     assert ".sk { animation: none" in reduced
 
 
 def test_modal_follows_design_md() -> None:
-    css = (UI / "style.css").read_text(encoding="utf-8")
+    css = (UI / "css" / "style.css").read_text(encoding="utf-8")
     scrim = re.search(r"\.modal-scrim \{(.*?)\}", css, re.S).group(1)
     assert "rgba(22, 21, 19, 0.45)" in scrim
     card = re.search(r"\.modal \{(.*?)\}", css, re.S).group(1)
@@ -140,7 +140,7 @@ def test_header_carries_the_account_slot_and_setup_keeps_chip_and_log_out() -> N
     html = (UI / "index.html").read_text(encoding="utf-8")
     header = html[html.index("<header") : html.index("</header>")]
     assert 'id="account-slot"' in header and header.index("btn-stop") < header.index("account-slot")
-    css = (UI / "style.css").read_text(encoding="utf-8")
+    css = (UI / "css" / "style.css").read_text(encoding="utf-8")
     assert ":not(#addr-chip):not(#account-slot)" in css  # shown on the Setup screen too
     main = (UI / "main.js").read_text(encoding="utf-8")
     assert "renderAccountControl" in main and "state.loggedOut" in main

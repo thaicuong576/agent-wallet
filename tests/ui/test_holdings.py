@@ -1,4 +1,4 @@
-"""Holdings grouping model: static checks on ui/holdings.js, plus the node check."""
+"""Holdings grouping model: static checks on ui/lib/holdings.js, plus the node check."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 UI = ROOT / "ui"
-MODULE = UI / "holdings.js"
+MODULE = UI / "lib" / "holdings.js"
 NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(NODE is None, reason="node not available")
 

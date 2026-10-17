@@ -1,4 +1,4 @@
-"""UI tests for ui/sse.js: static scans and node check against fake streams."""
+"""UI tests for ui/lib/sse.js: static scans and node check against fake streams."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 UI = ROOT / "ui"
-MODULE = UI / "sse.js"
+MODULE = UI / "lib" / "sse.js"
 NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(NODE is None, reason="node not available")
 

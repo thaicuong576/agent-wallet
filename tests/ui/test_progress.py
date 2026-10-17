@@ -1,4 +1,4 @@
-"""Staged progress card: static checks on progress.js and progress.css, plus the node check."""
+"""Staged progress card: static checks on progress.js and css/progress.css, plus the node check."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 UI = ROOT / "ui"
 MODULE = UI / "views" / "progress.js"
-CSS = UI / "progress.css"
+CSS = UI / "css" / "progress.css"
 NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(NODE is None, reason="node not available")
 
@@ -45,7 +45,7 @@ def test_progress_css_has_no_import_shadow_transform_or_animation() -> None:
 
 def test_progress_css_only_uses_tokens_defined_in_style_css() -> None:
     css = CSS.read_text(encoding="utf-8")
-    style = (UI / "style.css").read_text(encoding="utf-8")
+    style = (UI / "css" / "style.css").read_text(encoding="utf-8")
     used = set(re.findall(r"var\((--[a-z0-9-]+)\)", css))
     defined = set(re.findall(r"(--[a-z0-9-]+)\s*:", style))
     assert used, "progress.css uses no tokens"

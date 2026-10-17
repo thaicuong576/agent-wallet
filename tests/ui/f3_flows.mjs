@@ -95,15 +95,15 @@ const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-f3-"));
 fs.cpSync(UI, COPY, { recursive: true });
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 const imp = (rel) => import(pathToFileURL(path.join(COPY, rel)).href);
-const { createApi } = await imp("api.js");
+const { createApi } = await imp("lib/api.js");
 const { makeCtx } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
 const rules = await imp("views/rules.js");
 const setup = await imp("views/setup.js");
 const account = await imp("views/account.js");
 const confirm = await imp("views/confirm.js");
-const skeleton = await imp("skeleton.js");
-const limits = await imp("limits.js");
+const skeleton = await imp("lib/skeleton.js");
+const limits = await imp("lib/limits.js");
 
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join(UI, "fixtures", name + ".json"), "utf8"));
 const nameOf = (url) => String(url).replace(/^fixtures\//, "").replace(/\.json$/, "");

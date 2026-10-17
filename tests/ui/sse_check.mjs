@@ -1,4 +1,4 @@
-// Unit tests for ui/sse.js against fake streams and Node.js builtins.
+// Unit tests for ui/lib/sse.js against fake streams and Node.js builtins.
 // Prints one JSON object of named results; tests/ui/test_sse.py asserts them. No network.
 import fs from "node:fs";
 import os from "node:os";
@@ -9,7 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const UI = path.join(ROOT, "ui");
 
 const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-sse-"));
-fs.copyFileSync(path.join(UI, "sse.js"), path.join(COPY, "sse.js"));
+fs.copyFileSync(path.join(UI, "lib", "sse.js"), path.join(COPY, "sse.js"));
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 
 const { getBytes, getLines, getMessages, fetchEventSource } = await import(

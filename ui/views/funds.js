@@ -1,8 +1,8 @@
 // "Add funds": one dialog with two tabs. "Send ETH for gas" sends test ETH from the owner's wallet
 // to the agent (sendGas). "Get test USDC" asks the faucet (api.mint) and follows the job. Reuses
 // topup.js, jobs.js and dialog.js. Every string lands in textContent.
-import { explainJob, formatWei, parseUnits } from "../explain.js";
-import { shortAddr } from "../gauges.js";
+import { explainJob, formatWei, parseUnits } from "../lib/explain.js";
+import { shortAddr } from "../lib/gauges.js";
 import { txLink } from "./cards.js";
 import { openDialog } from "./dialog.js";
 import { jobPanel, runJob } from "./jobs.js";

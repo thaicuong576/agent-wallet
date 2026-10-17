@@ -1,13 +1,13 @@
 // Shell: hash router, shared state, header (status pill, address chip, emergency stop), wallet and
 // API wiring. Every API string is written with textContent. There is no notice bar: testnet and
 // custody are the header chip, the footer line and the Setup text, all static markup.
-import { createApi, ApiError } from "./api.js";
-import { explainError } from "./explain.js";
-import { applyTopbar, retryText } from "./gauges.js";
+import { createApi, ApiError } from "./lib/api.js";
+import { explainError } from "./lib/explain.js";
+import { applyTopbar, retryText } from "./lib/gauges.js";
 import { discoverInjected } from "./wallet/injected.js";
 import { isUserRejection } from "./wallet/adapter.js";
 import { TestWallet } from "./wallet/test.js";
-import * as chat from "./views/chat.js";
+import * as chat from "./views/chat/index.js";
 import * as setup from "./views/setup.js";
 import * as overview from "./views/overview.js";
 import * as activity from "./views/activity.js";

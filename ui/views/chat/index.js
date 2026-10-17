@@ -2,19 +2,28 @@
 // engine decides, and what happened is shown as step cards rebuilt from the audit log.
 // Every API string is written with textContent. "Agent says" text is the model's own words and
 // is labelled as such; the step cards, not the prose, are the record of what happened.
-import { ROUTES } from "../api.js";
-import { cta, frozenCard } from "../gauges.js";
-import { threadFromHash } from "../main.js";
-import { fetchEventSource } from "../sse.js";
-import { ACTIVE_PHASES, stepCard, uncertainCard } from "./cards.js";
-import { createProgress } from "./progress.js";
-import { historyRail, sidePanel } from "./side.js";
+import { ROUTES } from "../../lib/api.js";
+import { threadFromHash } from "../../main.js";
+import { fetchEventSource } from "../../lib/sse.js";
+import { ACTIVE_PHASES, uncertainCard } from "../cards.js";
+import { historyRail, sidePanel } from "../side.js";
+import {
+  bubble,
+  buildUncertainBubble,
+  chatErrorBox,
+  chatSkeleton,
+  createLiveBubble,
+  emptyChat,
+  extractClarificationOptions,
+  noticeCard,
+  populateAgentBubble,
+  removeClarifyChips,
+  renderPromptChips,
+  unauthenticatedChat,
+} from "./bubble.js";
+import { streamJob } from "./stream.js";
 
 export const MESSAGE_MAX = 500;
-const AGENT_SAYS = "Agent says: ";
-const NEEDS_ACTIVATION = new Set(["TIER.READ_ONLY", "TIER.PROPOSE_ONLY"]);
-const STOPPED = new Set(["TIER.EMERGENCY_STOP", "TIER.GLOBAL_STOP"]);
-
 export const PROMPTS = ["What is my balance?", "Put 10 USDC to work in Aave", "Pull 5 USDC back out"];
 const PLACEHOLDER = "Tell your agent what to do…";
 const SUGGESTIONS_MAX = 4;
@@ -22,148 +31,8 @@ const SUGGESTIONS_MAX = 4;
 const LIMITS_TTL_MS = 5000;
 const TOO_LATE = "Too late to stop: this order is already sent.";
 const ENDED_STATUS = new Set(["succeeded", "denied", "failed", "interrupted"]);
-// Transaction hashes are shown only as BaseScan links on the step cards, not in the prose.
-const TX_LIST = /\s*Transactions?: 0x[0-9a-f]{64}(?:, 0x[0-9a-f]{64})*\.?/g;
 
-export function extractClarificationOptions(text) {
-  if (typeof text !== "string") return [];
-  const clean = text.trim();
-  if (!clean) return [];
-
-  // 1. Check for listed options (bulleted or numbered)
-  const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
-  const listItems = [];
-  for (const line of lines) {
-    const m = line.match(/^(?:[-*•]|\d+[.)])\s+(.+)$/);
-    if (m) {
-      const item = m[1].replace(/[.,;]+$/, "").trim();
-      if (item) listItems.push(item);
-    }
-  }
-  if (listItems.length >= 2 && listItems.length <= 3) {
-    if (listItems.every((item) => item.length > 0 && item.length <= 50)) {
-      return listItems;
-    }
-  }
-
-  // 2. Check for question with "A or B" or "A, B, or C"
-  const questionMatch = clean.match(/([^.?!:\n]+)\?\s*$/);
-  if (questionMatch) {
-    let q = questionMatch[1].trim();
-    if (q.includes(":")) {
-      q = q.split(":").pop().trim();
-    }
-    const prefixMatch = q.match(/^(?:Do you want(?: to)?|Would you like(?: to)?|Should I(?: deposit| swap| supply| withdraw| send| use)?(?:\s+(?:in|into|to|from))?|Choose between|Did you mean)\s+(.+)$/i);
-    const target = prefixMatch ? prefixMatch[1] : q;
-
-    if (/\bor\b/i.test(target)) {
-      const parts = target.split(/\s*,\s*or\s+|\s+or\s+|\s*,\s*/i)
-        .map((p) => p.replace(/^["'`(\s]+|["'`)?.,;]+$/g, "").trim())
-        .filter(Boolean);
-      if (parts.length >= 2 && parts.length <= 3) {
-        if (parts.every((p) => p.length > 0 && p.length <= 50)) {
-          return parts;
-        }
-      }
-    }
-  }
-
-  return [];
-}
-
-export function populateAgentBubble(ctx, li, message, opts = {}) {
-  const { el } = ctx;
-  li.replaceChildren();
-  li.append(el("span", "who", "Agent"));
-
-  const frame = el("div", "text");
-  const raw = typeof message.text === "string" ? message.text : "";
-  const rawChunks = raw.split("\n\n");
-  const chunks = rawChunks.map((c) => c.replace(TX_LIST, "").trim()).filter(Boolean);
-
-  const steps = Array.isArray(message.steps) ? message.steps : [];
-
-  const leadIn = [];
-  const outcome = [];
-
-  for (const chunk of chunks) {
-    if (chunk.startsWith(AGENT_SAYS)) {
-      leadIn.push(chunk.slice(AGENT_SAYS.length).trim());
-    } else {
-      outcome.push(chunk);
-    }
-  }
-
-  if (!leadIn.length && outcome.length > 1 && steps.length) {
-    leadIn.push(outcome.shift());
-  }
-
-  if (steps.length) {
-    for (const text of leadIn) {
-      frame.append(el("p", "agent-lead", text));
-    }
-    const list = el("ol", "steps");
-    for (const s of steps) list.append(stepCard(ctx, s, opts));
-    frame.append(list);
-    for (const text of outcome) {
-      frame.append(el("p", "agent-outcome", text));
-    }
-    const codes = new Set(steps.flatMap((s) => (Array.isArray(s.rule_codes) ? s.rule_codes : [])));
-    if ([...codes].some((c) => NEEDS_ACTIVATION.has(c))) {
-      const hint = el("p", "hint", "Your agent is not allowed to act yet.");
-      hint.append(cta(el, "Activate your agent", "#/setup", "primary"));
-      frame.append(hint);
-    } else if ([...codes].some((c) => STOPPED.has(c))) {
-      frame.append(el("p", "hint", "The agent is frozen. Use Resume in the top bar."));
-    }
-  } else {
-    for (const chunk of chunks) {
-      const text = chunk.startsWith(AGENT_SAYS) ? chunk.slice(AGENT_SAYS.length).trim() : chunk;
-      frame.append(el("p", "", text));
-    }
-  }
-
-  li.append(frame);
-
-  if (opts.onTry && message.intent === "clarify") {
-    const options = extractClarificationOptions(raw);
-    if (options.length >= 2 && options.length <= 3) {
-      const chipsBox = el("div", "clarify-options");
-      chipsBox.setAttribute("role", "group");
-      chipsBox.setAttribute("aria-label", "Clarification options");
-      for (const opt of options) {
-        const btn = el("button", "prompt-chip clarify-chip", opt);
-        btn.type = "button";
-        btn.addEventListener("click", () => opts.onTry(opt));
-        chipsBox.append(btn);
-      }
-      li.append(chipsBox);
-    }
-  }
-
-  return li;
-}
-
-// One message bubble, with its step cards under an agent message. `opts` goes to stepCard
-// ({limits, onTry, onAsk}); every field is optional.
-export function bubble(ctx, message, opts = {}) {
-  const { el } = ctx;
-  const mine = message.role === "user";
-  const li = el("li", "bubble " + (mine ? "user" : "agent"));
-  if (mine) {
-    li.append(el("span", "who", "You"));
-    const frame = el("div", "text");
-    const raw = typeof message.text === "string" ? message.text : "";
-    for (const chunk of raw.split("\n\n")) {
-      const part = chunk.replace(TX_LIST, "").trim();
-      if (!part) continue;
-      frame.append(el("p", "", part));
-    }
-    li.append(frame);
-    return li;
-  }
-  return populateAgentBubble(ctx, li, message, opts);
-}
+export { bubble, populateAgentBubble, extractClarificationOptions };
 
 export function render(ctx) {
   const { el, api } = ctx;
@@ -213,13 +82,7 @@ export function render(ctx) {
     if (input.focus) input.focus();
   }
   function showPrompts(texts) {
-    prompts.replaceChildren();
-    for (const text of texts) {
-      const chip = el("button", "prompt-chip", text);
-      chip.type = "button";
-      chip.addEventListener("click", () => fill(text));
-      prompts.append(chip);
-    }
+    renderPromptChips(el, prompts, texts, fill);
   }
   showPrompts(PROMPTS);
   box.append(prompts, label, composer, meta, status);
@@ -305,39 +168,12 @@ export function render(ctx) {
     return limitsCache;
   }
 
-  function removeClarifyChips() {
-    const list = log.children ? [...log.children] : [];
-    for (const li of list) {
-      if (li.children) {
-        for (const c of [...li.children]) {
-          if (c.className && c.className.includes("clarify-options")) c.remove();
-        }
-      }
-    }
-  }
-
   function showSkeleton() {
-    const skeleton = el("li", "chat-skeleton skeleton");
-    skeleton.setAttribute("role", "status");
-    skeleton.setAttribute("aria-label", "Loading chat");
-    skeleton.append(
-      el("div", "skeleton-bar"),
-      el("div", "skeleton-bar"),
-      el("div", "skeleton-bar"),
-    );
-    log.replaceChildren(skeleton);
+    log.replaceChildren(chatSkeleton(el));
   }
 
   function showThreadError(id) {
-    const box = el("li", "empty error-box");
-    const p = el("p", "", "Couldn't load this chat.");
-    const retry = el("button", "btn primary", "Retry");
-    retry.type = "button";
-    retry.addEventListener("click", () => {
-      selectThread(id, true);
-    });
-    box.append(p, retry);
-    log.replaceChildren(box);
+    log.replaceChildren(chatErrorBox(el, () => selectThread(id, true)));
   }
 
   function showHistory(items, limits) {
@@ -345,16 +181,7 @@ export function render(ctx) {
     const lastAgent = items.map((m) => m.role).lastIndexOf("agent");
     if (!items.length) {
       if (live) dropLive();
-      const li = el("li", "empty");
-      li.append(
-        el("p", "", "No messages yet."),
-        el(
-          "p",
-          "note",
-          "Try “Put 10 USDC to work in Aave” or “What is my balance?”. The agent only acts inside your rules.",
-        ),
-      );
-      log.replaceChildren(li);
+      log.replaceChildren(emptyChat(el));
       return;
     }
     // Quick fixes (Try ..., Why is this blocked?) are offered on the newest agent message only.
@@ -434,38 +261,17 @@ export function render(ctx) {
     }
     notice.replaceChildren();
     frozen = Boolean(tier && tier.emergency_stop);
-    if (frozen) {
-      notice.append(frozenCard(el));
-    } else if (tier && (tier.tier === "T0" || tier.tier === "T1")) {
-      const n = el("div", "notice-card");
-      n.append(
-        el(
-          "p",
-          "",
-          tier.tier === "T0"
-            ? "Your agent is read only. It can answer questions, but every order is blocked until you activate it."
-            : "Your agent may only propose. Nothing runs until you activate it again.",
-        ),
-        cta(el, "Activate your agent", "#/setup"),
-      );
-      notice.append(n);
-    }
+    const n = noticeCard(el, tier);
+    if (n) notice.append(n);
     lock();
   }
 
   // The live progress card of the job this view follows. It sits under a bubble of its own.
   function startLive() {
-    const li = el("li", "bubble agent live");
-    li.append(el("span", "who", "Agent"));
-    const frame = el("div", "text");
-    const streamPara = el("p", "streaming-text", "");
-    streamPara.hidden = true;
-    const prog = createProgress(el, { onStop: stop });
-    frame.append(streamPara, prog.node);
-    li.append(frame);
-    log.append(li);
+    const liveObj = createLiveBubble(el, { onStop: stop });
+    log.append(liveObj.li);
     scroll.scrollTop = scroll.scrollHeight;
-    return { li, frame, streamPara, prog };
+    return liveObj;
   }
 
   function dropLive() {
@@ -478,68 +284,6 @@ export function render(ctx) {
   function refreshAround() {
     loadSuggestions();
     loadThreads();
-  }
-
-  async function streamJob(jobId, onUpdate, onToken, onReset) {
-    if (api.fixtures || typeof globalThis.ReadableStream === "undefined") {
-      throw new Error("SSE not available");
-    }
-    const url = ROUTES.chatStream.replace("{job_id}", jobId);
-    const controller = new AbortController();
-    let doneJob = null;
-
-    await fetchEventSource(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: "text/event-stream",
-        "X-AW-CSRF": "1",
-      },
-      onopen(res) {
-        if (!res || !res.ok) {
-          throw new Error(`HTTP ${res ? res.status : "error"}`);
-        }
-        const ct = res.headers?.get?.("content-type") || "";
-        if (!ct.includes("text/event-stream")) {
-          throw new Error("Not event stream");
-        }
-        if (!res.body || typeof res.body.getReader !== "function") {
-          throw new Error("No ReadableStream");
-        }
-      },
-      onmessage(ev) {
-        if (ev.event === "token") {
-          try {
-            const data = JSON.parse(ev.data);
-            if (data && typeof data.text === "string" && onToken) {
-              onToken(data.text);
-            }
-          } catch (_) {}
-        } else if (ev.event === "reset") {
-          if (onReset) onReset();
-        } else if (ev.event === "phase") {
-          try {
-            const data = JSON.parse(ev.data);
-            if (data && typeof data.phase === "string") {
-              onUpdate(data.phase, "running");
-            }
-          } catch (_) {}
-        } else if (ev.event === "done") {
-          try {
-            doneJob = JSON.parse(ev.data);
-          } catch (_) {}
-          controller.abort();
-        }
-      },
-      onerror(err) {
-        // Fatal or client errors bail out to polling immediately
-        throw err;
-      },
-    });
-
-    if (!doneJob) {
-      throw new Error("Stream closed without done event");
-    }
-    return doneJob;
   }
 
   async function follow(jobId, forThreadId = threadId) {
@@ -587,7 +331,11 @@ export function render(ctx) {
 
     try {
       try {
-        job = await streamJob(jobId, handleUpdate, handleToken, handleReset);
+        job = await streamJob(jobId, handleUpdate, handleToken, handleReset, {
+          api,
+          routes: ROUTES,
+          fetchEventSource,
+        });
       } catch (_) {
         job = await ctx.pollJob(jobId, (j) => handleUpdate(j.phase, j.status));
       }
@@ -609,11 +357,7 @@ export function render(ctx) {
             live.frame.append(list);
             live = null;
           } else {
-            const li = el("li", "bubble agent");
-            const list = el("ol", "steps");
-            list.append(uncertainCard(ctx));
-            li.append(list);
-            log.append(li);
+            log.append(buildUncertainBubble(ctx));
           }
         } else {
           status.className = "msg error";
@@ -725,7 +469,7 @@ export function render(ctx) {
   async function newChat() {
     status.className = "msg";
     status.textContent = "";
-    removeClarifyChips();
+    removeClarifyChips(log);
     if (live) dropLive();
     if (threadId !== null && !hasMessages) {
       if (input.focus) input.focus();
@@ -774,7 +518,7 @@ export function render(ctx) {
     if (busy || frozen || activeJob) return;
     const text = typeof forced === "string" ? forced : input.value.trim();
     if (!text) return;
-    removeClarifyChips();
+    removeClarifyChips(log);
     if (text.length > MESSAGE_MAX) {
       status.className = "msg error";
       status.textContent = "Messages are limited to " + MESSAGE_MAX + " characters.";
@@ -834,9 +578,7 @@ export function render(ctx) {
   async function start() {
     const me = await ctx.refreshSession();
     if (!me) {
-      const empty = el("div", "empty");
-      empty.append(el("p", "", "Connect a wallet to talk to your agent."), cta(el, "Set up your agent", "#/setup"));
-      root.replaceChildren(el("h1", "", "Chat with your agent"), empty);
+      root.replaceChildren(el("h1", "", "Chat with your agent"), unauthenticatedChat(el));
       return;
     }
     await loadState();

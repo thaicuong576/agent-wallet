@@ -1,4 +1,4 @@
-// Holdings grouping: ui/holdings.js on the real fixtures and synthetic portfolios.
+// Holdings grouping: ui/lib/holdings.js on the real fixtures and synthetic portfolios.
 // Prints one JSON object of named results; tests/ui/test_holdings.py asserts them. No network.
 import fs from "node:fs";
 import os from "node:os";
@@ -9,7 +9,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 
 // The module has no imports, so one copy with a module marker is enough to load it as ESM.
 const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-holdings-"));
-fs.copyFileSync(path.join(ROOT, "ui", "holdings.js"), path.join(COPY, "holdings.js"));
+fs.copyFileSync(path.join(ROOT, "ui", "lib", "holdings.js"), path.join(COPY, "holdings.js"));
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 const mod = await import(pathToFileURL(path.join(COPY, "holdings.js")).href);
 const { groupHoldings, allocationSegments, sumUsd } = mod;

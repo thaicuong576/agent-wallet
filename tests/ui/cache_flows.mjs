@@ -111,14 +111,14 @@ const COPY = fs.mkdtempSync(path.join(os.tmpdir(), "aw-ui-cache-"));
 fs.cpSync(UI, COPY, { recursive: true });
 fs.writeFileSync(path.join(COPY, "package.json"), '{"type":"module"}');
 const imp = (rel) => import(pathToFileURL(path.join(COPY, rel)).href);
-const { createApi, ROUTES, ApiError } = await imp("api.js");
+const { createApi, ROUTES, ApiError } = await imp("lib/api.js");
 const { makeCtx } = await imp("main.js");
 const { TestWallet } = await imp("wallet/test.js");
 const overview = await imp("views/overview.js");
 const activity = await imp("views/activity.js");
 const rules = await imp("views/rules.js");
 const side = await imp("views/side.js");
-const chat = await imp("views/chat.js");
+const chat = await imp("views/chat/index.js");
 
 const OWNER = "0x1111111111111111111111111111111111111111";
 const OWNER2 = "0x2222222222222222222222222222222222222222";

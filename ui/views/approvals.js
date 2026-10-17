@@ -2,7 +2,7 @@
 // Shown as the "Waiting for your approval" card on Portfolio.
 import { recordCard } from "./cards.js";
 import { loadRecords } from "./jobs.js";
-import { explainRecord, formatAmount } from "../explain.js";
+import { explainRecord, formatAmount } from "../lib/explain.js";
 
 // Orders decided in this tab. The audit log is append-only, so the list also drops any order
 // that has a later, non-pending record.
