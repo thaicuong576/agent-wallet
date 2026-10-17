@@ -265,6 +265,65 @@ def test_reply_extractor_garbage_input_never_raises() -> None:
             pytest.fail(f"ReplyExtractor raised on garbage {g!r}: {exc}")
 
 
+def test_reply_extractor_emoji_pair_in_one_chunk() -> None:
+    raw = r'{"reply": "Hello \uD83D\uDE00 world"}'
+    ext = ReplyExtractor()
+    out = ext.feed(raw)
+    assert out == "Hello 😀 world"
+
+
+def test_reply_extractor_emoji_pair_split_at_every_boundary() -> None:
+    raw = r'{"reply": "Hello \uD83D\uDE00 world"}'
+    # Test split into 2 chunks at every possible index
+    for i in range(1, len(raw)):
+        ext = ReplyExtractor()
+        chunk1 = raw[:i]
+        chunk2 = raw[i:]
+        res = ext.feed(chunk1) + ext.feed(chunk2)
+        assert res == "Hello 😀 world", f"Failed split at index {i}"
+
+    # Test single character streaming
+    ext_chars = ReplyExtractor()
+    res_chars = "".join(ext_chars.feed(ch) for ch in raw)
+    assert res_chars == "Hello 😀 world"
+
+
+def test_reply_extractor_lone_high_surrogate() -> None:
+    # High surrogate without following low surrogate (followed by normal text)
+    raw = r'{"reply": "lone \uD83D text"}'
+    ext = ReplyExtractor()
+    out = ext.feed(raw)
+    assert out == "lone \ufffd text"
+
+    # High surrogate split across chunks and terminated by quote
+    ext_split = ReplyExtractor()
+    p1 = r'{"reply": "lone \uD83D'
+    p2 = '"}'
+    res1 = ext_split.feed(p1)
+    res2 = ext_split.feed(p2)
+    assert res1 + res2 == "lone \ufffd"
+
+    # High surrogate followed by non-surrogate unicode escape
+    raw_esc = r'{"reply": "\uD83D\u0041"}'
+    ext_esc = ReplyExtractor()
+    assert ext_esc.feed(raw_esc) == "\ufffdA"
+
+
+def test_reply_extractor_lone_low_surrogate() -> None:
+    # Low surrogate without preceding high surrogate
+    raw = r'{"reply": "lone \uDE00 text"}'
+    ext = ReplyExtractor()
+    out = ext.feed(raw)
+    assert out == "lone \ufffd text"
+
+    # Low surrogate split across chunks
+    ext_split = ReplyExtractor()
+    p1 = r'{"reply": "lone \uDE'
+    p2 = '00 text"}'
+    res = ext_split.feed(p1) + ext_split.feed(p2)
+    assert res == "lone \ufffd text"
+
+
 # ------------------------------------------------ OpenAIClient.complete_stream tests
 
 

@@ -241,6 +241,7 @@ class ReplyExtractor:
         self._key_buffer: list[str] = []
         self._is_reply_key = False
         self._unicode_hex: list[str] = []
+        self._pending_high_surrogate: int | None = None
         self._in_string = False
         self._skip_escape = False
 
@@ -314,20 +315,35 @@ class ReplyExtractor:
 
                 elif state == "REPLY_STRING":
                     if ch == '"':
+                        if self._pending_high_surrogate is not None:
+                            emitted.append("\ufffd")
+                            self._pending_high_surrogate = None
                         self._state = "DONE"
                     elif ch == "\\":
                         self._state = "REPLY_ESCAPE"
                     else:
-                        emitted.append(ch)
+                        if self._pending_high_surrogate is not None:
+                            emitted.append("\ufffd")
+                            self._pending_high_surrogate = None
+                        if 0xD800 <= ord(ch) <= 0xDFFF:
+                            emitted.append("\ufffd")
+                        else:
+                            emitted.append(ch)
 
                 elif state == "REPLY_ESCAPE":
                     if ch in _ESCAPE_MAP:
+                        if self._pending_high_surrogate is not None:
+                            emitted.append("\ufffd")
+                            self._pending_high_surrogate = None
                         emitted.append(_ESCAPE_MAP[ch])
                         self._state = "REPLY_STRING"
                     elif ch == "u":
                         self._unicode_hex = []
                         self._state = "REPLY_UNICODE"
                     else:
+                        if self._pending_high_surrogate is not None:
+                            emitted.append("\ufffd")
+                            self._pending_high_surrogate = None
                         self._state = "STOPPED"
 
                 elif state == "REPLY_UNICODE":
@@ -335,9 +351,28 @@ class ReplyExtractor:
                         self._unicode_hex.append(ch)
                         if len(self._unicode_hex) == 4:
                             code = int("".join(self._unicode_hex), 16)
-                            emitted.append(chr(code))
+                            if 0xD800 <= code <= 0xDBFF:
+                                if self._pending_high_surrogate is not None:
+                                    emitted.append("\ufffd")
+                                self._pending_high_surrogate = code
+                            elif 0xDC00 <= code <= 0xDFFF:
+                                if self._pending_high_surrogate is not None:
+                                    high = self._pending_high_surrogate
+                                    combined = 0x10000 + ((high - 0xD800) << 10) + (code - 0xDC00)
+                                    emitted.append(chr(combined))
+                                    self._pending_high_surrogate = None
+                                else:
+                                    emitted.append("\ufffd")
+                            else:
+                                if self._pending_high_surrogate is not None:
+                                    emitted.append("\ufffd")
+                                    self._pending_high_surrogate = None
+                                emitted.append(chr(code))
                             self._state = "REPLY_STRING"
                     else:
+                        if self._pending_high_surrogate is not None:
+                            emitted.append("\ufffd")
+                            self._pending_high_surrogate = None
                         self._state = "STOPPED"
 
                 elif state == "EXPECT_VALUE":

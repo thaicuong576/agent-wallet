@@ -18,6 +18,7 @@ from api.sse import (
     format_sse,
     stream_chat_events,
 )
+from core.agent.client import ReplyExtractor
 from tests.webapp.conftest import ORIGIN
 from tests.webapp.test_routes import Owner, World
 
@@ -357,3 +358,54 @@ async def test_stream_reset_after_fallback(alice: Owner) -> None:
     # Event IDs strictly increase
     ids = [int(e["id"]) for e in events if e.get("id") is not None]
     assert ids == sorted(ids)
+
+
+@pytest.mark.anyio
+async def test_stream_chat_events_emoji_token_encodable(alice: Owner) -> None:
+    import anyio
+
+    jobs = alice.world.env.jobs
+    job_id = "f" * 32
+    store = jobs.store(alice.tenant)
+    store.create(job_id, "chat", datetime.now(UTC))
+    store.update(job_id, status="running")
+
+    live = _Live()
+    with jobs._live_lock:
+        jobs._live[job_id] = live
+
+    req = MagicMock()
+    req.is_disconnected = AsyncMock(return_value=False)
+    req.app.state.webapp = alice.world.app.state.webapp
+
+    chunks: list[bytes] = []
+
+    async def run_stream():
+        async for chunk in stream_chat_events(
+            req, alice.tenant, job_id, ping_interval=10.0, poll_interval=0.01
+        ):
+            chunks.append(chunk)
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(run_stream)
+        await anyio.sleep(0.02)
+
+        # Extract surrogate pair and append to live tokens
+        ext = ReplyExtractor()
+        token = ext.feed(r'{"reply":"hi \uD83D\uDE00 ok"}')
+        with jobs._live_lock:
+            live.tokens.append(token)
+        await anyio.sleep(0.03)
+
+        store.update(
+            job_id,
+            status="executed",
+            finished_at=_ts(datetime.now(UTC)),
+        )
+        await anyio.sleep(0.03)
+
+    raw = b"".join(chunks).decode("utf-8")
+    events = parse_sse_events(raw)
+    token_events = [e for e in events if e["event"] == "token"]
+    assert len(token_events) == 1
+    assert json.loads(token_events[0]["data"]) == {"text": "hi 😀 ok"}
