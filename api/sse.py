@@ -1,4 +1,4 @@
-"""Server-Sent Events helper and chat progress stream (ticket C-C).
+"""Server-Sent Events helper and chat progress stream.
 
 Adapted from ideas in `sysid/sse-starlette` (BSD-3-Clause) on top of Starlette's
 `StreamingResponse`. Formats SSE events, emits comment pings every 15 s, and

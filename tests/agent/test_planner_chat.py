@@ -1,4 +1,4 @@
-"""Planner contract for chat (ticket 115): `orders`, `reply`, and the owner instruction channel."""
+"""Planner contract for chat: `orders`, `reply`, and the owner instruction channel."""
 
 from __future__ import annotations
 
@@ -210,7 +210,7 @@ def test_fallback_run_behaviour_is_unchanged():
     assert result.reply is None
 
 
-# ---------------------------------------------------------------- ticket B: context and intent
+# ---------------------------------------------------------------- context and intent
 
 
 def test_format_conversation_history_caps_at_10_turns():

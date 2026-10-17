@@ -1,4 +1,4 @@
-"""Chat text and steps, composed by code from audit records (ticket 115, chat-v3 one voice).
+"""Chat text and steps, composed by code from audit records.
 
 Nothing here comes from model prose except the optional `reply`, which is shown directly without
 the "Agent says" label and is never part of a step. A step is rebuilt from the audit record the
@@ -206,7 +206,7 @@ def _join(parts: list[str]) -> str:
 
 
 def outcome_sentence_from_records(records: Sequence[Mapping[str, Any]]) -> str:
-    """The recorded outcome sentence written by code from audit records (chat-v3).
+    """The recorded outcome sentence written by code from audit records.
 
     Returns a plain sentence describing what was executed, blocked, or proposed.
     Never includes raw model text.

@@ -1,4 +1,4 @@
-"""Tests for Morpho Blue protocol adapter (ticket D3)."""
+"""Tests for Morpho Blue protocol adapter."""
 
 from __future__ import annotations
 

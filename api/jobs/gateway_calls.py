@@ -38,9 +38,9 @@ def _hostile_plan() -> str:
 
 
 def propose_with_origin(gateway: Any, order: dict[str, Any], *, origin: str) -> dict[str, Any]:
-    """Call `Gateway.propose`, passing `origin` when the gateway accepts it (ticket C3).
+    """Call `Gateway.propose`, passing `origin` when the gateway accepts it.
 
-    Until C3 lands the keyword does not exist and the call is a plain `propose(order)`, where the
+    If the gateway does not accept `origin`, the call falls back to `propose(order)`, where the
     engine treats the order as planner-origin and denies owner functions: fail closed.
     """
     if "origin" in inspect.signature(gateway.propose).parameters:

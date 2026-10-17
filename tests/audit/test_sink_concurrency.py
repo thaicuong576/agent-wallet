@@ -30,9 +30,8 @@ def _worker_append(db_path: str, count: int, worker_prefix: str) -> None:
 
 
 def test_two_processes_append_concurrently(tmp_path: pathlib.Path) -> None:
-    """Acceptance test for Ticket T1:
+    """Two processes append 200 records each to one file.
 
-    Two processes append 200 records each to one file.
     verify_chain is ok, no gaps, no IntegrityError.
     """
     db_file = tmp_path / "concurrent_two_process.db"

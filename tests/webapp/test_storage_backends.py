@@ -1,4 +1,4 @@
-"""The multi-owner app on both StorageBackends (design 5, 13, 20; ticket W1).
+"""The multi-owner app on both StorageBackends (design 5, 13, 20).
 
 Every test using the ``stack`` fixture runs on ``sqlite`` and on ``postgres``; the Postgres
 parameter runs when ``TEST_DATABASE_URL`` is set (CI service container) and is skipped otherwise.

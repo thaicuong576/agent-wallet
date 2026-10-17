@@ -1,4 +1,4 @@
-// F3 (ticket 131): Rules from /limits, stop confirm, skeletons, log out. Real ui modules against
+// Rules from /limits, stop confirm, skeletons, log out. Real ui modules against
 // a fake DOM and a fake fetch. Prints one JSON object of named results; test_f3.py asserts them.
 import fs from "node:fs";
 import os from "node:os";

@@ -1224,7 +1224,7 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
   };
 }
 
-// 22. ticket E: measurement flow (a, b, c, d)
+// 22. Measurement flow (a, b, c, d)
 {
   const encoder = new TextEncoder();
   const nowIso = new Date().toISOString();
@@ -1450,7 +1450,7 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
   };
 }
 
-// 23. ticket E: specific feature verification
+// 23. Specific feature verification
 {
   // A. Clarification chips
   const clarifyMsg = {
@@ -1652,7 +1652,7 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
 
   globalThis.fetch = origFetch;
 
-  out.ticketE = {
+  out.clarificationStreaming = {
     clarifyChips,
     valueAfterClick,
     postCallsAfterClick,

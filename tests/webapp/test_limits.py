@@ -1,4 +1,4 @@
-"""Limits read model and suggested prompts (ticket 124, contract C4 and C5)."""
+"""Limits read model and suggested prompts."""
 
 from __future__ import annotations
 

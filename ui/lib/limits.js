@@ -1,4 +1,4 @@
-// GET /limits (contract C4): the owner's active limits, today's spend and the stop flag.
+// GET /limits: the owner's active limits, today's spend and the stop flag.
 // Read-only. Nothing is stored; a failure is thrown to the caller, never replaced by numbers.
 export const LIMITS_PATH = "/limits";
 

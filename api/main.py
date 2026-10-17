@@ -60,11 +60,12 @@ DEFAULT_IPS_PATH = (
 def configure_logging(env: Mapping[str, str] | None = None) -> logging.Logger:
     """Configure stdout logging for the `agent_wallet` logger hierarchy.
 
-    Sets the `agent_wallet` logger (and children) to the level in env `AGENT_WALLET_LOG_LEVEL`
-    (default `INFO`), attaches one `StreamHandler` to stdout with format
-    `%(asctime)s %(levelname)s %(name)s %(message)s`, `propagate = False`, and is idempotent
-    (calling twice does not duplicate handlers). Do not touch the root logger and do not change
-    uvicorn's loggers. Never log request bodies, headers, cookies, keys or addresses of owners.
+    The level comes from env `AGENT_WALLET_LOG_LEVEL` (default `INFO`). Attaches
+    one `StreamHandler` to stdout with format
+    `%(asctime)s %(levelname)s %(name)s %(message)s`, sets `propagate = False`,
+    and is idempotent (calling twice does not duplicate handlers). The root and
+    uvicorn loggers are untouched. Log lines never include request bodies,
+    headers, cookies, keys or addresses of owners.
     """
     if env is None:
         env = os.environ

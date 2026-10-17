@@ -1,4 +1,4 @@
-"""F3 (ticket 131): Rules from GET /limits, emergency-stop confirm, skeleton loaders, log out.
+"""Rules from GET /limits, emergency-stop confirm, skeleton loaders, log out.
 
 The node flows (tests/ui/f3_flows.mjs) run the real ui modules against a fake DOM; the static
 checks guard the stylesheet and the shell markup.

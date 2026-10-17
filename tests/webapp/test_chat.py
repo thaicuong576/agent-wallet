@@ -1,4 +1,4 @@
-"""Chat (ticket 115): POST /chat, GET /chat, the multi-order planner path and its limits.
+"""Chat: POST /chat, GET /chat, the multi-order planner path and its limits.
 
 Everything is in-process: `eth_account` wallets, a fake chain RPC, a scripted LLM and, where the
 policy engine is not the subject, a scripted gateway. The real gateway is used for the hostile
@@ -630,7 +630,7 @@ def test_openapi_documents_the_chat_routes():
     )
 
 
-# ---------------------------------------------------------------- threads (ticket 123, C3)
+# ---------------------------------------------------------------- threads
 
 
 def threads(owner: Owner) -> list[dict[str, Any]]:
@@ -756,7 +756,7 @@ def test_threads_need_a_session_and_the_csrf_header(world, alice):
     assert no_csrf.status_code == 403 and slug(no_csrf) == "csrf"
 
 
-# ---------------------------------------------------------------- ticket B: thread context & intent
+# ---------------------------------------------------------------- thread context & intent
 
 
 def test_multiturn_chat_captures_history_with_stored_agent_message(world, alice):

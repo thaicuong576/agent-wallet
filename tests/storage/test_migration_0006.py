@@ -1,4 +1,4 @@
-"""Migration 0006: chat_messages.intent nullable column (ticket B, chat v3)."""
+"""Migration 0006: chat_messages.intent nullable column."""
 
 from __future__ import annotations
 

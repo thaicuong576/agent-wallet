@@ -1,4 +1,4 @@
-"""Migration 0003: row-level security on the six tables the Supabase advisor flags (ticket W1).
+"""Migration 0003: row-level security on the six tables the Supabase advisor flags.
 
 The static tests read the SQL and always run; the Postgres tests apply the real migrations and run
 when ``TEST_DATABASE_URL`` is set (CI service container).

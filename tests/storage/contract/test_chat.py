@@ -1,4 +1,4 @@
-"""ChatStore contract (ticket 115): runs on SQLite and, with TEST_DATABASE_URL, on Postgres."""
+"""ChatStore contract: runs on SQLite and, with TEST_DATABASE_URL, on Postgres."""
 
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ def test_inquiry_limit_enforced_by_create(stores) -> None:
         jobs.create("b" * 32, "chat_action", NOW + timedelta(minutes=3), inquiry_limit=2)
 
 
-# ---------------------------------------------------------------- threads (ticket 123)
+# ---------------------------------------------------------------- threads
 
 
 def test_thread_starts_empty_and_titled_new_chat(stores) -> None:

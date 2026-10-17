@@ -1,4 +1,4 @@
-// Test loadRecords single-request optimization and per-job fallback (Ticket J).
+// Test loadRecords single-request optimization and per-job fallback.
 import assert from "node:assert/strict";
 import { loadRecords } from "../../ui/views/jobs.js";
 

@@ -80,7 +80,7 @@ class SqliteChat:
         with self._connect() as db:
             db.executescript(self._SCHEMA)
             columns = {r["name"] for r in db.execute("PRAGMA table_info(chat_messages)")}
-            if "thread_id" not in columns:  # a file created before ticket 123
+            if "thread_id" not in columns:  # database created before thread support
                 db.execute("ALTER TABLE chat_messages ADD COLUMN thread_id TEXT")
             if "intent" not in columns:
                 db.execute("ALTER TABLE chat_messages ADD COLUMN intent TEXT")
