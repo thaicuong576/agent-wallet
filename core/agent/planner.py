@@ -15,7 +15,7 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -25,7 +25,7 @@ import jsonschema
 import jsonschema.protocols
 import jsonschema.validators
 
-from core.agent.client import LLMClient
+from core.agent.client import LLMClient, ReplyExtractor
 from core.agent.reader import ReaderFacts
 
 log = logging.getLogger("agent_wallet.planner")
@@ -72,9 +72,9 @@ You MUST produce valid JSON with one of these structures:
    followed by the "supply" it enables). Orders are executed in the order given and execution
    stops at the first one that does not go through:
 {{
+  "reply": "<optional short plain sentence for the owner>",
   "action": "propose",
   "intent": "action",
-  "reply": "<optional short plain sentence for the owner>",
   "order": {{
     "schema_version": 1,
     "order_id": "<lowercase-uuid4>",
@@ -93,10 +93,10 @@ You MUST produce valid JSON with one of these structures:
 
 2. Proposing no action (also the right answer to a question, clarification, or unsupported request):
 {{
+  "reply": "<short plain answer or clarification question for the owner>",
   "action": "no_action",
   "intent": "<question | clarify | refusal>",
-  "reason": "<clear explanation of why portfolio is balanced or no action is required>",
-  "reply": "<short plain answer or clarification question for the owner>"
+  "reason": "<clear explanation of why portfolio is balanced or no action is required>"
 }}
 
 The "intent" field MUST be one of:
@@ -312,6 +312,10 @@ PLANNER_OUTPUT_SCHEMA: dict[str, Any] = {
     "required": ["action"],
     "additionalProperties": False,
     "properties": {
+        "reply": {
+            "type": "string",
+            "maxLength": 600,
+        },
         "action": {
             "type": "string",
             "enum": ["propose", "no_action"],
@@ -329,10 +333,6 @@ PLANNER_OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "reason": {
             "type": "string",
-        },
-        "reply": {
-            "type": "string",
-            "maxLength": 600,
         },
     },
 }
@@ -463,6 +463,7 @@ class Planner:
         user_request: str | None = None,
         owner_instruction: str | None = None,
         conversation_history: Sequence[Mapping[str, Any]] | None = None,
+        on_token: Callable[[str], None] | None = None,
     ) -> PlanResult:
         """Execute a planning cycle given portfolio state, IPS, and sanitized facts.
 
@@ -560,11 +561,29 @@ class Planner:
                 intent="question",
             )
 
-        raw_response = self.client.complete(
-            system=render_system_prompt(sorted(allowed_protocols), ips=plain_ips),
-            user=user_content,
-            schema=PLANNER_OUTPUT_SCHEMA,
-        )
+        system_prompt = render_system_prompt(sorted(allowed_protocols), ips=plain_ips)
+        if on_token is not None and hasattr(self.client, "complete_stream"):
+            extractor = ReplyExtractor()
+
+            def _token_cb(chunk: str) -> None:
+                piece = extractor.feed(chunk)
+                if piece:
+                    cleaned = _CONTROL_RE.sub(" ", piece)
+                    if cleaned:
+                        on_token(cleaned)
+
+            raw_response = self.client.complete_stream(
+                system=system_prompt,
+                user=user_content,
+                schema=PLANNER_OUTPUT_SCHEMA,
+                on_token=_token_cb,
+            )
+        else:
+            raw_response = self.client.complete(
+                system=system_prompt,
+                user=user_content,
+                schema=PLANNER_OUTPUT_SCHEMA,
+            )
 
         try:
             parsed = json.loads(raw_response)
@@ -793,6 +812,7 @@ class FallbackPlanner:
         user_request: str | None = None,
         owner_instruction: str | None = None,
         conversation_history: Sequence[Mapping[str, Any]] | None = None,
+        on_token: Callable[[str], None] | None = None,
     ) -> PlanResult:
         plain_state = _to_plain_dict(state)
         plain_ips = _to_plain_dict(ips)

@@ -119,6 +119,7 @@ async def stream_chat_events(
         created_at_dt = datetime.now(UTC)
 
     event_id = 0
+    token_index = 0
     last_phase = None
     last_ping = time.monotonic()
 
@@ -146,6 +147,20 @@ async def stream_chat_events(
                     }
                     yield ServerSentEvent(data=payload, event="phase", id=str(event_id)).encode()
 
+                all_tokens = jobs_service.tokens_since(job_id, 0)
+                if token_index > 0 and len(all_tokens) < token_index:
+                    event_id += 1
+                    yield ServerSentEvent(data={}, event="reset", id=str(event_id)).encode()
+                    token_index = 0
+
+                new_pieces = all_tokens[token_index:]
+                for piece in new_pieces:
+                    event_id += 1
+                    yield ServerSentEvent(
+                        data={"text": piece}, event="token", id=str(event_id)
+                    ).encode()
+                    token_index += 1
+
                 now_mono = time.monotonic()
                 if now_mono - last_ping >= ping_interval:
                     last_ping = now_mono
@@ -153,6 +168,21 @@ async def stream_chat_events(
 
                 await asyncio.sleep(poll_interval)
             else:
+                # Before the done event, also flush tokens not yet sent
+                all_tokens = jobs_service.tokens_since(job_id, 0)
+                if token_index > 0 and 0 < len(all_tokens) < token_index:
+                    event_id += 1
+                    yield ServerSentEvent(data={}, event="reset", id=str(event_id)).encode()
+                    token_index = 0
+
+                new_pieces = all_tokens[token_index:] if all_tokens else []
+                for piece in new_pieces:
+                    event_id += 1
+                    yield ServerSentEvent(
+                        data={"text": piece}, event="token", id=str(event_id)
+                    ).encode()
+                    token_index += 1
+
                 # Terminal status reached: emit final done event
                 event_id += 1
                 done_data = jobs_service.get(tenant, job_id)
