@@ -8,23 +8,21 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from core.storage.migrate import apply_migrations, check_schema
-from core.storage.postgres.adapters import (
-    PgAuditStore,
-    PgAuthStore,
-    PgChatStore,
-    PgGatewayLockProvider,
-    PgIntentStore,
-    PgJobStore,
-    PgKeystoreStore,
-    PgLedgerQueries,
-    PgOwnerRegistry,
-    PgPolicySelectionStore,
-    PgSettings,
-    PgTiers,
-    PgTopupStore,
-    validate_owner,
-)
+from core.storage.postgres.audit import PgAuditStore
+from core.storage.postgres.auth import PgAuthStore
+from core.storage.postgres.chat import PgChatStore
+from core.storage.postgres.common import validate_owner
+from core.storage.postgres.intents import PgIntentStore
+from core.storage.postgres.jobs import PgJobStore
+from core.storage.postgres.keystore import PgKeystoreStore
+from core.storage.postgres.ledger import PgLedgerQueries
+from core.storage.postgres.locks import PgGatewayLockProvider
+from core.storage.postgres.owners import PgOwnerRegistry
+from core.storage.postgres.policy import PgPolicySelectionStore
 from core.storage.postgres.pool import DEFAULT_POOL_SIZE, PgPool
+from core.storage.postgres.settings import PgSettings
+from core.storage.postgres.tiers import PgTiers
+from core.storage.postgres.topups import PgTopupStore
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
