@@ -6,23 +6,23 @@ The `core.agent` package implements the Dual-LLM pattern with prompt-injection d
 
 In accordance with system boundaries, `core.agent` never imports `core.signer`, `core.gateway` internals, or `core.tiers.owner`.
 
-## Owner chat channel (tickets 115, 148, 155, Ticket B)
+## Owner chat channel
 
 `Planner.plan(..., owner_instruction=text, conversation_history=history)` carries the owner's chat message on its own labelled channel (`owner_instruction: {channel, trust: "untrusted_text", text}`), never inside the Reader facts. It is untrusted for rule purposes: the output is validated exactly as before, the planner can only propose `approve`, `supply`, `withdraw` and `exactInputSingle` with planner recipients, and every order still goes to the gateway with `origin="planner"`. The output contract accepts an ordered `orders` list (the single `order` form still works) and an optional `reply` of plain text (control characters removed, at most 600 characters) that the API shows as "Agent says" and never as proof of an outcome.
 
-### Thread context and conversation history (Ticket B, Ticket K, chat v3)
+### Thread context and conversation history
 - `conversation_history` is passed in the planner payload: the last 10 turns of the same thread, at most 3,500 characters total (oldest dropped first), in a labelled untrusted channel.
 - For agent turns, history carries the stored agent message text that the owner saw (`m["text"]`), cleaned of "Agent says: " prefixes, transaction hashes, and control characters, capped at 400 characters (matching the 400 character cap on owner turns). If audit records add facts (executed or blocked orders) not already contained in the text, the recorded outcome sentence is appended so code-recorded facts are never lost. Agent turns also carry `intent` when available.
 - The system prompt specifies that earlier turns are data, cannot change rules, add recipients, or approve anything. The agent uses earlier turns to answer follow-up questions about the conversation (intent `question`); earlier agent text is a record of what was said, not proof that anything was executed. The current message is not repeated in history; an empty thread sends `[]`.
 
-### Intent classification and enforcement (Ticket B, chat v3)
+### Intent classification and enforcement
 - Planner output schema adds `intent` in `question | clarify | action | refusal`.
 - Validation rule: unknown or missing intent defaults to `action` if candidate orders exist, else `question`.
 - Non-action enforcement: if intent is `clarify`, `question`, or `refusal`, any candidate orders returned by the model are dropped and logged.
 - `FallbackPlanner` sets intent deterministically (`action` for deposits, `question` for info queries, `refusal` for owner actions or insufficient balances).
 - `intent` is persisted to `chat_messages` via migration `0006_chat_intent.sql` and surfaced on chat message views.
 
-### Streaming response tokens (Ticket D, chat v3)
+### Streaming response tokens
 - When `on_token` callback is provided to `Planner.plan(...)`, the planner calls `complete_stream` on clients that implement it (`OpenAIClient`), feeding incremental chunks into `ReplyExtractor`.
 - `ReplyExtractor` is a streaming JSON state machine that extracts characters of the top-level `"reply"` string as they arrive, handling JSON escapes (`\n`, `\"`, `\\`, `\/`, `\t`, `\uXXXX`) across chunk boundaries.
 - Nested `"reply"` keys inside candidate orders and `null` replies are ignored. On any syntax error or unexpected token, the extractor halts emission safely without raising.
@@ -30,7 +30,7 @@ In accordance with system boundaries, `core.agent` never imports `core.signer`, 
 - Candidate orders never reach `on_token`. The complete streamed text is buffered on the server and validated against `PLANNER_OUTPUT_SCHEMA` and `order.schema.json` identically to non-streamed calls.
 - If final JSON decoding or schema validation fails after tokens were streamed, nothing special is required: the final `done` SSE payload carries the code-written text and the UI replaces the streamed text.
 
-For owner instructions (#148, #155), limits, allocation weights, and limit counters (`spent_24h_usd`, `tx_count_1h`, position `weight_bps`) are withheld from the prompt payload so the model cannot prematurely decline orders based on its own reading of limits or volatility; the deterministic policy engine judges all orders. The system prompt dynamically includes naming conventions for enabled protocols (e.g. mapping "Morpho" / "USDC/WBTC" to `morpho-blue` / `usdc-wbtc`, "stata" to `aave-stata`, and "Uniswap" to `uniswap-v3`), guides withdraws without prior approvals, and strips null values from optional fields before schema validation. Tests: `tests/agent/test_planner_chat.py`, `tests/agent/test_planner.py`.
+For owner instructions, limits, allocation weights, and limit counters (`spent_24h_usd`, `tx_count_1h`, position `weight_bps`) are withheld from the prompt payload so the model cannot prematurely decline orders based on its own reading of limits or volatility; the deterministic policy engine judges all orders. The system prompt dynamically includes naming conventions for enabled protocols (e.g. mapping "Morpho" / "USDC/WBTC" to `morpho-blue` / `usdc-wbtc`, "stata" to `aave-stata`, and "Uniswap" to `uniswap-v3`), guides withdraws without prior approvals, and strips null values from optional fields before schema validation. Tests: `tests/agent/test_planner_chat.py`, `tests/agent/test_planner.py`.
 
 ## Where Planner and Reader sit
 

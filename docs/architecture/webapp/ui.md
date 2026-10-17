@@ -116,18 +116,18 @@ sequenceDiagram
   Note over P,W: Withdraw and gas top-up: wallet prompt first, then the same staged card
 ```
 
-`GET /jobs/{id}` and each agent message in `GET /chat` carry `phase`: `queued`, `rules_check`, `sent`, `confirming`, `done`. `POST /jobs/{id}/cancel` (CSRF header) answers `202 {job_id, status: "cancelling"}`, or `409 not-cancellable` once the phase is `sent` or later; a cancelled job ends `status: "denied"`, `error_code: "OWNER_CANCELLED"`, and the steps not attempted are `outcome: "skipped"`. See [`api.md`](api.md#job-phases-and-cancel-ticket-122-contract-c1-and-c2).
+`GET /jobs/{id}` and each agent message in `GET /chat` carry `phase`: `queued`, `rules_check`, `sent`, `confirming`, `done`. `POST /jobs/{id}/cancel` (CSRF header) answers `202 {job_id, status: "cancelling"}`, or `409 not-cancellable` once the phase is `sent` or later; a cancelled job ends `status: "denied"`, `error_code: "OWNER_CANCELLED"`, and the steps not attempted are `outcome: "skipped"`. See [`api.md`](api.md#job-phases-and-cancel).
 
-### Chat wiring (ticket 130 & ticket E)
-- **Unified agent bubble (ticket E)**: Text and execution step results live in a single grey frame. Lead-in prose precedes compact expandable step rows (`<details class="step-details">`), followed by outcome sentences. The live bubble node is directly reused for history replacement upon job completion, guaranteeing exactly one agent bubble per turn.
-- **Live streaming & reset (ticket E)**: SSE `token` events append text directly to `p.streaming-text` using `textContent` (resisting HTML injection). SSE `reset` drops streamed text when the planner falls back. Polling fallback operates without tokens.
-- **Clarification chips (ticket E)**: When `intent === "clarify"`, up to 3 non-submitting suggestion chips are displayed under the bubble to populate the composer without auto-sending.
-- **Thread switch loading (ticket E)**: Immediate active thread highlight, clearing old messages, displaying a 3-bar shimmer skeleton (`.chat-skeleton.skeleton`, `prefers-reduced-motion` compliant), dropping stale responses via `selectToken`, and displaying a Retry button on failure.
+### Chat wiring
+- **Unified agent bubble**: Text and execution step results live in a single grey frame. Lead-in prose precedes compact expandable step rows (`<details class="step-details">`), followed by outcome sentences. The live bubble node is directly reused for history replacement upon job completion, guaranteeing exactly one agent bubble per turn.
+- **Live streaming & reset**: SSE `token` events append text directly to `p.streaming-text` using `textContent` (resisting HTML injection). SSE `reset` drops streamed text when the planner falls back. Polling fallback operates without tokens.
+- **Clarification chips**: When `intent === "clarify"`, up to 3 non-submitting suggestion chips are displayed under the bubble to populate the composer without auto-sending.
+- **Thread switch loading**: Immediate active thread highlight, clearing old messages, displaying a 3-bar shimmer skeleton (`.chat-skeleton.skeleton`, `prefers-reduced-motion` compliant), dropping stale responses via `selectToken`, and displaying a Retry button on failure.
 - **History rail** (`historyRail` in `views/side.js`): "+ New chat" and the threads from `GET /chat/threads` grouped Today, Yesterday, Earlier, each row with a title, a status word and a relative time; the implicit default conversation stays reachable as "Earlier chat". Rows are disabled while a job runs.
 - **Stop**: while a job is queued or running the Send button reads "Stop" and calls `POST /jobs/{id}/cancel`. A 409 shows "Too late to stop: this order is already sent." A job that ends `failed` after the page saw `sent` shows "It may still land. Check Activity before trying again."
 - **Limit line** on pending and blocked cards, **quick fixes** ("Try 100 USDC", "Why is this blocked?") on the newest agent message, and **prompt chips** from `GET /chat/suggestions` (cached with 3 s TTL to eliminate duplicate calls).
 
-### Chat thread lifecycle and routing (ticket T1)
+### Chat thread lifecycle and routing
 - **In-memory thread state (`ctx.state.threadId`)**: The active thread selection is kept strictly in memory on `ctx.state.threadId` and cleared on logout/disconnect (`ctx.signedOut()`). In keeping with the zero-storage policy, neither `localStorage` nor `sessionStorage` is touched.
 - **URL hash mirroring (`#/chat/<thread_id>`)**: The selected thread is mirrored into the URL hash as `#/chat/<thread_id>` (or `#/chat` for the default conversation). `routeFor(hash)` in `main.js` delegates to `threadFromHash(hash)` so that deep links (`#/chat/t123`) route to Chat with the thread selection intact.
 - **Hash changes without remounting**: When switching between threads or pushing hash updates while already on the Chat screen, `showRoute(false)` avoids tearing down the view DOM. An in-view `hashchange` handler detects browser back/forward navigation within Chat, synchronizing `ctx.state.threadId` and loading the newly active thread seamlessly without full view reinitialization.

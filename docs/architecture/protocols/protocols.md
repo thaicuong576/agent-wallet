@@ -1,4 +1,4 @@
-# Protocol registry (D0)
+# Protocol registry
 
 One registry says which DeFi protocols the agent knows, what each one can do and how its calls are built. The gateway tx builder, the planner prompt, the portfolio reader and `GET /protocols` read it, so a new protocol is one adapter file plus data, not edits across the repo.
 

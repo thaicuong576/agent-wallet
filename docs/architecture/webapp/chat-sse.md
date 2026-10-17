@@ -2,7 +2,7 @@
 
 Owner: `api/sse.py` (backend), `ui/lib/sse.js` (frontend).
 
-Server-Sent Events progress streaming for chat jobs (ticket C-C, spec PR C), providing real-time job phase updates without waiting for polling intervals, while preserving resilient polling fallback.
+Server-Sent Events progress streaming for chat jobs provides real-time job phase updates without waiting for polling intervals, while preserving resilient polling fallback.
 
 ## Architecture
 

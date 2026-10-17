@@ -77,7 +77,7 @@ flowchart TD
 | Responses validate against contract schemas | `pytest tests/api/test_state_and_audit.py -q` |
 | Independent check passes | `pytest tests/api -q` (31 passed) |
 
-## Webapp routes (ticket A3)
+## Webapp routes
 
 The wallet-session routes of design 12.2 are mounted by `create_app` on every start; the existing routes above are unchanged and the single-owner token mode keeps working. Without `AGENT_WALLET_MODE=multi` no webapp services are attached and every session route answers `503 service-unavailable` (fail closed); `/presets` and `/health` stay public. Detail, the ERD and the job table are in [`webapp.md`](webapp.md); sign-in and step-up are in [`auth.md`](auth.md).
 
@@ -89,26 +89,26 @@ The wallet-session routes of design 12.2 are mounted by `create_app` on every st
 | `/me`, `/agent` | `GET` | session | `api/wallet.py` |
 | `/topups` | `POST` | session | `api/wallet.py` |
 | `/topups/{tx_hash}` | `GET` | session | `api/wallet.py` |
-| `/presets` | `GET` | none | `api/wallet.py` (one placeholder preset; ticket A4 replaces it) |
+| `/presets` | `GET` | none | `api/wallet.py` |
 | `/audit/verify` | `GET` | session | `api/wallet.py` (`verify_chain` on the owner's chain) |
 | `/agent/mint`, `/runs` | `POST` | session | `api/jobs/` |
 | `/agent/withdraw` | `POST` | session plus step-up `withdraw` | `api/jobs/` |
 | `/jobs`, `/jobs/{job_id}` | `GET` | session | `api/jobs/` |
-| `/jobs/{job_id}/cancel` | `POST` | session (CSRF header as every write) | `api/jobs/` (ticket 122) |
+| `/jobs/{job_id}/cancel` | `POST` | session (CSRF header as every write) | `api/jobs/` |
 | `/chat` | `POST` | session (CSRF header as every write) | `api/chat.py` (starts a job of kind `chat` in `api/jobs/`) |
 | `/chat?limit=50&thread_id=` | `GET` | session | `api/chat.py` |
 | `/chat/stream/{job_id}` | `GET` | session | `api/sse.py` (Server-Sent Events: `phase`, `done`, 15 s comment ping) |
 | `/chat/threads?limit=30` | `GET` | session | `api/chat.py` |
 | `/chat/threads` | `POST` | session (CSRF header as every write) | `api/chat.py` |
-| `/limits` | `GET` | session | `api/limits.py` (read model: IPS limits, rolling-24h spend, stop flag; contract C4) |
+| `/limits` | `GET` | session | `api/limits.py` (read model: IPS limits, rolling-24h spend, stop flag) |
 | `/protocols` | `GET` | session | `api/limits.py` (registry entries the owner's IPS enables; see `protocols.md`) |
-| `/chat/suggestions` | `GET` | session | `api/limits.py` (prompts chosen by code from state, no LLM call; contract C5) |
+| `/chat/suggestions` | `GET` | session | `api/limits.py` (prompts chosen by code from state, no LLM call) |
 
 Rules enforced here: the owner address comes only from `require_session` (no route has an owner parameter or body field; extra body fields are `422`); a foreign `job_id` or `tx_hash` is `404`; problems use the 12.1 slugs (`job-in-progress` 409 with the active `job_id`, `rate-limited` 429 with `Retry-After`, `custody-unavailable` 503); `origin="owner"` appears only in `api/jobs/`.
 
 | Claim | Proving check |
 | :--- | :--- |
-### Limits and suggestions (ticket 124)
+### Limits and suggestions
 
 `GET /protocols` answers `{items: [{id, name, category, tokens, functions, paper}]}`: the protocol registry entries (`docs/architecture/protocols/protocols.md`) that are in the owner's IPS `universe.protocols`. Read-only, owner-scoped, no addresses; owner-only functions are not listed.
 
@@ -116,13 +116,13 @@ Rules enforced here: the owner address comes only from `require_session` (no rou
 
 `GET /chat/suggestions` answers `{items: [{text, kind}]}` (`kind` is `question` or `action`). Code picks the set by state, in this order: stopped, pending approval, no funds (USDC and aUSDC both zero), funded. If the chain RPC cannot be read the neutral set is returned. No LLM call. Both routes are scoped to the session owner; proof is `pytest tests/webapp/test_limits.py -q`.
 
-### Chat (ticket 115)
+### Chat
 
-`POST /chat` takes `{message}` (1 to 500 characters, no other field) and answers `202 {job_id, status}`. It starts a job of kind `chat` under the same rules as `POST /runs`: one active job per owner (`409 job-in-progress` with the active `job_id`) and quota split into `chat_action` (6 per owner per hour, shared with runs) and `chat_inquiry` (60 per hour; chat jobs ending with zero gateway proposals are recorded as inquiries and refund the action bucket, `429 rate-limited` with `Retry-After`). `GET /chat` returns `{items: [{id, role, text, job_id, created_at, steps}]}` oldest first (`limit` 1 to 200, default 50). A step is `{order_id, function, token, amount, outcome, reason, rule_codes, tx_hash, explanation}` rebuilt from the audit records of the message's job by `api/chat_compose.py`; `outcome` is `executed`, `denied`, `pending_approval`, `failed` or `skipped`. The agent `text` is composed with one voice: when no orders were recorded the model's reply is the whole text (no `Agent says` label and no `No transaction was made.` prefix); when orders were recorded, the model reply is a lead-in line before the code facts. The chat route proposes with `origin="planner"` through the same gateway, so mint, transfer, withdraw and tier changes are not reachable from it. Detail is in [`webapp.md`](webapp.md#chat-ticket-115-chat-v3).
+`POST /chat` takes `{message}` (1 to 500 characters, no other field) and answers `202 {job_id, status}`. It starts a job of kind `chat` under the same rules as `POST /runs`: one active job per owner (`409 job-in-progress` with the active `job_id`) and quota split into `chat_action` (6 per owner per hour, shared with runs) and `chat_inquiry` (60 per hour; chat jobs ending with zero gateway proposals are recorded as inquiries and refund the action bucket, `429 rate-limited` with `Retry-After`). `GET /chat` returns `{items: [{id, role, text, job_id, created_at, steps}]}` oldest first (`limit` 1 to 200, default 50). A step is `{order_id, function, token, amount, outcome, reason, rule_codes, tx_hash, explanation}` rebuilt from the audit records of the message's job by `api/chat_compose.py`; `outcome` is `executed`, `denied`, `pending_approval`, `failed` or `skipped`. The agent `text` is composed with one voice: when no orders were recorded the model's reply is the whole text (no `Agent says` label and no `No transaction was made.` prefix); when orders were recorded, the model reply is a lead-in line before the code facts. The chat route proposes with `origin="planner"` through the same gateway, so mint, transfer, withdraw and tier changes are not reachable from it. Detail is in [`webapp.md`](webapp.md#chat).
 
-### Conversation threads (ticket 123, contract C3)
+### Conversation threads
 
-`GET /chat/threads?limit=30` (1 to 100) returns `{items: [{id, title, last_message_at, status}]}`, newest first. `status` is `running`, `pending`, `done` or `blocked` and is read from the latest job of the thread. `POST /chat/threads` takes `{}` and answers `201 {id, title: "New chat"}` when opening a new conversation, or `200 {id, title}` reusing the owner's newest thread if it has no messages. `POST /chat` and `GET /chat` take an optional `thread_id`; absent means the implicit default thread (id `default`, the messages written before threads existed, listed only when it has any). The response shape of both is unchanged. A thread id that does not belong to the session's owner is unknown (`404 not-found`, nothing is started). The title is the first 40 characters of the thread's first owner message, set by code, never by the LLM. The hourly run limit (6) is per owner and is shared by all threads. Storage and the migration are in [`storage.md`](storage.md#conversation-threads-and-migration-0005-ticket-123).
+`GET /chat/threads?limit=30` (1 to 100) returns `{items: [{id, title, last_message_at, status}]}`, newest first. `status` is `running`, `pending`, `done` or `blocked` and is read from the latest job of the thread. `POST /chat/threads` takes `{}` and answers `201 {id, title: "New chat"}` when opening a new conversation, or `200 {id, title}` reusing the owner's newest thread if it has no messages. `POST /chat` and `GET /chat` take an optional `thread_id`; absent means the implicit default thread (id `default`, the messages written before threads existed, listed only when it has any). The response shape of both is unchanged. A thread id that does not belong to the session's owner is unknown (`404 not-found`, nothing is started). The title is the first 40 characters of the thread's first owner message, set by code, never by the LLM. The hourly run limit (6) is per owner and is shared by all threads. Storage and the migration are in [`storage.md`](storage.md#conversation-threads-and-migration-0005).
 
 | Claim | Proving check |
 | :--- | :--- |
@@ -134,7 +134,7 @@ Rules enforced here: the owner address comes only from `require_session` (no rou
 | Session routes reject anonymous callers; withdraw needs a bound step-up | `pytest tests/webapp/test_routes.py -q` |
 | A session for A cannot read or act on B | `pytest tests/webapp/test_routes.py -k "session_a or foreign or owner_query or chain_verifies" -q` |
 
-### Job phases and cancel (ticket 122, contract C1 and C2)
+### Job phases and cancel
 
 `GET /jobs`, `GET /jobs/{job_id}` and each message of `GET /chat` carry `phase`: `queued` (accepted, worker not started), `rules_check` (the worker is planning and the gateway is checking the rules), `sent` (the gateway holds its signing intent for the order in flight and has not yet appended the record) and `done` (every terminal `status`; also the phase of a user message). `confirming` is part of the contract but is not emitted today: the gateway signs and waits for the receipt inside one call, so nothing outside it can see a receipt pending. Clients must tolerate unknown values. The phase is derived from the stored job `status` and the gateway's intent record (`JobService.phase`); it adds no signer path and stores nothing.
 
@@ -152,7 +152,7 @@ An order already inside `propose` is never interrupted or undone, and cancel nev
 | :--- | :--- |
 | Phase per status and per intent, on jobs and chat; cancel queued, between two and three orders, `409` after `sent` and when finished, `404`, CSRF, cross-tenant, signer never named in `api/jobs/` | `pytest tests/webapp/test_job_phases.py -q` |
 
-### Chat progress stream (ticket C-C)
+### Chat progress stream
 
 `GET /chat/stream/{job_id}` returns a `text/event-stream` response via Starlette `StreamingResponse` in `api/sse.py` (`Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`). It sends:
 - `event: phase`: emitted on each job phase change (`queued`, `rules_check`, `sent`, `confirming`) with `data: {"phase": "<phase>", "elapsed_seconds": <float>}` and an incremental `id`.

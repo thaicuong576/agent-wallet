@@ -1,4 +1,4 @@
-# IPS Presets and Multi-Protocol Activation (D4)
+# IPS Presets and Multi-Protocol Activation
 
 This architecture note documents the Investment Policy Statement (IPS) presets system, enabling owners to choose between conservative stablecoin lending and a diversified multi-protocol DeFi strategy at agent activation.
 

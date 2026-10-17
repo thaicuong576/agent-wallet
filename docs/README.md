@@ -52,7 +52,7 @@ Complete directory of technical documentation, architectural specifications, sec
 - [`design/contracts-proposal.md`](design/contracts-proposal.md): Early design proposal for data contracts and schemas.
 - [`design/runner/design.md`](design/runner/design.md): Detailed runner component design and state machine.
 - [`design/runner/proposal.md`](design/runner/proposal.md): Initial proposal for autonomous background runner execution.
-- [`design/webapp/chat-v3-spec.md`](design/webapp/chat-v3-spec.md): Technical specification for Chat v3 SSE event stream.
+- [`design/webapp/chat-v3-spec.md`](design/webapp/chat-v3-spec.md): Technical specification for the chat SSE event stream.
 - [`design/webapp/icons.md`](design/webapp/icons.md): Asset provenance, licensing (CC0), and color contrast for token/protocol icons.
 - [`design/webapp/product.md`](design/webapp/product.md): Product vision, user journeys, and problem framing for agent wallet.
 - [`design/webapp/proposal.md`](design/webapp/proposal.md): Architectural proposal for multi-owner webapp interface.
