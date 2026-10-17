@@ -94,6 +94,45 @@ def test_pg_chat_store_newest_empty_thread_offline() -> None:
     assert store.newest_empty_thread() is None
 
 
+def test_pg_chat_store_intent_and_thread_lookup_offline() -> None:
+    from contextlib import contextmanager
+    from unittest.mock import MagicMock
+
+    from core.storage.postgres.adapters import PgChatStore
+
+    pool = MagicMock()
+    cur = MagicMock()
+
+    @contextmanager
+    def mock_tenant(owner):
+        yield cur
+
+    pool.tenant = mock_tenant
+    store = PgChatStore(pool, OWNER_A)
+
+    # append with intent
+    cur.fetchone.return_value = None
+    appended = store.append("agent", "I supplied 5 USDC.", "job1", NOW, intent="action")
+    assert appended["intent"] == "action"
+    assert appended["role"] == "agent"
+
+    # list with intent row
+    cur.fetchall.return_value = [
+        ("m1", "user", "hi", "job0", NOW, None),
+        ("m2", "agent", "hello", "job0", NOW, "question"),
+    ]
+    rows = store.list()
+    assert len(rows) == 2
+    assert "intent" not in rows[0]
+    assert rows[1]["intent"] == "question"
+
+    # get_thread_id
+    cur.fetchone.return_value = ("th_123",)
+    assert store.get_thread_id("job1") == "th_123"
+    cur.fetchone.return_value = None
+    assert store.get_thread_id("job_missing") is None
+
+
 # -- needs Postgres ----------------------------------------------------------------------------
 @pytest.fixture
 def be(pg_schema):  # noqa: F811

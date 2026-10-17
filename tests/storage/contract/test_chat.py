@@ -190,3 +190,33 @@ def test_just_created_empty_thread_sorts_first(stores) -> None:
     assert threads[0]["last_message_at"] == "2026-10-14T12:00:00Z"
     assert threads[1]["id"] == "default"
     assert threads[1]["last_message_at"] == "2026-10-14T12:00:00Z"
+
+
+def test_append_with_intent_roundtrips_and_user_message_defaults_without_intent(stores) -> None:
+    first = stores.chat.append("user", "Hello", "j1", NOW)
+    second = stores.chat.append(
+        "agent", "I did it", "j1", NOW + timedelta(seconds=1), intent="action"
+    )
+    third = stores.chat.append(
+        "agent", "What did you mean?", "j2", NOW + timedelta(seconds=2), intent="clarify"
+    )
+
+    assert "intent" not in first or first["intent"] is None
+    assert second["intent"] == "action"
+    assert third["intent"] == "clarify"
+
+    messages = stores.chat.list()
+    assert len(messages) == 3
+    assert messages[0].get("intent") is None
+    assert messages[1]["intent"] == "action"
+    assert messages[2]["intent"] == "clarify"
+
+
+def test_get_thread_id_returns_thread_of_user_message(stores) -> None:
+    assert stores.chat.get_thread_id("j_missing") is None
+    stores.chat.append("user", "Hello in default", "j_def", NOW)
+    assert stores.chat.get_thread_id("j_def") is None
+
+    thread = stores.chat.create_thread(NOW)
+    stores.chat.append("user", "Hello in thread", "j_th", NOW, thread_id=thread["id"])
+    assert stores.chat.get_thread_id("j_th") == thread["id"]

@@ -27,7 +27,7 @@ Small, permissively licensed code may be adapted with attribution in `THIRD_PART
 | PR | Scope | Notes |
 | :--- | :--- | :--- |
 | A | Quota buckets, fallback swap fix, one-voice composition | backend only, no schema change |
-| B | Thread context, `intent` in the planner output, migration `0006` for `intent` | apply the migration before merging |
+| B | Thread context, `intent` in the planner output, migration `0006` for `intent` | implemented in `feat/chat-b-context-intent`; apply migration 0006 before merging |
 | C | SSE endpoint, `ui/sse.js`, polling fallback, `THIRD_PARTY_NOTICES.md` | phases only, no token stream yet |
 | D | Token streaming through tool calling | cut first if time runs short |
 | E | UI: unified bubbles without the label, clarification chips, plan confirmation card | follows A and B |

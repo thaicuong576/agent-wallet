@@ -34,6 +34,7 @@ from api.chat_compose import (
     FALLBACK_LLM_ERROR,
     FALLBACK_UNCONFIGURED,
     compose_agent_text,
+    outcome_sentence_from_records,
     text_for_error,
     user_facing_stop,
 )
@@ -211,6 +212,50 @@ class Outcome:
     seqs: list[int] | None = None
     planner_client: str = "none"
     chat_text: str | None = None  # the agent message of a chat job, composed by code
+    intent: str | None = None
+
+
+def _records(tenant: Tenant, seqs: list[int]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for seq in seqs:
+        try:
+            out.append(tenant.gateway.audit_sink[seq])
+        except Exception:  # noqa: BLE001 - a missing record must not break history
+            continue
+    return out
+
+
+def _build_chat_history(
+    tenant: Tenant,
+    job_id: str,
+    thread_id: str | None,
+    store: JobStore,
+) -> list[dict[str, str]]:
+    raw_messages = tenant.stores.chat.list(limit=50, thread_id=thread_id)
+    # Exclude current job's messages
+    earlier = [m for m in raw_messages if m.get("job_id") != job_id]
+    turns: list[dict[str, str]] = []
+    for m in earlier:
+        role = m.get("role")
+        if role == "user":
+            turns.append({"role": "user", "text": str(m.get("text") or "")})
+        elif role == "agent":
+            # For agent turns, only the recorded outcome sentence written by code,
+            # never raw model text
+            agent_job_id = m.get("job_id")
+            seqs: list[int] = []
+            if agent_job_id:
+                job_row = store.get(agent_job_id)
+                if job_row and job_row.get("seqs"):
+                    seqs = [int(s) for s in job_row["seqs"]]
+            recs = _records(tenant, seqs)
+            outcome_text = outcome_sentence_from_records(recs)
+            turns.append({"role": "agent", "text": outcome_text})
+    if len(turns) > 6:
+        turns = turns[-6:]
+    while turns and sum(len(t["text"]) for t in turns) > 2000:
+        turns.pop(0)
+    return turns
 
 
 def _rule_codes(record: Mapping[str, Any]) -> list[str]:
@@ -395,7 +440,13 @@ class JobService:
             self._live[job_id] = _Live()
         if kind == "chat":
             try:
-                tenant.stores.chat.append("user", args["message"], job_id, self._clock())
+                tenant.stores.chat.append(
+                    "user",
+                    args["message"],
+                    job_id,
+                    self._clock(),
+                    thread_id=args.get("thread_id"),
+                )
             except Exception:
                 self.store(tenant).update(
                     job_id,
@@ -614,14 +665,16 @@ class JobService:
             "Cancelled by the owner before the agent acted.", _now_iso(self._clock())
         )
         text = "You cancelled this request before I acted. Nothing was sent."
-        return Outcome("denied", CANCEL_CODE, [], [int(record["seq"])], chat_text=text)
+        return Outcome(
+            "denied", CANCEL_CODE, [], [int(record["seq"])], chat_text=text, intent="refusal"
+        )
 
     def _append_agent_message(self, tenant: Tenant, job_id: str, outcome: Outcome) -> None:
         """The agent's chat message, written before the job turns terminal so a poller that sees
         the job finish also finds the message."""
         text = outcome.chat_text or text_for_error(outcome.error_code or "INTERNAL_ERROR")
         try:
-            tenant.stores.chat.append("agent", text, job_id, self._clock())
+            tenant.stores.chat.append("agent", text, job_id, self._clock(), intent=outcome.intent)
         except Exception as exc:  # noqa: BLE001 - never leave a job running
             log.warning("job %s chat message not stored: %s", job_id, type(exc).__name__)
 
@@ -740,10 +793,20 @@ class JobService:
                 [],
                 [int(record["seq"])],
                 chat_text=compose_agent_text([record], stop_text=user_facing_stop(code)),
+                intent="refusal",
             )
         gas_error = self._gas_gate(tenant)
         if gas_error is not None:
+            gas_error.intent = "refusal"
             return gas_error
+
+        thread_id = args.get("thread_id")
+        if thread_id is None:
+            try:
+                thread_id = tenant.stores.chat.get_thread_id(job_id)
+            except Exception:  # noqa: BLE001
+                thread_id = None
+        history = _build_chat_history(tenant, job_id, thread_id, store)
 
         label, planner = self._select_planner("auto")
         fallback = FALLBACK_UNCONFIGURED if label == "fallback" else None
@@ -753,7 +816,7 @@ class JobService:
         message = args["message"]
         try:
             result = self._runner(tenant, job_id, portfolio, ips, label, planner).run_instruction(
-                message, now
+                message, now, conversation_history=history
             )
         except LLMError:
             # Nothing is proposed before the model answers, so the fallback cannot duplicate.
@@ -761,7 +824,7 @@ class JobService:
             fallback = FALLBACK_LLM_ERROR
             store.update(job_id, planner_client=label)
             result = self._runner(tenant, job_id, portfolio, ips, label, planner).run_instruction(
-                message, now
+                message, now, conversation_history=history
             )
         records = result.records
         status, error = self._apply_cancel(job_id, *classify(records, "chat"))
@@ -779,6 +842,7 @@ class JobService:
             [int(r["seq"]) for r in records],
             label,
             chat_text=text,
+            intent=result.intent,
         )
 
     def _apply_cancel(self, job_id: str, status: str, error: str | None) -> tuple[str, str | None]:

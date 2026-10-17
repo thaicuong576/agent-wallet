@@ -205,6 +205,50 @@ def _join(parts: list[str]) -> str:
     return ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
+def outcome_sentence_from_records(records: Sequence[Mapping[str, Any]]) -> str:
+    """The recorded outcome sentence written by code from audit records (chat-v3).
+
+    Returns a plain sentence describing what was executed, blocked, or proposed.
+    Never includes raw model text.
+    """
+    steps_rec = [r for r in records if r.get("order") or _SKIPPED.match(_reason_of(r))]
+    done = [r for r in steps_rec if r.get("outcome") == "executed"]
+    parts: list[str] = []
+
+    if done:
+        doing = _join([action_phrase(r["order"], past=True) for r in done])
+        parts.append(_sentence("I " + doing))
+    problem = next(
+        (r for r in steps_rec if r.get("outcome") not in ("executed", "no_action")), None
+    )
+    if problem is not None:
+        order = problem.get("order")
+        outcome = problem.get("outcome")
+        if order:
+            phrase = action_phrase(order, past=False)
+            if outcome == "pending_approval":
+                parts.append(
+                    f"To {phrase} I need your approval: it is waiting in Approvals."
+                    if done
+                    else (
+                        f"I prepared an order to {phrase}. "
+                        "It is waiting for your approval in Approvals."
+                    )
+                )
+            elif outcome == "failed":
+                parts.append(
+                    f"I tried to {phrase}, but {_error(problem)}. Nothing was lost."
+                    if not done
+                    else f"Then I tried to {phrase}, but {_error(problem)}."
+                )
+            else:
+                lead = "I did not do the rest" if done else "I did not act"
+                parts.append(f"{lead}: {_why(problem)}.")
+    if not parts:
+        return "No orders were proposed."
+    return " ".join(parts)
+
+
 def compose_agent_text(
     records: Sequence[Mapping[str, Any]],
     *,

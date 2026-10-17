@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
@@ -37,6 +37,7 @@ class InstructionResult:
     warnings: list[str] = field(default_factory=list)
     proposed: int = 0
     skipped: int = 0
+    intent: str = "action"
 
 
 class PortfolioReaderLike(Protocol):
@@ -116,7 +117,12 @@ class Runner:
                 break
         return records
 
-    def run_instruction(self, instruction: str, now: datetime) -> InstructionResult:
+    def run_instruction(
+        self,
+        instruction: str,
+        now: datetime,
+        conversation_history: Sequence[Mapping[str, Any]] | None = None,
+    ) -> InstructionResult:
         """One owner chat instruction: plan, then propose the orders one at a time.
 
         The instruction reaches the planner on its own labelled channel (not as Reader facts) and
@@ -135,6 +141,7 @@ class Runner:
             )
             result.records.append(self._no_action("portfolio unavailable", now))
             result.plan_reason = "portfolio unavailable"
+            result.intent = "question"
             return result
         timing_log.info(
             "phase=portfolio_read elapsed=%.4fs status=ok",
@@ -142,12 +149,19 @@ class Runner:
         )
 
         t0 = time.perf_counter()
-        plan = self.planner.plan(snapshot.state, self.ips, None, owner_instruction=instruction)
+        plan = self.planner.plan(
+            snapshot.state,
+            self.ips,
+            None,
+            owner_instruction=instruction,
+            conversation_history=conversation_history,
+        )
         timing_log.info("phase=planner elapsed=%.4fs", time.perf_counter() - t0)
 
         result.reply = getattr(plan, "reply", None)
         result.warnings = list(plan.warnings)
         result.validation_errors = list(plan.validation_errors)
+        result.intent = getattr(plan, "intent", "action" if plan.orders else "question")
         if plan.is_no_action:
             result.plan_reason = str((plan.no_action or {}).get("reason") or "no action")
             result.records.append(

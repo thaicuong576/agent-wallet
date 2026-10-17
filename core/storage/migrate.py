@@ -1,10 +1,10 @@
 """Plain versioned SQL migrations for the Postgres backend (design 5.2).
 
-Files are ``core/storage/migrations/NNNN_name.sql``. Each is applied in one transaction that first
-takes a transaction-scoped advisory lock, so concurrent starters apply a file exactly once and
-nothing relies on session state (safe behind a transaction-mode pooler). The ``schema_migrations``
-table records version, name and checksum; a checksum mismatch, or a database that holds a version
-the code does not know, refuses to start.
+Files are ``core/storage/migrations/NNNN_name.sql`` (e.g. ``0006_chat_intent.sql`` adds
+``intent``). Each is applied in one transaction that first takes a transaction-scoped
+advisory lock, so concurrent starters apply a file exactly once and nothing relies on session
+state (safe behind a transaction-mode pooler). The ``schema_migrations`` table records version,
+name and checksum; a checksum mismatch, or a database holding an unknown version, refuses to start.
 
 ``python -m core.storage.migrate`` applies pending files with ``DATABASE_MIGRATE_URL`` (falling
 back to ``DATABASE_URL``); ``--check`` only verifies that the schema is current.

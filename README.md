@@ -39,7 +39,7 @@ With keys: copy `.env.example` to `.env`, set `BASE_SEPOLIA_RPC_URL`, `OPENAI_AP
 
 ## Running Tests
 ```sh
-make test                                   # over 1,380 tests: unit, policy, gateway, storage, UI
+make test                                   # over 1,410 tests: unit, policy, gateway, storage, UI
 make eval                                   # 46 replay scenarios covering 27/28 rule codes
 python -m core.audit.verify docs/evidence/audit-chain.jsonl  # verifies audit hash chain
 ```
@@ -71,7 +71,7 @@ Real testnet transactions executed on Base Sepolia (chain ID 84532):
 - `docs/`: Technical documentation, deployment guides, test catalogues, architecture notes
 - `evals/`: 46 offline evaluation scenarios covering 27 of 28 rule codes
 - `scripts/`: Link checker, secret scanner, smoke test, and live transaction scripts
-- `tests/`: Pytest suite (over 1,380 tests across unit, policy, gateway, storage, UI)
+- `tests/`: Pytest suite (over 1,410 tests across unit, policy, gateway, storage, UI)
 - `ui/`: Zero-build single-page webapp console (plain HTML, CSS, and ES modules)
 
 ## Security Model

@@ -87,7 +87,12 @@ erDiagram
         string text
         string job_id FK
         timestamp created_at
+        string intent "question | clarify | action | refusal (nullable, migration 0006)"
     }
 
     CHAT_THREADS ||--o{ CHAT_MESSAGES : "contains (empty if count == 0)"
 ```
+
+## Intent Persistence (Migration 0006)
+
+Migration `core/storage/migrations/0006_chat_intent.sql` adds the nullable `intent` column (`text`) to `chat_messages` (with column UPDATE permission for `aw_app`). SQLite (`core/storage/sqlite/chat.py`) and Postgres adapter (`core/storage/postgres/adapters.py`) persist and surface `intent` on agent messages without requiring backfill.
