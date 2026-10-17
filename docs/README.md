@@ -75,7 +75,6 @@ Complete directory of technical documentation, architectural specifications, sec
 - [`evidence/eval-report.md`](evidence/eval-report.md): Output report from 46 offline evaluation scenarios covering 27/28 rule codes.
 
 ## 6. Submission
-- [`submission/deck-and-video-outline.md`](submission/deck-and-video-outline.md): Working outline for submission items 02 (presentation deck) and 03 (demo video script).
-- [`submission/02-presentation-deck.md`](submission/02-presentation-deck.md): Deliverable 02 presentation deck [managed by ticket S1].
-- [`submission/03-demo-video-script.md`](submission/03-demo-video-script.md): Deliverable 03 demo video recording script [managed by ticket S1].
-- [`submission/06-execution-evidence.md`](submission/06-execution-evidence.md): Deliverable 06 execution evidence summary [managed by ticket S1].
+- [`submission/02-presentation-deck.md`](submission/02-presentation-deck.md): Deliverable 02 presentation deck.
+- [`submission/03-demo-video-script.md`](submission/03-demo-video-script.md): Deliverable 03 demo video recording script.
+- [`submission/06-execution-evidence.md`](submission/06-execution-evidence.md): Deliverable 06 execution evidence summary.
