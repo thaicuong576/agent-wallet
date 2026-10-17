@@ -42,7 +42,12 @@ from api.chat_compose import (
 from api.wallet import current_tenant, get_webapp, problem_invalid
 from core.agent import Planner, Reader, ScriptedClient
 from core.agent.client import LLMClient, LLMError, OpenAIClient
-from core.agent.planner import FallbackPlanner
+from core.agent.planner import (
+    HISTORY_MAX_CHARS,
+    HISTORY_MAX_TURNS,
+    FallbackPlanner,
+    clean_history_text,
+)
 from core.gateway.exceptions import GatewayBusy, GatewayError, InvalidOrder, ReconcileRequired
 from core.gateway.tenant import Tenant
 from core.runner.portfolio import PortfolioReader
@@ -240,10 +245,9 @@ def _build_chat_history(
     for m in earlier:
         role = m.get("role")
         if role == "user":
-            turns.append({"role": "user", "text": str(m.get("text") or "")})
+            turns.append({"role": "user", "text": clean_history_text(m.get("text") or "", 400)})
         elif role == "agent":
-            # For agent turns, only the recorded outcome sentence written by code,
-            # never raw model text
+            agent_text = clean_history_text(m.get("text") or "", 400)
             agent_job_id = m.get("job_id")
             seqs: list[int] = []
             if agent_job_id:
@@ -252,10 +256,19 @@ def _build_chat_history(
                     seqs = [int(s) for s in job_row["seqs"]]
             recs = _records(tenant, seqs)
             outcome_text = outcome_sentence_from_records(recs)
-            turns.append({"role": "agent", "text": outcome_text})
-    if len(turns) > 6:
-        turns = turns[-6:]
-    while turns and sum(len(t["text"]) for t in turns) > 2000:
+            if (
+                outcome_text
+                and outcome_text != "No orders were proposed."
+                and outcome_text not in agent_text
+            ):
+                agent_text = f"{agent_text} {outcome_text}".strip() if agent_text else outcome_text
+            turn: dict[str, str] = {"role": "agent", "text": agent_text}
+            if m.get("intent") is not None:
+                turn["intent"] = str(m["intent"])
+            turns.append(turn)
+    if len(turns) > HISTORY_MAX_TURNS:
+        turns = turns[-HISTORY_MAX_TURNS:]
+    while turns and sum(len(t["text"]) for t in turns) > HISTORY_MAX_CHARS:
         turns.pop(0)
     return turns
 
