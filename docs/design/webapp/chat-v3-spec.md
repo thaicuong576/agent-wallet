@@ -21,7 +21,7 @@ The model proposes, code decides; only the gateway calls the signer; owner text 
 - **Planner call.** With the OpenAI client use tool calling: `delta.content` streams as `token`, the `propose_orders` arguments are buffered on the server, validated against the order schema and passed to the gateway; they are never sent to the browser. The delimited form (`<reply>` then `<plan>`) is the fallback for other clients.
 
 ## Third-party code
-Small, permissively licensed code may be adapted with attribution in `THIRD_PARTY_NOTICES.md`: the SSE parser and retry logic of `Azure/fetch-event-source` (MIT) for `ui/sse.js` (plain JS, POST and CSRF header capable), and the event formatting, ping and disconnect handling ideas of `sysid/sse-starlette` (BSD-3-Clause) on top of Starlette's `StreamingResponse`. No new runtime dependency.
+Small, permissively licensed code may be adapted with attribution in `THIRD_PARTY_NOTICES.md`: the SSE parser and retry logic of `Azure/fetch-event-source` (MIT) for `ui/sse.js` (plain JS, POST and CSRF header capable), and the event formatting, ping and disconnect handling ideas of `sysid/sse-starlette` (BSD-3-Clause) on top of Starlette's `StreamingResponse`. Dependency decision (owner, 2026-10-17): ticket D adds the `openai` SDK (pinned `openai==2.54.0` in `requirements.txt`) for streaming chat completions and tool-call assembly. No `sse-starlette`; SSE stays on Starlette's `StreamingResponse`.
 
 ## Delivery order (each PR small, independently mergeable, tests included)
 | PR | Scope | Notes |
