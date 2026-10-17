@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from scripts.build_submission_package import build_package
+from scripts.submission.build_submission_package import build_package
 
 EXPECTED_FOLDERS = [
     "01-technical-documentation",

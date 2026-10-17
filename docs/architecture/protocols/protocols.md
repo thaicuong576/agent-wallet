@@ -61,7 +61,7 @@ Activation via `PUT /tier` accepts optional `preset_id` (defaulting to `conserva
 1. **Adapter** `core/protocols/<name>.py`: encoders, a `build_calls(order, ctx)` that takes every address from constants in code, `positions`, `describe`, then `register(ProtocolSpec(...))`. Import it from `registry._ensure_loaded`.
 2. **Tokens**: if it uses a listed token, call `enable_token`; a new token is a `TokenSpec` in `tokens.py` with its `usd_source`.
 3. **Schemas**: only additive enum values (order, IPS, decision-record embedded copy; `test_embedded_copies_byte_identical` keeps them in step), plus an example valid and invalid order.
-4. **Spenders**: list every approval target in `spenders`. A new spender is an owner-review item (see `docs/security/self-assessment.md`).
+4. **Spenders**: list every approval target in `spenders`. A new spender is an owner-review item (see `docs/submission/05-security-self-assessment.md`).
 5. **Tests**: encoder unit tests with fixed vectors, `build_calls` through the registry, a denial test (disabled protocol, price unavailable), and an eval scenario if a new rule code is used.
 6. **Evidence**: an `eth_simulateV1` or live Base Sepolia run recorded in `docs/design/` or `docs/evidence/`; never a mainnet address or key.
 7. **Docs**: row in this file's table, `api.md` if an endpoint changes.

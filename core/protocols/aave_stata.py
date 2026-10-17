@@ -5,7 +5,8 @@ Encodes calldata for:
 - ERC-4626 deposit(uint256 assets, address receiver) via 'supply'
 - ERC-4626 withdraw(uint256 assets, address receiver, address owner) via 'withdraw'
 
-Addresses are verified on-chain against Base Sepolia RPC (docs/design/testnet-facts-defi-survey.md).
+Addresses are verified on-chain against Base Sepolia RPC
+(docs/research/testnet-facts-defi-survey.md).
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from core.protocols.registry import (
 from core.protocols.tokens import get_token
 
 # Contract addresses on Base Sepolia (verified on-chain)
-# Source: docs/design/testnet-facts-defi-survey.md, section 7
+# Source: docs/research/testnet-facts-defi-survey.md, section 7
 AAVE_STATA_USDC: Final[str] = "0xf430cb6E2b85f99222fBFA6dFEa18Ff60FA6B32a"
 AAVE_STATA_USDT: Final[str] = "0xf63dA51069FAe9448747FA425F8Cb84B0149eC0F"
 

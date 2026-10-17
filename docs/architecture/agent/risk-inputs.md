@@ -1,8 +1,8 @@
 # Risk inputs provider: architecture note
 
 Owning module: `core.risk` (`core/risk/provider.py`, `core/risk/router.py`, `core/risk/aave.py`, `core/risk/fixture.py`).
-Specification & data contract: [`contracts/schemas/risk-inputs.schema.json`](../../contracts/schemas/risk-inputs.schema.json).
-Live testnet evidence: [`docs/design/evidence-risk-inputs.md`](../design/evidence-risk-inputs.md).
+Specification & data contract: [`contracts/schemas/risk-inputs.schema.json`](../../../contracts/schemas/risk-inputs.schema.json).
+Live testnet evidence: [`docs/research/evidence-risk-inputs.md`](../../research/evidence-risk-inputs.md).
 
 ## Purpose
 
@@ -111,7 +111,7 @@ Every returned risk input dictionary contains a `sources` mapping reflecting thi
 
 ## Contract Addresses on Base Sepolia (Chain ID 84532)
 
-Addresses are verified against Base Sepolia RPC and documented in `docs/design/testnet-facts-defi-survey.md`:
+Addresses are verified against Base Sepolia RPC and documented in `docs/research/testnet-facts-defi-survey.md`:
 
 | Role | Contract Address | Notes |
 | :--- | :--- | :--- |

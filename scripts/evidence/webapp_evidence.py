@@ -10,8 +10,8 @@ The owner key never leaves this process; the server only sees signatures. Dry ru
 signs in and reads state: no transaction is sent. `--execute` sends the top-up and runs the jobs
 and needs AGENT_WALLET_LIVE_CONFIRM=I_APPROVE_WEBAPP_EVIDENCE_ON_BASE_SEPOLIA.
 
-    python scripts/webapp_evidence.py --url https://agent-wallet-6vuy.onrender.com
-    python scripts/webapp_evidence.py --url ... --execute
+    python scripts/evidence/webapp_evidence.py --url https://agent-wallet-6vuy.onrender.com
+    python scripts/evidence/webapp_evidence.py --url ... --execute
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ import httpx
 from eth_account import Account
 from eth_account.messages import encode_defunct
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 CONFIRM = "I_APPROVE_WEBAPP_EVIDENCE_ON_BASE_SEPOLIA"
 RPC_URL = os.environ.get("BASE_SEPOLIA_RPC_URL", "https://sepolia.base.org")
 CHAIN_ID = 84532
@@ -241,7 +241,10 @@ def main() -> int:
     out = [
         "# Webapp evidence (Base Sepolia, chain 84532)",
         "",
-        f"Generated {started} by `scripts/webapp_evidence.py --execute` against `{args.url}`.",
+        (
+            f"Generated {started} by `scripts/evidence/webapp_evidence.py --execute` "
+            f"against `{args.url}`."
+        ),
         "",
         "The owner is a throwaway testnet wallet held by the script; the server created and "
         "holds a separate custodial agent key for it. Prices are mainnet reference values, "

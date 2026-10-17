@@ -17,7 +17,7 @@ from web3 import Web3
 
 UsdSource = Literal["stable", "aave_oracle", "unavailable"]
 
-# AaveOracle on Base Sepolia (8 decimals). Source: docs/design/testnet-facts-defi-survey.md
+# AaveOracle on Base Sepolia (8 decimals). Source: docs/research/testnet-facts-defi-survey.md
 AAVE_ORACLE: Final[str] = "0x943b0de18d4abf4ef02a85912f8fc07684c141df"
 GET_ASSET_PRICE_SELECTOR: Final[str] = "0xb3596f07"  # getAssetPrice(address)
 ORACLE_DECIMALS: Final[int] = 8
@@ -68,7 +68,7 @@ def all_tokens() -> list[TokenSpec]:
 
 
 def _wire() -> None:
-    # Addresses from docs/design/testnet-facts-defi-survey.md (Base Sepolia, 84532).
+    # Addresses from docs/research/testnet-facts-defi-survey.md (Base Sepolia, 84532).
     # USDC is Aave's testnet mock USDC, not Circle native USDC.
     register_token(
         TokenSpec("USDC", "0xba50Cd2A20f6DA35D788639E581bca8d0B5d4D5f", 6, "stable", enabled=True)

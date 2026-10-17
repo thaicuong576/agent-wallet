@@ -29,7 +29,7 @@ from core.protocols.registry import (
 from core.protocols.tokens import enable_token
 
 # Contract addresses on Base Sepolia (Chain ID 84532)
-# Verified on-chain via eth_getCode and view calls; see docs/design/testnet-facts-defi-survey.md
+# Verified on-chain via eth_getCode and view calls; see docs/research/testnet-facts-defi-survey.md
 MORPHO_BLUE: Final[str] = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb"
 ADAPTIVE_CURVE_IRM: Final[str] = "0x46415998764C29aB2a25CbeA6254146D50D22687"
 

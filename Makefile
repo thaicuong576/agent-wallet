@@ -21,10 +21,10 @@ demo:
 	$(PY) -m uvicorn api.main:app --host 127.0.0.1 --port 8000
 
 links:
-	$(PY) scripts/check_links.py
+	$(PY) scripts/checks/check_links.py
 
 secrets:
-	$(PY) scripts/check_no_secrets.py
+	$(PY) scripts/checks/check_no_secrets.py
 
 check: lint test links secrets
 

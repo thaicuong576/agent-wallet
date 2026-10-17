@@ -33,7 +33,7 @@ from core.protocols.registry import (
 )
 
 # Base Sepolia Aave USDT and aUSDT addresses
-# Source: docs/design/testnet-facts-defi-survey.md
+# Source: docs/research/testnet-facts-defi-survey.md
 AAVE_V3_USDT: Final[str] = "0x0a215D8ba66387DCA84B284D18c3B4ec3de6E54a"
 AAVE_V3_A_USDT: Final[str] = "0xce3caae5ed17a7aafceebc897de843fa6cc0c018"
 

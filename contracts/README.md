@@ -2,7 +2,7 @@
 
 One language-neutral definition of every object that crosses a module boundary in agent-wallet: the policy engine, the gateway, the audit log, the API and the minimal UI all build against these files. Documents only; there is no product code here.
 
-Where they sit and how they relate: [`docs/architecture/contracts.md`](../docs/architecture/contracts.md).
+Where they sit and how they relate: [`docs/architecture/core/contracts.md`](../docs/architecture/core/contracts.md).
 
 ## Layout
 | Path | What |
@@ -84,5 +84,5 @@ Schemas are self-contained so any JSON Schema library validates them with no reg
   - **Additive additions in Ticket C1 (no bump):** Adds enum values to `order.schema.json` and its embedded copy in `decision-record.schema.json`: functions `mint` and `transfer`, recipient `owner`, token `ETH`, protocol `wallet`, along with rule codes `ACCESS.OWNER_ONLY_FUNCTION`, `TIER.GLOBAL_STOP`, and `TIER.POLICY_CHANGED`. Because existing valid orders, stored decision records, and audit chains remain completely valid, `schema_version` remains `1`.
 - Any other change (a removed or renamed field, a tighter pattern, a new required field, a meaning change) is a new `schema_version` and a new set of examples. Consumers must reject a `schema_version` they do not know.
 - Changes to `ips`, `tier-state` or `decision-record` define permissions and the audit boundary: they are high risk and go to the owner.
-- A change comes with: schema, OpenAPI if exposed, examples (one valid, one invalid), this README and `docs/architecture/contracts.md` if relations changed.
+- A change comes with: schema, OpenAPI if exposed, examples (one valid, one invalid), this README and `docs/architecture/core/contracts.md` if relations changed.
 

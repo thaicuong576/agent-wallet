@@ -1,7 +1,7 @@
 """Contract addresses and enum-to-address mappings for Base Sepolia (Chain ID 84532).
 
 Addresses are verified on-chain against Base Sepolia RPC and sourced from primary
-documentation documented in docs/design/testnet-facts-aave.md.
+documentation documented in docs/research/testnet-facts-aave.md.
 """
 
 from typing import Final

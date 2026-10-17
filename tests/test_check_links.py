@@ -1,10 +1,10 @@
-"""Tests for scripts/check_links.py."""
+"""Tests for scripts/checks/check_links.py."""
 
 from __future__ import annotations
 
 import pathlib
 
-from scripts.check_links import (
+from scripts.checks.check_links import (
     ALLOWED_PENDING_PATHS,
     check_all_markdown_links,
     check_file_links,

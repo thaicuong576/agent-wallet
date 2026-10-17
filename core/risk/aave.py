@@ -25,7 +25,7 @@ from core.risk.provider import (
 )
 
 # Verified AaveProtocolDataProvider proxy on Base Sepolia (Chain ID 84532)
-# Sourced from docs/design/testnet-facts-aave.md
+# Sourced from docs/research/testnet-facts-aave.md
 AAVE_V3_DATA_PROVIDER: Final[str] = "0xBc9f5b7E248451CdD7cA54e717a2BFe1F32b566b"
 
 # Function selector for IPoolDataProvider.getReserveData(address)

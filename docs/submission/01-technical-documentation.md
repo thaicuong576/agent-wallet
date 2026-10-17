@@ -32,18 +32,18 @@ flowchart LR
 
 | Layer | Package | Responsibility | Note |
 | :--- | :--- | :--- | :--- |
-| Contracts | `contracts/` | JSON Schemas, OpenAPI, 28 rule codes, IPS presets, examples | [`contracts.md`](architecture/contracts.md) |
-| Agent | `core/agent` | Reader (untrusted text to structured facts), Planner (facts to orders), LLM client | [`planner-reader.md`](architecture/planner-reader.md) |
-| Policy | `core/policy` | IPS loader (immutable, hashed), pure rule engine | [`ips-loader.md`](architecture/ips-loader.md), [`policy-engine.md`](architecture/policy-engine.md) |
-| Gateway | `core/gateway` | propose, tier gate, policy, simulate, sign, record; idempotency | [`gateway.md`](architecture/gateway.md), [`gateway-wiring.md`](architecture/gateway-wiring.md) |
-| Signer | `core/signer` | Local key, signs only chain 84532, never imported outside the gateway | [`signer.md`](architecture/signer.md) |
-| Protocols | `core/protocols` | One registry: each protocol is a spec with its calldata builder, spenders, positions and plain-English description. Aave v3 (USDC, USDT), Aave stata ERC-4626 vaults, Morpho Blue (two allow-listed markets), Uniswap v3 swaps with an oracle-based minimum output | [`protocols.md`](architecture/protocols.md), [`aave-adapter.md`](architecture/aave-adapter.md), [`aave-stata.md`](architecture/aave-stata.md), [`morpho-blue.md`](architecture/morpho-blue.md), [`uniswap-v3.md`](architecture/uniswap-v3.md) |
-| Risk | `core/risk` | Risk inputs by protocol and market, read from chain (Aave reserves, Morpho markets, Uniswap pools), fail closed, each field labelled on-chain or reference; offline fixtures for tests | [`risk-inputs.md`](architecture/risk-inputs.md) |
-| Tiers | `core/tiers` | Persistent tier, emergency stop, approval queue; read-only view vs owner controls | [`tiers.md`](architecture/tiers.md) |
-| Audit | `core/audit` | Append-only SQLite hash chain, verifier, JSONL export | [`audit-log.md`](architecture/audit-log.md) |
-| Interface | `api`, `ui` | REST API from the OpenAPI contract; web app with chat as home, portfolio, activity, rules, owner sign-in, step-up signatures | [`api.md`](architecture/api.md), [`ui.md`](architecture/ui.md), [`webapp.md`](architecture/webapp.md) |
-| Hosting and storage | `core/storage`, `Dockerfile` | Multi-owner mode: per-owner agent wallet, encrypted keystore, Postgres (row level security) or SQLite, jobs, chat threads | [`custody-tenancy.md`](architecture/custody-tenancy.md), [`storage.md`](architecture/storage.md), [`deployment.md`](architecture/deployment.md) |
-| Evaluation | `evals` | Offline replay harness, 46 scenarios, 27 of 28 rule codes covered (the 28th is a status, not a violation), report | [`evals.md`](architecture/evals.md) |
+| Contracts | `contracts/` | JSON Schemas, OpenAPI, 28 rule codes, IPS presets, examples | [`contracts.md`](../architecture/core/contracts.md) |
+| Agent | `core/agent` | Reader (untrusted text to structured facts), Planner (facts to orders), LLM client | [`planner-reader.md`](../architecture/agent/planner-reader.md) |
+| Policy | `core/policy` | IPS loader (immutable, hashed), pure rule engine | [`ips-loader.md`](../architecture/core/ips-loader.md), [`policy-engine.md`](../architecture/core/policy-engine.md) |
+| Gateway | `core/gateway` | propose, tier gate, policy, simulate, sign, record; idempotency | [`gateway.md`](../architecture/core/gateway.md), [`gateway-wiring.md`](../architecture/core/gateway-wiring.md) |
+| Signer | `core/signer` | Local key, signs only chain 84532, never imported outside the gateway | [`signer.md`](../architecture/core/signer.md) |
+| Protocols | `core/protocols` | One registry: each protocol is a spec with its calldata builder, spenders, positions and plain-English description. Aave v3 (USDC, USDT), Aave stata ERC-4626 vaults, Morpho Blue (two allow-listed markets), Uniswap v3 swaps with an oracle-based minimum output | [`protocols.md`](../architecture/protocols/protocols.md), [`aave-adapter.md`](../architecture/protocols/aave-adapter.md), [`aave-stata.md`](../architecture/protocols/aave-stata.md), [`morpho-blue.md`](../architecture/protocols/morpho-blue.md), [`uniswap-v3.md`](../architecture/protocols/uniswap-v3.md) |
+| Risk | `core/risk` | Risk inputs by protocol and market, read from chain (Aave reserves, Morpho markets, Uniswap pools), fail closed, each field labelled on-chain or reference; offline fixtures for tests | [`risk-inputs.md`](../architecture/agent/risk-inputs.md) |
+| Tiers | `core/tiers` | Persistent tier, emergency stop, approval queue; read-only view vs owner controls | [`tiers.md`](../architecture/core/tiers.md) |
+| Audit | `core/audit` | Append-only SQLite hash chain, verifier, JSONL export | [`audit-log.md`](../architecture/core/audit-log.md) |
+| Interface | `api`, `ui` | REST API from the OpenAPI contract; web app with chat as home, portfolio, activity, rules, owner sign-in, step-up signatures | [`api.md`](../architecture/webapp/api.md), [`ui.md`](../architecture/webapp/ui.md), [`webapp.md`](../architecture/webapp/webapp.md) |
+| Hosting and storage | `core/storage`, `Dockerfile` | Multi-owner mode: per-owner agent wallet, encrypted keystore, Postgres (row level security) or SQLite, jobs, chat threads | [`custody-tenancy.md`](../architecture/webapp/custody-tenancy.md), [`storage.md`](../architecture/webapp/storage.md), [`deployment.md`](../guides/deployment.md) |
+| Evaluation | `evals` | Offline replay harness, 46 scenarios, 27 of 28 rule codes covered (the 28th is a status, not a violation), report | [`evals.md`](../architecture/agent/evals.md) |
 
 ### 2b. Hosted web app, protocol registry and trust boundary
 
@@ -101,7 +101,7 @@ Each record carries `prev_hash` and `hash = SHA-256(canonical JSON of the record
 The Reader converts untrusted text to a closed, schema-bound facts object; free text never reaches the Planner as instructions. The Planner's output must validate against the order schema, and even a perfectly valid order proposed under attack is still judged by the policy engine against the owner's universe. The model has no key and no tool that signs.
 
 ## 4. Security design
-Summarised here, argued in full in [`security/self-assessment.md`](security/self-assessment.md):
+Summarised here, argued in full in [`security/self-assessment.md`](05-security-self-assessment.md):
 
 - **Least authority**: `TierView` (read) and `OwnerControls` (write) are separate objects; agent-facing packages cannot import the latter (AST test).
 - **Single path to the signer**: only `core.gateway` imports `core.signer` (test + CI).

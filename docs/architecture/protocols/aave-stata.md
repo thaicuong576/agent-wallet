@@ -1,7 +1,7 @@
 # Aave Stata (ERC-4626) Vault Adapter: Architecture Note
 
 Owning module: `core.protocols` (`core/protocols/aave_stata.py`).  
-Specification & data contract: [`contracts/schemas/order.schema.json`](../../contracts/schemas/order.schema.json).
+Specification & data contract: [`contracts/schemas/order.schema.json`](../../../contracts/schemas/order.schema.json).
 
 ## Purpose
 
@@ -71,7 +71,7 @@ erDiagram
 
 ## Contract Addresses on Base Sepolia (Chain ID 84532)
 
-Addresses verified on-chain via Base Sepolia RPC (see `docs/design/evidence-aave-stata.md`):
+Addresses verified on-chain via Base Sepolia RPC (see `docs/research/evidence-aave-stata.md`):
 
 | Token | Underlying Token Address | Stata Vault Contract Address (`VAULTS[token]`) |
 | :--- | :--- | :--- |

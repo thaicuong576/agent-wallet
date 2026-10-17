@@ -70,7 +70,7 @@ Speaker pacing: ~130–140 words per minute.
   - The LLM never holds keys, never sees credentials, and cannot call RPC sign methods.
   - Untrusted text is normalized into structured facts by the Reader; prompt text never reaches the Planner as instructions.
   - Fails closed: Missing risk data, RPC errors, or an unreadable tier state immediately denies the order.
-- **Visual:** System Architecture Diagram (from `docs/technical-documentation.md`):
+- **Visual:** System Architecture Diagram (from `docs/submission/01-technical-documentation.md`):
   ```mermaid
   flowchart LR
     OWN[Owner] -->|Sign-in & Step-up| API[Web App API]
@@ -235,7 +235,7 @@ Speaker pacing: ~130–140 words per minute.
   - **Reference valuations (K4):** Valuation uses Aave oracle reference pricing rather than multi-exchange liquidity feeds.
   - **Testnet liquidity quirks (K22):** Illiquid testnet pools and mispriced user-created Morpho markets are handled by failing closed on simulation.
   - **Single RPC node (K6):** Uses Base Sepolia public RPC without multi-provider quorum consensus.
-- **Visual:** Known Risk Matrix (from `docs/security/self-assessment.md`):
+- **Visual:** Known Risk Matrix (from `docs/submission/05-security-self-assessment.md`):
   | Risk ID | Severity | Nature of Risk | Current Mitigation |
   | :--- | :---: | :--- | :--- |
   | **K4** | Medium | Reference prices vs live spot | Token registry fails closed; swaps bound to oracle minimum |
@@ -283,8 +283,8 @@ Speaker pacing: ~130–140 words per minute.
     python -m pytest -q                                # 1,279 unit, e2e, and contract tests pass
     python -m evals.run                                # 46 offline scenarios, 27/28 rule codes
     python -m core.audit.verify docs/evidence/audit-chain.jsonl # Cryptographic hash chain check
-    python scripts/check_no_secrets.py                 # Clean repository scan (0 secrets)
-    python scripts/build_submission_package.py         # Builds verified 6-folder package
+    python scripts/checks/check_no_secrets.py         # Clean repository scan (0 secrets)
+    python scripts/submission/build_submission_package.py # Builds verified 6-folder package
     ```
 - **Visual:** Verification terminal output snippet showing `1279 passed`, `46/46 passed`, and `OK: verified records (hash chain intact)`.
 - **Speaker script (0:15):**

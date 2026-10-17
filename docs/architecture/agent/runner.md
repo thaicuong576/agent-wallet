@@ -1,6 +1,6 @@
 # Runner: Reader, Planner, portfolio and gateway in one cycle
 
-Owner module: `core.runner` (`core/runner/runner.py`). Design: [`docs/design/runner/design.md`](../design/runner/design.md), sections 4 and 6.
+Owner module: `core.runner` (`core/runner/runner.py`). Design: [`docs/design/runner/design.md`](../../design/runner/design.md), sections 4 and 6.
 
 `Runner.run_once(untrusted_text, now)` composes the pieces that already exist and adds no decision logic. The LLM proposes, the gateway decides.
 
@@ -34,7 +34,7 @@ sequenceDiagram
 
 ## Behaviour
 - The portfolio snapshot is read before planning; it is read again before every order after the first, and an unavailable portfolio stops the loop with a `no_action` record (never zero balances).
-- `PortfolioReader.read` issues its RPC reads concurrently via `ThreadPoolExecutor` (at most 8 workers) with keep-alive connection reuse, speeding up reads while preserving identical position ordering and fail-closed error semantics. See [`docs/architecture/rpc-latency.md`](rpc-latency.md).
+- `PortfolioReader.read` issues its RPC reads concurrently via `ThreadPoolExecutor` (at most 8 workers) with keep-alive connection reuse, speeding up reads while preserving identical position ordering and fail-closed error semantics. See [`docs/architecture/protocols/rpc-latency.md`](../protocols/rpc-latency.md).
 - `run_instruction` logs timing measurements for each phase (`portfolio_read`, `planner`, `gateway`) using logger `agent_wallet.timing`.
 - A policy denial, an escalation and an execution are all appended by the gateway; the runner returns the record it got and writes nothing itself.
 - The loop stops after a `failed` outcome. `GatewayBusy` and `ReconcileRequired` propagate to the caller; earlier records of the cycle are already in the audit log.

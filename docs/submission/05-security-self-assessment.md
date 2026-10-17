@@ -57,7 +57,7 @@ Authority changes are guarded by strict cryptographic and architectural mechanis
 | **C8** | Audit log is an append-only SHA-256 hash chain; tampering, deletion and reordering are detected and first bad `seq` is reported | enforced | `tests/audit/test_audit_log.py`, eval integrity scenarios, `docs/evidence/audit-chain.jsonl` verified by `python -m core.audit.verify` |
 | **C9** | Concurrent writers cannot corrupt or fork the audit chain (`BEGIN IMMEDIATE`, multi-process stress tests) | enforced | `tests/audit/test_sink_concurrency.py` |
 | **C10** | Prompt-injection defence: Reader returns structured facts only; Planner output must validate against order schema; out-of-universe actions fail closed in policy engine | enforced | `tests/agent/test_boundaries.py`, `tests/agent/test_injection_corpus.py`, 12 injection eval scenarios |
-| **C11** | Secrets hygiene: `.env` ignored in git, environment variable names only in `.env.example`, automated secret scanner in CI | enforced | `scripts/check_no_secrets.py`, CI workflow |
+| **C11** | Secrets hygiene: `.env` ignored in git, environment variable names only in `.env.example`, automated secret scanner in CI | enforced | `scripts/checks/check_no_secrets.py`, CI workflow |
 | **C12** | Owner token lives in page memory only; API strings are rendered as text, never HTML (XSS prevention) | enforced | `tests/ui/test_ui.py` |
 | **C13** | Emergency stop and tier state are shared by API and runner through persistent storage | enforced | `tests/tiers/test_shared_file.py`, `tests/e2e/test_runner_stop.py` |
 | **C14** | Concurrent proposes are serialised by a cross-process lock held from limit read to audit append; timeout denies with nothing signed | enforced | `tests/gateway/test_lock.py` |
@@ -66,22 +66,22 @@ Authority changes are guarded by strict cryptographic and architectural mechanis
 
 | # | Control | Status | Evidence |
 | :--- | :--- | :--- | :--- |
-| **W1** | Wallet sign-in: server nonce, signed message bound to origin and chain, single use; HttpOnly SameSite cookie, CSRF header and Origin check on every write | enforced | `tests/webapp/test_auth.py`, `docs/architecture/auth.md` |
+| **W1** | Wallet sign-in: server nonce, signed message bound to origin and chain, single use; HttpOnly SameSite cookie, CSRF header and Origin check on every write | enforced | `tests/webapp/test_auth.py`, `docs/architecture/webapp/auth.md` |
 | **W2** | Step-up: anything that widens authority (tier raise, stop release, withdraw, approvals) needs a fresh owner signature bound to the action and its parameters, single use | enforced | `tests/webapp/test_stepup.py`, `tests/webapp/test_owner_routes.py`, hosted evidence `activate agent` step |
 | **W3** | Per-owner isolation: every route takes the owner from the verified session only; owner-scoped storage; cross-owner reads and actions fail | enforced | `tests/webapp/test_tenant_paths.py`, `tests/storage/contract/test_isolation.py`, contract suite on SQLite and Postgres |
-| **W4** | Agent keys are generated server-side, stored encrypted (KDF plus authenticated encryption AES-256-GCM, secret from environment) and never returned by any route or written to logs | enforced (testnet custody) | `tests/webapp/test_custody.py`, `tests/webapp/test_keystore.py`, `docs/architecture/custody-tenancy.md` |
+| **W4** | Agent keys are generated server-side, stored encrypted (KDF plus authenticated encryption AES-256-GCM, secret from environment) and never returned by any route or written to logs | enforced (testnet custody) | `tests/webapp/test_custody.py`, `tests/webapp/test_keystore.py`, `docs/architecture/webapp/custody-tenancy.md` |
 | **W5** | Origin-aware policy: a planner cannot mint or transfer; owner functions need `origin="owner"`, set by code, never read from the order body | enforced | `tests/gateway/test_origin.py`, `tests/gateway/test_owner_functions_exec.py` |
 | **W6** | Global stop (env flag, flag file or settings row) is re-read after simulation and immediately before signing; an unreadable flag stops | enforced | `tests/gateway/test_global_stop.py` |
-| **W7** | Run jobs & split quota buckets: jobs are rate-limited to 6 action runs/hour per owner (`chat_action`), while informational questions use a separate 60 inquiries/hour bucket (`chat_inquiry`). Non-action inquiries automatically refund the action quota | enforced | `tests/webapp/test_jobs.py`, `tests/webapp/test_chat.py`, `docs/architecture/chat-quota-voice.md` |
+| **W7** | Run jobs & split quota buckets: jobs are rate-limited to 6 action runs/hour per owner (`chat_action`), while informational questions use a separate 60 inquiries/hour bucket (`chat_inquiry`). Non-action inquiries automatically refund the action quota | enforced | `tests/webapp/test_jobs.py`, `tests/webapp/test_chat.py`, `docs/architecture/webapp/chat-quota-voice.md` |
 | **W8** | Database: append-only audit and intents by trigger, row level security enabled on every table, no grants to Supabase data API roles, parameterised SQL only | enforced | migrations 0001 to 0005, `tests/storage` |
-| **W9** | Hosted evidence is reproducible: `scripts/webapp_evidence.py` signs in as a throwaway owner and writes the record | enforced | `docs/evidence/webapp-evidence.md`, `docs/evidence/defi-evidence.md` |
+| **W9** | Hosted evidence is reproducible: `scripts/evidence/webapp_evidence.py` signs in as a throwaway owner and writes the record | enforced | `docs/evidence/webapp-evidence.md`, `docs/evidence/defi-evidence.md` |
 | **W10** | Protocol registry: orders carry enums only; spenders, targets, markets and calldata layout live in code specs; after policy decision the gateway denies unlisted protocols or markets (`ACCESS.PROTOCOL_NOT_ENABLED`, `ACCESS.MARKET_NOT_ALLOWED`) | enforced | `tests/protocols/test_registry.py`, `tests/gateway/test_diversified_preset_e2e.py` |
 | **W11** | Preset choice is a widening action: `PUT /tier` with a preset needs a step-up signature bound to the tier and that exact `preset_id`; a signature for the tier alone or for another preset is refused | enforced | `tests/webapp/test_owner_routes.py::test_choosing_a_preset_needs_a_signature_bound_to_that_preset` |
 | **W12** | Owner cancel stops further orders of a plan before they reach the gateway, never calls the signer, never undoes an order already submitted; remaining steps are recorded as skipped | enforced | `tests/webapp/test_job_phases.py` |
 | **W13** | Chat thread routing & persistence: threads are owner-scoped with row-level security (migration 0005); foreign thread id returns 404; active thread persists across page reloads and remounts; thread titles are set by code, not by the model | enforced | `tests/webapp/test_chat.py`, `tests/storage/contract/test_chat.py`, `tests/storage/test_migration_0005.py` |
 | **W14** | Valuation fails closed: every USD value goes through one token registry; a token with no readable price is denied (`RISK.PRICE_UNAVAILABLE`), and swap minimum output is computed from the Aave oracle, never from pool reserves | enforced | `tests/protocols/test_registry.py`, `tests/protocols/test_uniswap_v3.py` |
-| **W15** | Server-Sent Events (SSE) streaming: `GET /chat/stream/{job_id}` streams real-time phase updates (`planning`, `simulating`, `executing`) with periodic keep-alive pings; client automatically falls back to HTTP polling on network disconnect | enforced | `tests/webapp/test_sse.py`, `tests/ui/test_sse.py`, `docs/architecture/chat-sse.md` |
-| **W16** | Concurrent portfolio reads & RPC keep-alive: `PortfolioReader.read` queries protocol positions concurrently via `ThreadPoolExecutor` (max 8 workers) with HTTPS connection reuse and retry, reducing latency while preserving fail-closed semantics | enforced | `tests/runner/test_portfolio.py`, `tests/test_http_stdlib.py`, `docs/architecture/rpc-latency.md` |
+| **W15** | Server-Sent Events (SSE) streaming: `GET /chat/stream/{job_id}` streams real-time phase updates (`planning`, `simulating`, `executing`) with periodic keep-alive pings; client automatically falls back to HTTP polling on network disconnect | enforced | `tests/webapp/test_sse.py`, `tests/ui/test_sse.py`, `docs/architecture/webapp/chat-sse.md` |
+| **W16** | Concurrent portfolio reads & RPC keep-alive: `PortfolioReader.read` queries protocol positions concurrently via `ThreadPoolExecutor` (max 8 workers) with HTTPS connection reuse and retry, reducing latency while preserving fail-closed semantics | enforced | `tests/runner/test_portfolio.py`, `tests/test_http_stdlib.py`, `docs/architecture/protocols/rpc-latency.md` |
 | **W17** | UI v3 overview & holdings: comprehensive dashboard featuring asset breakdown, token SVG icons, real-time progress card, balance-validated funds top-up & withdrawal dialogs, and interactive rules explorer | enforced | `tests/ui/test_overview.py`, `tests/ui/test_holdings.py`, `tests/ui/test_dialogs.py`, `tests/ui/test_progress.py`, `tests/ui/test_icons.py`, `tests/ui/test_rules_extras.py` |
 
 ## 4. Known-risk list
@@ -129,10 +129,10 @@ python -m evals.run
 python -m core.audit.verify docs/evidence/audit-chain.jsonl
 
 # 4. Verify that no private keys, seed phrases, or secrets are tracked in the repository
-python scripts/check_no_secrets.py
+python scripts/checks/check_no_secrets.py
 
 # 5. Build and verify the complete 6-folder submission package structure
-python scripts/build_submission_package.py
+python scripts/submission/build_submission_package.py
 ```
 
 ### On-chain evidence files

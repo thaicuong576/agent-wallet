@@ -150,7 +150,7 @@ The evaluation suite runs 46 deterministic offline scenarios testing edge cases,
 python -m evals.run
 ```
 Outputs are written to:
-- Markdown report: [`docs/evidence/eval-report.md`](evidence/eval-report.md)
+- Markdown report: [`docs/evidence/eval-report.md`](../evidence/eval-report.md)
 - JSON results: `docs/evidence/eval-results.json`
 
 Rule-code coverage: **27 of 28 rule codes** are tested and covered by scenarios. (The 28th rule code, `TIER.APPROVAL_REQUIRED`, represents an approval state rather than a policy violation).
@@ -159,13 +159,13 @@ Rule-code coverage: **27 of 28 rule codes** are tested and covered by scenarios.
 These scripts communicate with Base Sepolia and are intended for manual testing and generating submission evidence:
 ```sh
 # Execute first live transaction on Base Sepolia
-python scripts/live_first_tx.py --execute
+python scripts/evidence/live_first_tx.py --execute
 
 # Execute hosted webapp live multi-protocol flow
-python scripts/webapp_evidence_defi.py --execute
+python scripts/evidence/webapp_evidence_defi.py --execute
 
 # Execute agent runner autonomous planning flow
-python scripts/runner_evidence.py --execute
+python scripts/evidence/runner_evidence.py --execute
 ```
 
 ---
@@ -194,15 +194,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t agent-wallet:ci .
-      - run: scripts/container_smoke.sh agent-wallet:ci
+      - run: scripts/checks/container_smoke.sh agent-wallet:ci
 ```
 
 1. **`make check`** triggers:
    - `make lint` (`ruff check .`)
    - `make test` (`pytest -q` executing all 1,386 tests against SQLite and PostgreSQL service container)
-   - `make links` (`python scripts/check_links.py` checking all relative links and markdown anchors)
-   - `make secrets` (`python scripts/check_no_secrets.py` ensuring no private keys, seed phrases, or credentials exist in code or fixtures)
-2. **`docker`** builds `Dockerfile` and executes `scripts/container_smoke.sh` to verify non-root UID 10001 execution, `/app/data` volume permissions, and `/health` response.
+   - `make links` (`python scripts/checks/check_links.py` checking all relative links and markdown anchors)
+   - `make secrets` (`python scripts/checks/check_no_secrets.py` ensuring no private keys, seed phrases, or credentials exist in code or fixtures)
+2. **`docker`** builds `Dockerfile` and executes `scripts/checks/container_smoke.sh` to verify non-root UID 10001 execution, `/app/data` volume permissions, and `/health` response.
 
 ---
 
@@ -218,7 +218,7 @@ All primary developer tasks are wrapped in thin Makefile targets:
 | `make check` | `lint test links secrets` | Comprehensive CI check (tests, style, links, secrets) |
 | `make eval` | `$(PY) -m evals.run` | Run the 46 evaluation scenarios and generate report |
 | `make demo` | `$(PY) -m uvicorn api.main:app --host 127.0.0.1 --port 8000` | Start local API server for zero-key browser demo |
-| `make links` | `$(PY) scripts/check_links.py` | Verify all markdown relative links and anchors |
-| `make secrets` | `$(PY) scripts/check_no_secrets.py` | Scan repository for accidental secret leaks |
+| `make links` | `$(PY) scripts/checks/check_links.py` | Verify all markdown relative links and anchors |
+| `make secrets` | `$(PY) scripts/checks/check_no_secrets.py` | Scan repository for accidental secret leaks |
 | `make docker-build` | `docker build -t agent-wallet:dev .` | Build local development Docker container |
 | `make docker-run` | `docker run --rm -p 8000:8000 --env-file .env agent-wallet:dev` | Run container locally |
