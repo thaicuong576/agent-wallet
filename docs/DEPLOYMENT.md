@@ -51,6 +51,7 @@ All settings are configured through environment variables (declared in `.env.exa
 | `AGENT_WALLET_SESSION_SECRET` | (unset) | Secret used to sign HttpOnly session cookies | Yes for multi mode |
 | `AGENT_WALLET_PUBLIC_ORIGIN` | (unset) | Allowed public origin URL (e.g. `https://agent-wallet-6vuy.onrender.com`) | Yes for hosted webapp |
 | `AGENT_WALLET_CHAT_INQUIRIES_PER_HOUR` | `60` | Rate limit for chat jobs that propose 0 orders | No |
+| `AGENT_WALLET_LOG_LEVEL` | `INFO` | Log level for `agent_wallet` loggers (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | No |
 | `IPS_PATH` | `contracts/presets/conservative.json` | Path to Investment Policy Statement JSON | No |
 | `AGENT_WALLET_RISK_SOURCE` | `onchain` | Risk provider source: `onchain` (live RPC reads) or `reference` (offline fixtures) | No |
 | `DATABASE_URL` | (unset) | Postgres connection URL. If unset, SQLite backend under `AGENT_WALLET_DATA_DIR` is used | Yes for Postgres |
@@ -205,14 +206,55 @@ curl -f -s https://agent-wallet-6vuy.onrender.com/protocols
 curl -f -s https://agent-wallet-6vuy.onrender.com/presets
 # Expected: JSON list with "conservative" and "diversified" preset hashes
 
-# 5. Static Webapp Console: verifies single-page UI is served successfully
-curl -I -s https://agent-wallet-6vuy.onrender.com/ui/ | head -n 1
-# Expected: HTTP/1.1 200 OK (or HTTP/2 200)
+# 5. Static Webapp Console: verifies single-page UI is served successfully with no-cache header
+curl -I -s https://agent-wallet-6vuy.onrender.com/ui/index.html | head -n 5
+# Expected: HTTP/1.1 200 OK and Cache-Control: no-cache
 ```
 
 ---
 
-## 6. Common Failures & Fixes
+## 6. Latency Visibility, Log Lines & UI Caching
+
+### Logging Configuration & `AGENT_WALLET_LOG_LEVEL`
+The application configures structured stdout logging for the `agent_wallet` hierarchy (`agent_wallet.http`, `agent_wallet.rpc`, `agent_wallet.timing`) via `configure_logging()`. The log level is controlled by the `AGENT_WALLET_LOG_LEVEL` environment variable (defaults to `INFO`).
+
+### Reading Latency in Render Logs
+On hosted environments like Render, log lines appear in real time under the service logs. Three loggers make time visible:
+
+1. **HTTP Requests (`agent_wallet.http`)**:
+   Emits per-request duration and RPC metrics:
+   ```text
+   2026-10-18 00:00:00,123 INFO agent_wallet.http method=GET path=/presets status=200 elapsed_ms=4 rpc_calls=0 rpc_ms=0
+   ```
+   - `path`: Route path only, no query string. Excludes `/health`, `/health/deep`, and `/ui/*`.
+   - `elapsed_ms`: Wall-clock milliseconds from request arrival until response completes (for SSE `/chat/stream/*`, logged when the stream terminates).
+   - `rpc_calls` / `rpc_ms`: Accumulated JSON-RPC call count and latency during that HTTP request.
+
+2. **JSON-RPC Calls (`agent_wallet.rpc`)**:
+   Emits outbound JSON-RPC timing to Base Sepolia testnet without logging parameters, URLs, or secrets:
+   ```text
+   2026-10-18 00:00:01,456 INFO agent_wallet.rpc method=eth_getBalance elapsed_ms=182 status=ok
+   ```
+
+3. **Chat & Runner Milestones (`agent_wallet.timing`)**:
+   Emits execution milestones for background jobs:
+   ```text
+   2026-10-18 00:00:02,100 INFO agent_wallet.timing job=<32-hex-id> phase=planner_first_token elapsed_ms=1250
+   2026-10-18 00:00:05,300 INFO agent_wallet.timing job=<32-hex-id> phase=chat_total elapsed_ms=4450
+   ```
+   - `planner_first_token`: Milliseconds from job start until the first token piece is received from LLM streaming.
+   - `chat_total`: Total milliseconds for the entire chat lifecycle.
+
+### UI Cache Rule (`/ui/*`)
+Static files served under `/ui/` (`/ui/index.html`, `/ui/app.js`, etc.) return:
+```text
+Cache-Control: no-cache
+```
+The browser is allowed to store assets locally but is required to revalidate via HTTP `304 Not Modified` (ETag) on every request. This ensures that new UI code or stylesheet deployments are immediately reflected in user sessions without requiring manual cache clearing.
+
+---
+
+## 7. Common Failures & Fixes
 
 ### 1. Render Free Tier Sleep (Cold Starts)
 - **Symptom**: First request after 15 minutes of inactivity takes 50–60 seconds to respond.
