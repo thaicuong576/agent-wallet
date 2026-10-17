@@ -300,7 +300,7 @@ def test_chat_unified_bubble_and_measurement() -> None:
 
 @needs_node
 def test_chat_clarification_and_streaming_features() -> None:
-    e = chat_flows()["ticketE"]
+    e = chat_flows()["clarificationStreaming"]
     # Clarification chips: offered when intent is clarify, fill composer,
     # do not auto-send, removed on send
     assert e["clarifyChips"] == ["Aave", "Compound"]

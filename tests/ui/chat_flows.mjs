@@ -1652,7 +1652,7 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
 
   globalThis.fetch = origFetch;
 
-  out.ticketE = {
+  out.clarificationStreaming = {
     clarifyChips,
     valueAfterClick,
     postCallsAfterClick,
