@@ -22,7 +22,7 @@ sequenceDiagram
   S-->>B: 200 OK / 304 Not Modified (Cache-Control: no-cache)
 
   B->>M: POST /chat or GET /portfolio
-  M->>M: reset ContextVar (rpc_calls=0, rpc_ms=0)
+  M->>M: reset ContextVars (rpc_calls=0, rpc_ms=0, db_calls=0, db_ms=0)
   M->>R: JSON-RPC call (eth_getBalance)
   R->>L: log agent_wallet.rpc (method, elapsed_ms, status)
   R->>M: accumulate ContextVar (rpc_calls++, rpc_ms+=elapsed)
@@ -34,7 +34,7 @@ sequenceDiagram
   end
 
   M-->>B: HTTP Response (headers & body completed)
-  M->>L: log agent_wallet.http (method, path, status, elapsed_ms, rpc_calls, rpc_ms)
+  M->>L: log agent_wallet.http (method, path, status, elapsed_ms, rpc_calls, rpc_ms, db_calls, db_ms)
 ```
 
 ## Core Components
@@ -48,10 +48,11 @@ sequenceDiagram
 
 2. **Per-Request HTTP Timing (`TimingMiddleware`)**:
    - Pure ASGI middleware wrapping all routes.
-   - Emits `method=<verb> path=<route> status=<code> elapsed_ms=<ms> rpc_calls=<n> rpc_ms=<ms>` on `agent_wallet.http`.
+   - Emits `method=<verb> path=<route> status=<code> elapsed_ms=<ms> rpc_calls=<n> rpc_ms=<ms> db_calls=<n> db_ms=<ms>` on `agent_wallet.http`.
    - Excludes health check probes (`/health`, `/health/deep`) and static assets (`/ui/*`).
    - Accurately captures end-of-stream timing for SSE (`/chat/stream/*`).
-   - ContextVars (`rpc_calls`, `rpc_ms`) are scoped and reset per request.
+   - ContextVars (`rpc_calls`, `rpc_ms`, `db_calls`, `db_ms`) are scoped and reset per request.
+
 
 3. **Outbound JSON-RPC Timing (`http_rpc`)**:
    - Instruments every Ethereum JSON-RPC call using `time.perf_counter()`.
@@ -69,6 +70,11 @@ sequenceDiagram
    - Appends `Cache-Control: no-cache` to all responses under `/ui/`.
    - Preserves standard ETag validation: browsers cache assets but revalidate against the server with conditional HTTP `304 Not Modified`, ensuring deploys take effect immediately.
 
+6. **Request-Scoped Memoization (`_request_memo`)**:
+   - Scoped `ContextVar[dict[str, Any] | None]` initialized to an empty dictionary per HTTP request in `TimingMiddleware` and reset in the `finally` block.
+   - De-duplicates redundant within-request checks (e.g. `global_stop_flag`, `ips_for`).
+   - Never cached across requests: safety-critical flags and tier status are always evaluated fresh on each subsequent request.
+
 ## Verification
 
 | Requirement | Test |
@@ -79,3 +85,6 @@ sequenceDiagram
 | UI Cache-Control header & ETag 304 handling | `tests/webapp/test_timing_logs.py::test_ui_cache_control_and_etag` |
 | Zero secrets/headers/bodies in log lines | `tests/webapp/test_timing_logs.py::test_logs_contain_no_secrets_headers_cookies_or_bodies` |
 | Chat milestones (`planner_first_token`, `chat_total`) | `tests/webapp/test_timing_logs.py::test_chat_milestones_logged` |
+| Database timing in HTTP logs & no secrets/SQL | `tests/webapp/test_timing_logs.py::test_http_timing_middleware_logs_db_metrics_and_no_sql_or_owner` |
+| Database timing per-request isolation | `tests/webapp/test_timing_logs.py::test_db_accumulator_per_request_isolation` |
+| Request-scoped memo lifecycle & within-request de-duplication | `tests/webapp/test_timing_logs.py::test_request_memo_isolation_and_deduplication` |

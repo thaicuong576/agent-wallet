@@ -9,8 +9,10 @@ per transaction with ``set_config('app.owner', owner, true)`` so row-level secur
 
 from __future__ import annotations
 
+import contextvars
 import queue
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -18,8 +20,38 @@ import psycopg
 
 from core.storage.interfaces import StorageUnavailable
 
-DEFAULT_POOL_SIZE = 5
+DEFAULT_POOL_SIZE = 12
 DEFAULT_CONNECT_TIMEOUT_S = 10
+
+db_calls: contextvars.ContextVar[int] = contextvars.ContextVar("db_calls", default=0)
+db_ms: contextvars.ContextVar[int] = contextvars.ContextVar("db_ms", default=0)
+_request_db_acc: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
+    "_request_db_acc", default=None
+)
+
+
+def parse_pool_size(raw: str | None, default: int = DEFAULT_POOL_SIZE) -> int:
+    """Parse pool size from string or environment.
+
+    Rejects non-integer, below 1, or above 50, falling back to default.
+    """
+    if raw is None:
+        return default
+    try:
+        val = int(raw.strip())
+        if 1 <= val <= 50:
+            return val
+    except (ValueError, TypeError):
+        pass
+    return default
+
+
+def db_stats() -> tuple[int, int]:
+    """Return (calls, ms) for the current context."""
+    acc = _request_db_acc.get()
+    if acc is not None:
+        return (acc[0], acc[1])
+    return (db_calls.get(), db_ms.get())
 
 
 class PgPool:
@@ -36,11 +68,59 @@ class PgPool:
         if max_size < 1:
             raise ValueError("max_size must be at least 1")
         self._dsn = dsn
+        self._max_size = max_size
         self._acquire_timeout_s = acquire_timeout_s
         self._connect_timeout_s = connect_timeout_s
         self._idle: queue.LifoQueue[psycopg.Connection] = queue.LifoQueue()
         self._slots = threading.BoundedSemaphore(max_size)
         self._closed = False
+
+    @property
+    def max_size(self) -> int:
+        return self._max_size
+
+    def warm(self, n: int = 4) -> None:
+        """Open up to n connections in a background daemon thread at startup.
+
+        Failures are ignored, never raise, and never block startup.
+        """
+        target = min(max(n, 0), self._max_size)
+        if target <= 0 or self._closed:
+            return
+
+        def _do_warm() -> None:
+            conns: list[psycopg.Connection] = []
+            try:
+                for _ in range(target):
+                    if self._closed:
+                        break
+                    if self._idle.qsize() >= target:
+                        break
+                    try:
+                        conn = psycopg.connect(
+                            self._dsn,
+                            autocommit=False,
+                            prepare_threshold=None,
+                            connect_timeout=self._connect_timeout_s,
+                        )
+                        if self._closed:
+                            self._discard(conn)
+                            break
+                        conns.append(conn)
+                    except Exception:
+                        break
+                for conn in conns:
+                    if self._closed:
+                        self._discard(conn)
+                    else:
+                        self._idle.put(conn)
+                        if self._closed:
+                            self._discard(conn)
+            except Exception:
+                pass
+
+        thread = threading.Thread(target=_do_warm, name="pg-pool-warm", daemon=True)
+        thread.start()
 
     @property
     def dsn(self) -> str:
@@ -70,35 +150,48 @@ class PgPool:
     @contextmanager
     def connection(self) -> Iterator[psycopg.Connection]:
         """One transaction on a pooled connection. Backend outages raise StorageUnavailable."""
-        if self._closed:
-            raise StorageUnavailable("the pool is closed")
-        if not self._slots.acquire(timeout=self._acquire_timeout_s):
-            raise StorageUnavailable("no database connection available")
-        conn: psycopg.Connection | None = None
+        t0 = time.perf_counter()
         try:
-            conn = self._checkout()
+            if self._closed:
+                raise StorageUnavailable("the pool is closed")
+            if not self._slots.acquire(timeout=self._acquire_timeout_s):
+                raise StorageUnavailable("no database connection available")
+            conn: psycopg.Connection | None = None
             try:
-                yield conn
-                conn.commit()
-            except psycopg.OperationalError as exc:
-                self._discard(conn)
-                conn = None
-                raise StorageUnavailable("database error") from exc
-            except BaseException:
-                if conn is not None and not conn.closed:
-                    try:
-                        conn.rollback()
-                    except psycopg.Error:
-                        self._discard(conn)
-                        conn = None
-                raise
-        finally:
-            if conn is not None:
-                if conn.closed or conn.broken:
+                conn = self._checkout()
+                try:
+                    yield conn
+                    conn.commit()
+                except psycopg.OperationalError as exc:
                     self._discard(conn)
-                else:
-                    self._idle.put(conn)
-            self._slots.release()
+                    conn = None
+                    raise StorageUnavailable("database error") from exc
+                except BaseException:
+                    if conn is not None and not conn.closed:
+                        try:
+                            conn.rollback()
+                        except psycopg.Error:
+                            self._discard(conn)
+                            conn = None
+                    raise
+            finally:
+                if conn is not None:
+                    if conn.closed or conn.broken:
+                        self._discard(conn)
+                    else:
+                        self._idle.put(conn)
+                self._slots.release()
+        finally:
+            elapsed_ms = int((time.perf_counter() - t0) * 1000)
+            try:
+                db_calls.set(db_calls.get() + 1)
+                db_ms.set(db_ms.get() + elapsed_ms)
+                acc = _request_db_acc.get()
+                if acc is not None:
+                    acc[0] += 1
+                    acc[1] += elapsed_ms
+            except Exception:
+                pass
 
     @contextmanager
     def tenant(self, owner: str) -> Iterator[psycopg.Cursor]:

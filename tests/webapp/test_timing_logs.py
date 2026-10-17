@@ -256,3 +256,131 @@ def test_chat_milestones_logged(caplog: pytest.LogCaptureFixture) -> None:
         assert len(total_msgs) == 1
         assert f"job={job_id}" in total_msgs[0]
         assert "elapsed_ms=" in total_msgs[0]
+
+
+def test_http_timing_middleware_logs_db_metrics_and_no_sql_or_owner(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    client = TestClient(app)
+    with caplog.at_level(logging.INFO, logger="agent_wallet.http"):
+        caplog.clear()
+        resp = client.get("/presets")
+        assert resp.status_code == 200
+
+        records = [r for r in caplog.records if r.name == "agent_wallet.http"]
+        assert len(records) == 1
+        msg = records[0].getMessage()
+        assert "db_calls=" in msg
+        assert "db_ms=" in msg
+        # Must contain no SQL text, parameters, or owner addresses
+        assert "SELECT" not in msg
+        assert "FROM" not in msg
+        assert "app.owner" not in msg
+        assert "0x" not in msg
+
+
+def test_db_accumulator_per_request_isolation(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from fastapi import FastAPI
+
+    from api.main import TimingMiddleware
+    from core.storage.postgres.pool import _request_db_acc, db_calls, db_ms, db_stats
+
+    db_calls.set(0)
+    db_ms.set(0)
+
+    sub_app = FastAPI()
+
+    sub_app.add_middleware(TimingMiddleware)
+
+    @sub_app.get("/req1")
+    def req1() -> dict[str, Any]:
+        acc = _request_db_acc.get()
+        if acc is not None:
+            acc[0] += 3
+            acc[1] += 45
+        return {"ok": True}
+
+    @sub_app.get("/req2")
+    def req2() -> dict[str, Any]:
+        acc = _request_db_acc.get()
+        if acc is not None:
+            acc[0] += 1
+            acc[1] += 10
+        return {"ok": True}
+
+    sub_client = TestClient(sub_app)
+    with caplog.at_level(logging.INFO, logger="agent_wallet.http"):
+        caplog.clear()
+        sub_client.get("/req1")
+        sub_client.get("/req2")
+
+        records = [r for r in caplog.records if r.name == "agent_wallet.http"]
+        assert len(records) == 2
+        msg1 = records[0].getMessage()
+        msg2 = records[1].getMessage()
+        assert "path=/req1" in msg1
+        assert "db_calls=3 db_ms=45" in msg1
+        assert "path=/req2" in msg2
+        assert "db_calls=1 db_ms=10" in msg2
+        assert "SELECT" not in msg1 and "0x" not in msg1
+        assert "SELECT" not in msg2 and "0x" not in msg2
+
+    # Outside request, db_stats returns clean defaults
+    calls, ms = db_stats()
+    assert calls == 0
+    assert ms == 0
+
+
+def test_request_memo_isolation_and_deduplication(tmp_path: Any) -> None:
+    from unittest.mock import MagicMock
+
+    from fastapi import FastAPI
+
+    from api.main import TimingMiddleware, global_stop_flag, request_memo
+
+    app = FastAPI()
+    app.add_middleware(TimingMiddleware)
+
+    settings_mock = MagicMock()
+    settings_mock.global_stop.return_value = False
+
+    stop_fn = global_stop_flag(tmp_path, {}, settings=settings_mock)
+
+    observations: list[dict[str, Any]] = []
+
+    @app.get("/memo-test")
+    def memo_test() -> dict[str, Any]:
+        # Inside request, request_memo is a dict
+        memo = request_memo()
+        assert isinstance(memo, dict)
+
+        # Call stop_fn twice inside the same request
+        res1 = stop_fn()
+        res2 = stop_fn()
+
+        observations.append(
+            {"res1": res1, "res2": res2, "calls": settings_mock.global_stop.call_count}
+        )
+        return {"ok": True}
+
+    client = TestClient(app)
+
+    # Outside request, request_memo() is None
+    assert request_memo() is None
+
+    # Request 1: calls twice, underlying check called only once
+    client.get("/memo-test")
+    assert len(observations) == 1
+    assert observations[0]["res1"] is False
+    assert observations[0]["res2"] is False
+    assert observations[0]["calls"] == 1
+
+    # Outside request, request_memo() is None again
+    assert request_memo() is None
+
+    # Request 2: underlying check called fresh (never cached across requests)
+    client.get("/memo-test")
+    assert len(observations) == 2
+    assert observations[1]["calls"] == 2

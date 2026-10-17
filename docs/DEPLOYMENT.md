@@ -55,8 +55,10 @@ All settings are configured through environment variables (declared in `.env.exa
 | `IPS_PATH` | `contracts/presets/conservative.json` | Path to Investment Policy Statement JSON | No |
 | `AGENT_WALLET_RISK_SOURCE` | `onchain` | Risk provider source: `onchain` (live RPC reads) or `reference` (offline fixtures) | No |
 | `DATABASE_URL` | (unset) | Postgres connection URL. If unset, SQLite backend under `AGENT_WALLET_DATA_DIR` is used | Yes for Postgres |
+| `AGENT_WALLET_DB_POOL_SIZE` | `12` | PostgreSQL connection pool size (1..50; invalid falls back to 12) | No |
 | `DATABASE_MIGRATE_URL` | (unset) | DDL-capable Postgres URL for `python -m core.storage.migrate` | For migrations |
 | `POSTGRES_PASSWORD` | (unset) | Password for local `docker compose` database service | Docker compose only |
+
 | `TEST_DATABASE_URL` | (unset) | Dedicated throwaway Postgres URL for contract test suites | Tests only |
 
 ---
@@ -222,13 +224,15 @@ The application configures structured stdout logging for the `agent_wallet` hier
 On hosted environments like Render, log lines appear in real time under the service logs. Three loggers make time visible:
 
 1. **HTTP Requests (`agent_wallet.http`)**:
-   Emits per-request duration and RPC metrics:
+   Emits per-request duration, RPC, and DB metrics:
    ```text
-   2026-10-18 00:00:00,123 INFO agent_wallet.http method=GET path=/presets status=200 elapsed_ms=4 rpc_calls=0 rpc_ms=0
+   2026-10-18 00:00:00,123 INFO agent_wallet.http method=GET path=/presets status=200 elapsed_ms=4 rpc_calls=0 rpc_ms=0 db_calls=0 db_ms=0
    ```
    - `path`: Route path only, no query string. Excludes `/health`, `/health/deep`, and `/ui/*`.
    - `elapsed_ms`: Wall-clock milliseconds from request arrival until response completes (for SSE `/chat/stream/*`, logged when the stream terminates).
    - `rpc_calls` / `rpc_ms`: Accumulated JSON-RPC call count and latency during that HTTP request.
+   - `db_calls` / `db_ms`: Accumulated PostgreSQL round trips and latency during that HTTP request.
+
 
 2. **JSON-RPC Calls (`agent_wallet.rpc`)**:
    Emits outbound JSON-RPC timing to Base Sepolia testnet without logging parameters, URLs, or secrets:

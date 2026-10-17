@@ -44,6 +44,7 @@ from core.simulate import RpcSimulator
 from core.storage.factory import POSTGRES, create_backend, selected_backend
 from core.storage.interfaces import StorageBackend
 from core.storage.migrate import MigrationError
+from core.storage.postgres.pool import _request_db_acc, db_calls, db_ms, db_stats
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_RPC_URL = "https://sepolia.base.org"
@@ -94,6 +95,15 @@ rpc_ms: contextvars.ContextVar[int] = contextvars.ContextVar("rpc_ms", default=0
 _request_rpc_acc: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
     "_request_rpc_acc", default=None
 )
+_request_memo: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "_request_memo", default=None
+)
+
+
+def request_memo() -> dict[str, Any] | None:
+    """Return the request-scoped memo dictionary for the current request, or None if outside one."""
+    return _request_memo.get()
+
 
 rpc_log = logging.getLogger("agent_wallet.rpc")
 http_log = logging.getLogger("agent_wallet.http")
@@ -210,12 +220,18 @@ def global_stop_flag(
     """
 
     def stopped() -> bool:
+        memo = _request_memo.get()
+        if memo is not None and "global_stop" in memo:
+            return bool(memo["global_stop"])
         try:
-            return (
+            val = (
                 env.get("AGENT_WALLET_GLOBAL_STOP", "") == "1"
                 or (data_dir / "GLOBAL_STOP").exists()
                 or (settings is not None and bool(settings.global_stop()))
             )
+            if memo is not None:
+                memo["global_stop"] = val
+            return val
         except Exception:  # noqa: BLE001 - fail closed
             return True
 
@@ -232,6 +248,13 @@ def build_backend(env: Mapping[str, str], data_dir: pathlib.Path) -> StorageBack
         ),
     )
     if selected_backend(env) == POSTGRES:
+        pool = getattr(backend, "_pool", None)
+        if pool is not None:
+            from core.storage.postgres.pool import parse_pool_size
+
+            pool_size = parse_pool_size(env.get("AGENT_WALLET_DB_POOL_SIZE"))
+            pool._max_size = pool_size
+            pool.warm(4)
         try:
             if env.get("DATABASE_MIGRATE_URL", "").strip():
                 backend.migrate()  # DDL-capable URL present: apply, then verify
@@ -259,6 +282,10 @@ def build_webapp(
     ips_path = pathlib.Path(env.get("IPS_PATH") or DEFAULT_IPS_PATH)
 
     def ips_for(owner: str, preset_id: str | None) -> LoadedIps:
+        memo = _request_memo.get()
+        memo_key = f"ips:{owner}:{preset_id}"
+        if memo is not None and memo_key in memo:
+            return memo[memo_key]  # type: ignore[no-any-return]
         if preset_id is None and backend is not None:
             try:
                 latest = backend.open_tenant(owner).policy_selection.latest()
@@ -269,9 +296,15 @@ def build_webapp(
         preset = preset_id or "conservative"
         preset_file = PRESETS_DIR / f"{preset}.json"
         if preset_file.exists():
-            return load_ips(preset_file)
+            loaded = load_ips(preset_file)
+            if memo is not None:
+                memo[memo_key] = loaded
+            return loaded
         if preset == "conservative" and ips_path.exists():
-            return load_ips(ips_path)
+            loaded = load_ips(ips_path)
+            if memo is not None:
+                memo[memo_key] = loaded
+            return loaded
         raise ValueError(f"Unknown preset_id: {preset}")
 
     secret = env.get("AGENT_WALLET_KEYSTORE_SECRET")
@@ -319,11 +352,12 @@ def build_webapp(
 
 
 class TimingMiddleware:
-    """Pure ASGI middleware logging request timing and RPC metrics.
+    """Pure ASGI middleware logging request timing, RPC, and DB metrics.
 
-    Emits `method=<verb> path=<route> status=<code> elapsed_ms=<ms> rpc_calls=<n> rpc_ms=<ms>`
-    on logger `agent_wallet.http` for all requests except `/health`, `/health/deep`, and `/ui/*`.
-    For streaming responses (like `/chat/stream/*`), timing completes when the stream ends.
+    Emits `method=<verb> path=<route> status=<code> elapsed_ms=<ms> rpc_calls=<n> rpc_ms=<ms>
+    db_calls=<n> db_ms=<ms>` on logger `agent_wallet.http` for all requests except `/health`,
+    `/health/deep`, and `/ui/*`. For streaming responses (like `/chat/stream/*`), timing
+    completes when the stream ends.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -344,6 +378,12 @@ class TimingMiddleware:
         token_acc = _request_rpc_acc.set(acc)
         token_calls = rpc_calls.set(0)
         token_ms = rpc_ms.set(0)
+        db_acc = [0, 0]
+        token_db_acc = _request_db_acc.set(db_acc)
+        token_db_calls = db_calls.set(0)
+        token_db_ms = db_ms.set(0)
+        memo: dict[str, Any] = {}
+        token_memo = _request_memo.set(memo)
         t0 = time.perf_counter()
         status_code = 500
 
@@ -363,18 +403,31 @@ class TimingMiddleware:
             else:
                 calls = rpc_calls.get()
                 ms = rpc_ms.get()
+            if db_acc[0] > 0:
+                d_calls = db_acc[0]
+                d_ms = db_acc[1]
+            else:
+                d_calls = db_calls.get()
+                d_ms = db_ms.get()
             _request_rpc_acc.reset(token_acc)
             rpc_calls.reset(token_calls)
             rpc_ms.reset(token_ms)
+            _request_db_acc.reset(token_db_acc)
+            db_calls.reset(token_db_calls)
+            db_ms.reset(token_db_ms)
+            _request_memo.reset(token_memo)
             method = scope.get("method", "GET")
             http_log.info(
-                "method=%s path=%s status=%d elapsed_ms=%d rpc_calls=%d rpc_ms=%d",
+                "method=%s path=%s status=%d elapsed_ms=%d rpc_calls=%d rpc_ms=%d "
+                "db_calls=%d db_ms=%d",
                 method,
                 path,
                 status_code,
                 elapsed_ms,
                 calls,
                 ms,
+                d_calls,
+                d_ms,
             )
 
 
@@ -435,7 +488,11 @@ __all__ = [
     "configure_logging",
     "create_app",
     "create_configured_app",
+    "db_calls",
+    "db_ms",
+    "db_stats",
     "http_rpc",
+    "request_memo",
     "rpc_calls",
     "rpc_ms",
 ]

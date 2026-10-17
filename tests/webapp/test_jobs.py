@@ -707,3 +707,65 @@ def test_interrupted_scan_ignores_other_files(tmp_path):
         ).mark_interrupted_on_startup(tmp_path)
         == 0
     )
+
+
+def test_get_jobs_records_parameter_isolation_and_shape(tmp_path):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from api.jobs import router
+    from api.wallet import current_tenant
+
+    env = make_env(tmp_path)
+    gw_a = FakeGateway("executed")
+    gw_b = FakeGateway("executed")
+    tenant_a = fake_tenant(tmp_path, gw_a, "a")
+    tenant_b = fake_tenant(tmp_path, gw_b, "b")
+
+    job_a_id = run_job(env, tenant_a, "mint", {"amount_usdc": "250"})["job_id"]
+    job_b_id = run_job(env, tenant_b, "mint", {"amount_usdc": "500"})["job_id"]
+
+    # 1. Direct Service test
+    items_plain = env.jobs.list(tenant_a, with_records=False)
+    assert len(items_plain) == 1
+    assert "records" not in items_plain[0]
+
+    items_records = env.jobs.list(tenant_a, with_records=True)
+    assert len(items_records) == 1
+    assert "records" in items_records[0]
+    assert items_records[0]["records"] == env.jobs.get(tenant_a, job_a_id)["records"]
+
+    # Isolation: tenant A cannot see tenant B
+    assert env.jobs.list(tenant_b, with_records=True)[0]["job_id"] == job_b_id
+    assert job_a_id not in [j["job_id"] for j in env.jobs.list(tenant_b, with_records=True)]
+
+    # 2. HTTP route test via FastAPI TestClient
+    app = FastAPI()
+    current_active_tenant = tenant_a
+    app.dependency_overrides[current_tenant] = lambda: current_active_tenant
+    app.state.webapp = SimpleNamespace(jobs=env.jobs)
+    app.include_router(router)
+    client = TestClient(app)
+
+    # Calling GET /jobs defaults to records=0 (no records)
+    resp_plain = client.get("/jobs")
+    assert resp_plain.status_code == 200
+    assert "records" not in resp_plain.json()["items"][0]
+
+    # Calling GET /jobs?records=1 returns records
+    resp_records = client.get("/jobs?records=1")
+    assert resp_records.status_code == 200
+    items = resp_records.json()["items"]
+    assert len(items) == 1
+    assert items[0]["job_id"] == job_a_id
+    assert "records" in items[0]
+
+    # Switch active tenant to B
+    current_active_tenant = tenant_b
+    resp_b = client.get("/jobs?records=1")
+    assert resp_b.status_code == 200
+    items_b = resp_b.json()["items"]
+    assert len(items_b) == 1
+    assert items_b[0]["job_id"] == job_b_id
+    # Owner A never sees owner B's records or jobs
+    assert job_a_id not in [j["job_id"] for j in items_b]

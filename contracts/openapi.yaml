@@ -636,8 +636,11 @@ paths:
       operationId: listJobs
       summary: Recent jobs of the session owner, newest first.
       security: [{ SessionCookie: [] }]
+      parameters:
+        - { name: records, in: query, required: false, schema: { type: integer, enum: [0, 1], default: 0 }, description: "When 1, include record summaries in each item." }
       responses:
         "200":
+
           description: Jobs.
           content:
             application/json:
@@ -878,8 +881,9 @@ components:
         finished_at: { type: [string, "null"] }
         records:
           type: array
-          description: "Summaries of the audit records this job produced (GET /jobs/{job_id} only). The audit log stays the truth."
+          description: "Summaries of the audit records this job produced (GET /jobs/{job_id} or GET /jobs?records=1). The audit log stays the truth."
           items:
+
             type: object
             required: [seq, outcome, planner_client]
             properties:
