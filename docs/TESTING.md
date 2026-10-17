@@ -33,7 +33,7 @@ flowchart TD
 Run the entire offline test suite and evaluation harness in under two minutes with no keys or network required:
 
 ```sh
-# 1. Run full test suite (1,444 tests)
+# 1. Run full test suite (1,455 tests)
 make test
 
 # 2. Run static linters and repository hygiene checks
@@ -76,7 +76,7 @@ Collected directly via `pytest --collect-only -q` per area:
 | Area / Directory | Test Count | Key Test Files | What Is Tested |
 | :--- | :---: | :--- | :--- |
 | `tests/policy/` | **101** | `test_engine.py`, `test_limits.py`, `test_rules.py` | 100% pure evaluation of IPS rules, spending caps, and rule code assignments |
-| `tests/webapp/` | **368** | `test_routes.py`, `test_auth.py`, `test_stepup.py`, `test_sse.py`, `test_timing_logs.py`, `test_storage_backends.py` | Session routes, SIWE sign-in, CSRF validation, step-up challenge-response, SSE streaming, timing logs |
+| `tests/webapp/` | **373** | `test_routes.py`, `test_auth.py`, `test_wallet.py`, `test_readcache.py`, `test_stepup.py`, `test_sse.py`, `test_timing_logs.py`, `test_storage_backends.py` | Session routes, SIWE sign-in, CSRF validation, step-up challenge-response, SSE streaming, timing logs, in-process read cache |
 | `tests/ui/` | **267** | `test_ui.py`, `test_overview.py`, `test_holdings.py`, `test_dialogs.py`, `test_progress.py` | Contract route alignment, token avatar math, holding groupings, DOM flow verification |
 | `tests/storage/` | **173** | `test_postgres.py`, `test_sqlite.py`, `test_migrate.py`, `test_rls.py`, `test_pg_no_string_sql.py` | Dual storage backends, advisory locks, schema migrations, fail-closed behavior, RLS isolation |
 | `tests/protocols/` | **79** | `test_aave.py`, `test_aave_stata.py`, `test_morpho.py`, `test_uniswap.py` | Calldata builders, protocol specs, spenders, approval encodings, slippage math |
@@ -92,7 +92,7 @@ Collected directly via `pytest --collect-only -q` per area:
 | `tests/signer/` | **14** | `test_signer.py`, `test_chain_id.py` | Local private key signing, Base Sepolia (84532) chain restriction, zero key leak |
 | `tests/evals/` | **9** | `test_eval_driver.py`, `test_report_generator.py` | Evaluation runner logic, driver mechanics, markdown report rendering |
 | `tests/*.py` (Root) | **56** | `test_signer_boundary.py`, `test_intent_boundary.py`, `test_contracts.py`, `test_check_links.py`, `test_container_files.py`, `test_http_stdlib.py`, `test_health.py` | AST boundary scans, container configuration, markdown link checker, HTTP stdlib purity |
-| **Total Test Count** | **1,444** | — | **Full pytest collection across all suites** |
+| **Total Test Count** | **1,455** | — | **Full pytest collection across all suites** |
 
 ---
 

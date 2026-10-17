@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict
 
 from api.auth import AuthProblem, AuthService, Session, require_session
+from api.readcache import ReadCache
 from api.session import CHAIN_ID
 from core.audit.verify import verify_chain
 from core.gateway.tenant import CustodyUnavailable, Tenant, TenantNotFound, TenantRegistry
@@ -101,6 +102,25 @@ def _hex_int(value: Any) -> int:
     raise ValueError("not a hex quantity")
 
 
+def _audit_count(tenant: Tenant) -> int:
+    try:
+        return len(tenant.gateway.audit_sink)
+    except Exception:
+        return 0
+
+
+def _state_version(tenant: Tenant) -> tuple[int, bool]:
+    count = _audit_count(tenant)
+    stopped = False
+    try:
+        tier_view = getattr(tenant, "tier_view", None)
+        if tier_view is not None and hasattr(tier_view, "is_stopped"):
+            stopped = bool(tier_view.is_stopped())
+    except Exception:
+        pass
+    return (count, stopped)
+
+
 class WalletService:
     """Live agent balances, the gas floor and top-up verification over an injected RPC callable."""
 
@@ -110,10 +130,16 @@ class WalletService:
         *,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         chain_id: int = CHAIN_ID,
+        cache: ReadCache | None = None,
     ) -> None:
         self._rpc = rpc
         self._clock = clock
         self._chain_id = chain_id
+        self._cache = cache if cache is not None else ReadCache()
+
+    @property
+    def cache(self) -> ReadCache:
+        return self._cache
 
     def now(self) -> datetime:
         return self._clock()
@@ -142,31 +168,58 @@ class WalletService:
         return _hex_int(self._rpc("eth_call", [{"to": token, "data": data}, "latest"]))
 
     def agent_state(self, tenant: Tenant) -> dict[str, Any]:
-        balance, floor = self.gas_state(tenant.agent_address)
-        return {
-            "address": tenant.agent_address,
-            "eth_wei": str(balance),
-            "gas_floor_wei": str(floor),
-            "suggested_topup_wei": str(floor * SUGGESTED_TOPUP_FACTOR),
-            "usdc": {
-                "value": str(self.token_balance(AAVE_V3_USDC, tenant.agent_address)),
-                "decimals": 6,
-            },
-            "ausdc": {
-                "value": str(self.token_balance(AAVE_V3_A_USDC, tenant.agent_address)),
-                "decimals": 6,
-            },
-            "price_source": "mainnet_reference",
-            "custody": "custodial-testnet",
-        }
+        key = (tenant.owner, "agent")
+        version = _state_version(tenant)
+
+        def _compute() -> dict[str, Any]:
+            balance, floor = self.gas_state(tenant.agent_address)
+            return {
+                "address": tenant.agent_address,
+                "eth_wei": str(balance),
+                "gas_floor_wei": str(floor),
+                "suggested_topup_wei": str(floor * SUGGESTED_TOPUP_FACTOR),
+                "usdc": {
+                    "value": str(self.token_balance(AAVE_V3_USDC, tenant.agent_address)),
+                    "decimals": 6,
+                },
+                "ausdc": {
+                    "value": str(self.token_balance(AAVE_V3_A_USDC, tenant.agent_address)),
+                    "decimals": 6,
+                },
+                "price_source": "mainnet_reference",
+                "custody": "custodial-testnet",
+            }
+
+        return self._cache.get_or_compute(key, version, 10.0, _compute)
 
     def portfolio_state(self, tenant: Tenant) -> dict[str, Any]:
         """Live portfolio-state of the tenant: chain balances and ledger limits, reference price.
 
         Raises on any RPC failure; callers fail closed and never echo the error text.
         """
-        reader = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
-        return reader.read(self._clock()).state
+        key = (tenant.owner, "portfolio")
+        version = _state_version(tenant)
+
+        def _compute() -> dict[str, Any]:
+            reader = PortfolioReader(self._rpc, tenant.agent_address, tenant.stores.ledger)  # type: ignore[arg-type]
+            return reader.read(self._clock()).state
+
+        return self._cache.get_or_compute(key, version, 10.0, _compute)
+
+    def audit_verify(self, tenant: Tenant) -> dict[str, Any]:
+        """Recompute the session owner's hash chain on the server."""
+        key = (tenant.owner, "audit_verify")
+        version = _audit_count(tenant)
+
+        def _compute() -> dict[str, Any]:
+            report = verify_chain(tenant.gateway.audit_sink)
+            return {
+                "ok": bool(report.valid),
+                "records": report.count,
+                "first_bad_seq": report.bad_seq,
+            }
+
+        return self._cache.get_or_compute(key, version, 600.0, _compute)
 
     # -- top-ups (design 8.1)
 
@@ -177,6 +230,7 @@ class WalletService:
         store = self.topups(tenant)
         known = store.get(tx_hash)
         if known is not None:
+            self._cache.invalidate(tenant.owner)
             return self._view(known)
         try:
             tx = self._rpc("eth_getTransactionByHash", [tx_hash])
@@ -201,7 +255,9 @@ class WalletService:
             raise problem_invalid("transaction was not sent to your agent address")
         if value <= 0:
             raise problem_invalid("transaction carries no ETH value")
-        return self._view(store.put(tx_hash, value, self._clock()))
+        row = store.put(tx_hash, value, self._clock())
+        self._cache.invalidate(tenant.owner)
+        return self._view(row)
 
     def get_topup(self, tenant: Tenant, tx_hash: str) -> dict[str, Any]:
         if not _TX_HASH.fullmatch(tx_hash):
@@ -331,7 +387,8 @@ def get_presets() -> dict[str, Any]:
 
 
 @router.get("/audit/verify", tags=["audit"])
-def get_audit_verify(tenant: Annotated[Tenant, Depends(current_tenant)]) -> dict[str, Any]:
+def get_audit_verify(
+    request: Request, tenant: Annotated[Tenant, Depends(current_tenant)]
+) -> dict[str, Any]:
     """Recompute the session owner's hash chain on the server."""
-    report = verify_chain(tenant.gateway.audit_sink)
-    return {"ok": bool(report.valid), "records": report.count, "first_bad_seq": report.bad_seq}
+    return get_webapp(request).wallet.audit_verify(tenant)

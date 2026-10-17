@@ -389,6 +389,9 @@ def test_each_owner_chain_verifies_alone(world):
         db.execute(
             "UPDATE audit_records SET payload = replace(payload, 'one', 'ONE') WHERE seq = 0"
         )
+    # Cache returns previous valid result until a record is appended (version changes)
+    assert a.get("/audit/verify").json()["ok"] is True
+    a.tenant.gateway.record_no_action("three", "2026-10-15T12:00:00Z")
     bad = a.get("/audit/verify").json()
     assert bad["ok"] is False and bad["first_bad_seq"] == 0
     assert b.get("/audit/verify").json()["ok"] is True

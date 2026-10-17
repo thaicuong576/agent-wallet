@@ -203,3 +203,91 @@ def test_presets_listing_is_plain_language_with_a_hash():
         assert "USD" in preset["summary"]
     assert presets[0]["preset_id"] == "conservative"
     assert presets[1]["preset_id"] == "diversified"
+
+
+# ---------------------------------------------------------------- read cache integration
+
+
+def test_portfolio_state_cached_and_recomputes_on_audit_or_topup(env, tenant):
+    # First call: makes RPC calls
+    c0 = len(env.chain.calls)
+    s1 = env.wallet.portfolio_state(tenant)
+    c1 = len(env.chain.calls)
+    assert c1 > c0
+
+    # Back-to-back call: returns cached without RPC calls
+    s2 = env.wallet.portfolio_state(tenant)
+    assert len(env.chain.calls) == c1
+    assert s1 == s2
+
+    # New audit record forces fresh read (version changes)
+    tenant.gateway.record_no_action("order executed", "2026-10-15T12:00:00Z")
+    env.wallet.portfolio_state(tenant)
+    c2 = len(env.chain.calls)
+    assert c2 > c1
+
+    # Back-to-back call is cached again
+    env.wallet.portfolio_state(tenant)
+    assert len(env.chain.calls) == c2
+
+    # Register topup invalidates the cache
+    env.chain.txs[TX] = tx(tenant)
+    env.wallet.register_topup(tenant, TX)
+    c3 = len(env.chain.calls)
+    env.wallet.portfolio_state(tenant)
+    assert len(env.chain.calls) > c3
+
+
+def test_agent_state_cached_and_isolated_by_owner(env):
+    a, b = env.tenant(OWNER), env.tenant(OTHER)
+    c0 = len(env.chain.calls)
+    s_a1 = env.wallet.agent_state(a)
+    c1 = len(env.chain.calls)
+    assert c1 > c0
+
+    # A back-to-back hits cache
+    s_a2 = env.wallet.agent_state(a)
+    assert len(env.chain.calls) == c1
+    assert s_a1 == s_a2
+
+    # B reads its own (not cached from A)
+    s_b = env.wallet.agent_state(b)
+    c2 = len(env.chain.calls)
+    assert c2 > c1
+    assert s_b["address"] != s_a1["address"]
+
+    # Invalidate A drops only A
+    env.wallet.cache.invalidate(a.owner)
+    env.wallet.agent_state(b)
+    assert len(env.chain.calls) == c2  # B still cached
+    env.wallet.agent_state(a)
+    assert len(env.chain.calls) > c2  # A recomputes
+
+
+def test_wallet_audit_verify_cached_until_record_appended(env):
+    a = env.tenant(OWNER)
+    for i in range(2):
+        a.gateway.record_no_action(f"note {i}", "2026-10-15T12:00:00Z")
+
+    v1 = env.wallet.audit_verify(a)
+    assert v1["ok"] is True and v1["records"] == 2
+
+    # Second call returns cached result without re-verifying sink
+    v2 = env.wallet.audit_verify(a)
+    assert v2 == v1
+
+    # Adding a record changes version -> fresh verification
+    a.gateway.record_no_action("note 2", "2026-10-15T12:00:00Z")
+    v3 = env.wallet.audit_verify(a)
+    assert v3["ok"] is True and v3["records"] == 3
+
+
+def test_rpc_failure_in_state_is_not_cached(env, tenant):
+    env.chain.down = True
+    with pytest.raises(RuntimeError, match="node down"):
+        env.wallet.agent_state(tenant)
+
+    # RPC recovers: immediately succeeds without serving a cached failure
+    env.chain.down = False
+    state = env.wallet.agent_state(tenant)
+    assert state["address"] == tenant.agent_address
