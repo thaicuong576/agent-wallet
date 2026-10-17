@@ -77,7 +77,7 @@ Collected directly via `pytest --collect-only -q` per area:
 | :--- | :---: | :--- | :--- |
 | `tests/policy/` | **101** | `test_engine.py`, `test_limits.py`, `test_rules.py` | 100% pure evaluation of IPS rules, spending caps, and rule code assignments |
 | `tests/webapp/` | **373** | `test_routes.py`, `test_auth.py`, `test_wallet.py`, `test_readcache.py`, `test_stepup.py`, `test_sse.py`, `test_timing_logs.py`, `test_storage_backends.py` | Session routes, SIWE sign-in, CSRF validation, step-up challenge-response, SSE streaming, timing logs, in-process read cache |
-| `tests/ui/` | **267** | `test_ui.py`, `test_overview.py`, `test_holdings.py`, `test_dialogs.py`, `test_progress.py` | Contract route alignment, token avatar math, holding groupings, DOM flow verification |
+| `tests/ui/` | **269** | `test_ui.py`, `test_overview.py`, `test_holdings.py`, `test_dialogs.py`, `test_progress.py` | Contract route alignment, token avatar math, holding groupings, DOM flow verification, read cache |
 | `tests/storage/` | **173** | `test_postgres.py`, `test_sqlite.py`, `test_migrate.py`, `test_rls.py`, `test_pg_no_string_sql.py` | Dual storage backends, advisory locks, schema migrations, fail-closed behavior, RLS isolation |
 | `tests/protocols/` | **79** | `test_aave.py`, `test_aave_stata.py`, `test_morpho.py`, `test_uniswap.py` | Calldata builders, protocol specs, spenders, approval encodings, slippage math |
 | `tests/gateway/` | **73** | `test_gateway.py`, `test_wiring.py`, `test_idempotency.py` | Gateway pipeline, simulate-before-sign, tier gating, audit chain recording |

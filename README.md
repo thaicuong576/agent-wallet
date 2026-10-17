@@ -73,7 +73,7 @@ Real testnet transactions executed on Base Sepolia (chain ID 84532):
 - `evals/`: 46 offline evaluation scenarios covering 27 of 28 rule codes
 - `scripts/`: Link checker, secret scanner, smoke test, and live transaction scripts
 - `tests/`: Pytest suite (over 1,440 tests across unit, policy, gateway, storage, UI)
-- `ui/`: Zero-build single-page webapp console (plain HTML, CSS, and ES modules)
+- `ui/`: Zero-build single-page webapp console (plain HTML, CSS, ES modules) with single-flight read cache ([`docs/architecture/ui.md`](docs/architecture/ui.md))
 
 ## Security Model
 - **LLM proposes, code decides**: The LLM outputs structured proposals; a pure Python engine enforces rules.

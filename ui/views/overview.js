@@ -23,16 +23,105 @@ export function render(ctx) {
   const side = el("div", "overview-side");
   root.append(main, side);
 
+  function peekSafe(name) {
+    if (!api || typeof api.peek !== "function") return undefined;
+    const v = api.peek(name);
+    if (!v || typeof v.then === "function") return undefined;
+    return v;
+  }
+
+  let loadGen = 0;
+  let lastMainSig = null;
+  let lastSideSig = null;
+  let paintedPort = null;
+  let paintedAgent = null;
+
+  function paintView({ agent, port, tier, records, limits, portError }) {
+    const pending = records ? pendingOf(records) : [];
+    const approvals = pending.length ? approvalsCard(ctx) : null;
+    const mainSig = JSON.stringify({
+      agent,
+      port,
+      stop: Boolean(tier && tier.emergency_stop),
+      pending: pending.map((r) => r.order_id || r.seq),
+      portError: portError ? String(portError) : null,
+    });
+
+    if (mainSig !== lastMainSig) {
+      lastMainSig = mainSig;
+      const parts = [];
+      if (tier && tier.emergency_stop) parts.push(frozenCard(el));
+      if (approvals) parts.push(waitingNote(pending.length, approvals), approvals);
+
+      if (port) {
+        paintedPort = port;
+        paintedAgent = agent;
+        const model = groupHoldings(port, agent);
+        parts.push(heroCard(model, agent, port));
+        if (!model.empty) parts.push(holdingsCard(model, agent));
+        if (portError) {
+          parts.push(
+            el(
+              "p",
+              "msg error",
+              "Balances could not be refreshed. " + ctx.describeError(portError),
+            ),
+          );
+        }
+      } else if (portError) {
+        parts.push(failureCard(portError));
+      }
+      main.replaceChildren(...parts);
+    }
+
+    const sideSig = JSON.stringify({
+      agent,
+      limits,
+      recordsCount: records ? records.length : null,
+      recent: records ? records.slice(-3).map((r) => r.seq) : null,
+    });
+
+    if (sideSig !== lastSideSig) {
+      lastSideSig = sideSig;
+      side.replaceChildren(
+        safely("Your wallet", () => walletCard(agent)),
+        safely("Today's limit", () => limitCard(limits)),
+        safely("Recent activity", () => recentCard(records)),
+      );
+    }
+  }
+
   async function load() {
-    main.replaceChildren(overviewSkeleton(el));
-    side.replaceChildren();
+    const myGen = ++loadGen;
+    const peekPort = peekSafe("portfolio");
+    let hadPeek = false;
+
+    if (ctx.state && ctx.state.me && peekPort !== undefined) {
+      hadPeek = true;
+      paintView({
+        agent: peekSafe("agent") || null,
+        port: peekPort,
+        tier: peekSafe("tier") || null,
+        records: null,
+        limits: peekSafe("limits") || null,
+        portError: null,
+      });
+    } else {
+      main.replaceChildren(overviewSkeleton(el));
+      side.replaceChildren();
+      lastMainSig = null;
+      lastSideSig = null;
+    }
+
     const me = await ctx.refreshSession();
+    if (myGen !== loadGen || root.isConnected === false) return;
     if (!me) {
       const box = el("div", "card");
       box.append(
         emptyState(el, "Connect a wallet to see your agent.", null, { label: "Set up your agent", hash: "#/setup" }, "div"),
       );
       main.replaceChildren(box);
+      side.replaceChildren();
       return;
     }
     const [a, p, t, r, l] = await Promise.allSettled([
@@ -42,29 +131,31 @@ export function render(ctx) {
       loadRecords(ctx, 200),
       getLimits(api),
     ]);
-    const agent = a.status === "fulfilled" ? a.value : null;
-    const tier = t.status === "fulfilled" ? t.value : null;
-    const records = r.status === "fulfilled" && Array.isArray(r.value) ? r.value : null;
-    const pending = records ? pendingOf(records) : [];
-    const approvals = pending.length ? approvalsCard(ctx) : null;
-    const parts = [];
-    if (tier && tier.emergency_stop) parts.push(frozenCard(el));
-    // An order that waits for the owner is the one thing that needs action, so it sits on top of
-    // the main column with room to read it (the side column is too narrow for a step card).
-    if (approvals) parts.push(waitingNote(pending.length, approvals), approvals);
+    if (myGen !== loadGen || root.isConnected === false) return;
+
+    const freshAgent = a.status === "fulfilled" ? a.value : (paintedAgent || peekSafe("agent") || null);
+    const freshTier = t.status === "fulfilled" ? t.value : (peekSafe("tier") || null);
+    const freshRecords = r.status === "fulfilled" && Array.isArray(r.value) ? r.value : null;
+    const freshLimits = l.status === "fulfilled" ? l.value : (peekSafe("limits") || null);
+
+    let port = p.status === "fulfilled" ? p.value : null;
+    let portError = null;
+
     if (p.status !== "fulfilled") {
-      parts.push(failureCard(p.reason));
-    } else {
-      const model = groupHoldings(p.value, agent);
-      parts.push(heroCard(model, agent, p.value));
-      if (!model.empty) parts.push(holdingsCard(model, agent));
+      portError = p.reason;
+      if (hadPeek && paintedPort) {
+        port = paintedPort;
+      }
     }
-    main.replaceChildren(...parts);
-    side.replaceChildren(
-      safely("Your wallet", () => walletCard(agent)),
-      safely("Today's limit", () => limitCard(l.status === "fulfilled" ? l.value : null)),
-      safely("Recent activity", () => recentCard(records)),
-    );
+
+    paintView({
+      agent: freshAgent,
+      port,
+      tier: freshTier,
+      records: freshRecords,
+      limits: freshLimits,
+      portError,
+    });
   }
 
   // Shown above the main column while orders wait. Review scrolls to the approvals card below it.

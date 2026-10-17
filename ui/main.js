@@ -72,6 +72,7 @@ export function makeCtx({ api, wallet, sleep }) {
     // A 401 from any route means the cookie is gone: drop the signed-in state once.
     signedOut() {
       if (!state.me) return;
+      api.clearCache();
       state.me = null;
       state.tier = null;
       state.threadId = null;
