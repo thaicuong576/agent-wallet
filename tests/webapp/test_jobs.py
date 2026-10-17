@@ -673,7 +673,7 @@ def test_real_gateway_without_origin_denies_mint(tmp_path):
 
 def test_origin_owner_literal_only_in_jobs_module():
     hits = []
-    for path in (ROOT / "api").glob("*.py"):
+    for path in (ROOT / "api").rglob("*.py"):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (
                 isinstance(node, ast.keyword)
@@ -682,7 +682,7 @@ def test_origin_owner_literal_only_in_jobs_module():
                 and node.value.value == "owner"
             ):
                 hits.append(path.name)
-    assert hits == ["jobs.py"]
+    assert hits == ["gateway_calls.py"]
 
 
 # ---------------------------------------------------------------- isolation
