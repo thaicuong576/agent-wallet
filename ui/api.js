@@ -213,6 +213,9 @@ export function createApi({
         needSession();
         await seedThreads();
         const want = (arg && arg.threadId) || null;
+        if (want && fx.threads && !fx.threads.some((t) => t.id === want)) {
+          throw new ApiError(404, "not-found", "Thread not found");
+        }
         const items = fx.chat.filter((m) => (m.thread_id || null) === want);
         return { items: items.slice(-(Number(arg && arg.limit) || 50)).map(withPhase) };
       }

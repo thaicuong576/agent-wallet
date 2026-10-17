@@ -4,6 +4,7 @@
 // is labelled as such; the step cards, not the prose, are the record of what happened.
 import { ROUTES } from "../api.js";
 import { cta, frozenCard } from "../gauges.js";
+import { threadFromHash } from "../main.js";
 import { fetchEventSource } from "../sse.js";
 import { ACTIVE_PHASES, stepCard, uncertainCard } from "./cards.js";
 import { createProgress } from "./progress.js";
@@ -128,12 +129,34 @@ export function render(ctx) {
 
   let busy = false;
   let frozen = false;
-  let threadId = null; // null is the implicit default conversation
-  let activeJob = null; // {id, phase} while a job of this view is queued or running
+  let newThreadId = null;
+  const fromHash = threadFromHash(globalThis.location ? globalThis.location.hash : "");
+  let threadId = fromHash !== null ? fromHash : (ctx.state.threadId ?? null);
+  ctx.state.threadId = threadId;
+  let activeJob = null; // {id, phase, threadId} while a job of this view is queued or running
   let cancelling = false;
   let limitsAt = 0;
   let limitsCache = null;
   let live = null; // {li, prog} while this view shows the progress card of a job
+
+  function updateHash(id) {
+    const target = id ? "#/chat/" + encodeURIComponent(id) : "#/chat";
+    if (globalThis.location && globalThis.location.hash !== target) {
+      globalThis.location.hash = target;
+    }
+  }
+  updateHash(threadId);
+
+  function onHashChange() {
+    if (root.isConnected === false) return;
+    const next = threadFromHash(globalThis.location ? globalThis.location.hash : "");
+    if (next !== threadId) {
+      selectThread(next);
+    }
+  }
+  if (globalThis.addEventListener) {
+    globalThis.addEventListener("hashchange", onHashChange);
+  }
 
   function updateCounter() {
     const n = input.value.length;
@@ -147,15 +170,16 @@ export function render(ctx) {
       submit();
     }
   });
-  send.addEventListener("click", () => (activeJob ? stop() : submit()));
+  send.addEventListener("click", () => (activeJob && activeJob.threadId === threadId ? stop() : submit()));
 
-  // The Send button becomes Stop (ink fill) while a job is queued or running.
+  // The Send button becomes Stop (ink fill) while a job of this thread is queued or running.
   function lock() {
-    const running = Boolean(activeJob) && !frozen;
+    const isJobForThisThread = Boolean(activeJob && activeJob.threadId === threadId);
+    const running = isJobForThisThread && !frozen;
     send.textContent = running ? "Stop" : "Send";
     send.className = running ? "stop" : "primary";
     send.disabled = running ? cancelling : busy || frozen;
-    rail.setBusy(busy || Boolean(activeJob));
+    rail.setBusy(busy);
     input.disabled = frozen;
     input.setAttribute("placeholder", frozen ? "Frozen. Resume the agent to chat." : PLACEHOLDER);
   }
@@ -205,8 +229,18 @@ export function render(ctx) {
       const items = all.filter((m) => !running.includes(m));
       showHistory(items, await getLimits());
       const last = running[running.length - 1];
-      if (resume && last && !activeJob && /^[0-9a-f]{32}$/.test(last.job_id)) follow(last.job_id);
+      if (resume && last && (!activeJob || activeJob.threadId !== threadId) && /^[0-9a-f]{32}$/.test(last.job_id)) {
+        follow(last.job_id, threadId);
+      }
     } catch (e) {
+      if (e && e.status === 404 && threadId !== null) {
+        ctx.state.threadId = null;
+        threadId = null;
+        updateHash(null);
+        await loadThreads();
+        await loadHistory(false);
+        return;
+      }
       status.className = "msg error";
       status.textContent = ctx.describeError(e);
     }
@@ -316,10 +350,10 @@ export function render(ctx) {
     return doneJob;
   }
 
-  async function follow(jobId) {
-    activeJob = { id: jobId, phase: "queued" };
+  async function follow(jobId, forThreadId = threadId) {
+    activeJob = { id: jobId, phase: "queued", threadId: forThreadId };
     cancelling = false;
-    if (!live) {
+    if (!live && threadId === forThreadId) {
       // No card yet: the page was reloaded mid-run, or another thread was opened.
       live = startLive();
       live.prog.setReceived();
@@ -330,9 +364,13 @@ export function render(ctx) {
 
     function handleUpdate(phase, status) {
       const p = typeof phase === "string" ? phase : status === "queued" ? "queued" : "working";
-      activeJob.phase = p;
+      if (activeJob) activeJob.phase = p;
       if (p === "sent" || p === "confirming") sent = true;
-      if (p !== "done" && (!status || !ENDED_STATUS.has(status)) && live) {
+      if (p !== "done" && (!status || !ENDED_STATUS.has(status)) && threadId === forThreadId) {
+        if (!live) {
+          live = startLive();
+          live.prog.setReceived();
+        }
         const near = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
         live.prog.setPhase(p);
         if (near) scroll.scrollTop = scroll.scrollHeight;
@@ -348,31 +386,33 @@ export function render(ctx) {
     } finally {
       activeJob = null;
       cancelling = false;
-      dropLive();
+      if (threadId === forThreadId) dropLive();
     }
     limitsAt = 0;
-    await loadHistory();
-    if (job && (job.status === "failed" || job.status === "interrupted")) {
-      if (sent) {
-        // The order left the wallet and the outcome is unknown: never say "nothing was sent".
-        const li = el("li", "bubble agent");
-        const list = el("ol", "steps");
-        list.append(uncertainCard(ctx));
-        li.append(list);
-        log.append(li);
-      } else {
-        status.className = "msg error";
-        status.textContent = "The request did not finish. See the agent's message above.";
+    if (threadId === forThreadId) {
+      await loadHistory();
+      if (job && (job.status === "failed" || job.status === "interrupted")) {
+        if (sent) {
+          // The order left the wallet and the outcome is unknown: never say "nothing was sent".
+          const li = el("li", "bubble agent");
+          const list = el("ol", "steps");
+          list.append(uncertainCard(ctx));
+          li.append(list);
+          log.append(li);
+        } else {
+          status.className = "msg error";
+          status.textContent = "The request did not finish. See the agent's message above.";
+        }
       }
+      lock();
     }
-    lock();
     refreshAround();
     ctx.changed();
   }
 
   // Stop: ask the server to skip the steps not yet sent. An order already sent is never undone.
   async function stop() {
-    if (!activeJob || cancelling) return;
+    if (!activeJob || activeJob.threadId !== threadId || cancelling) return;
     cancelling = true;
     lock();
     status.className = "msg";
@@ -405,20 +445,43 @@ export function render(ctx) {
   }
 
   async function loadThreads() {
+    let items = [];
     try {
       const res = await api.threads();
-      rail.setThreads(res.items, true);
+      items = Array.isArray(res.items) ? res.items : [];
+      rail.setThreads(items, true);
     } catch (_) {
       rail.setThreads([], false);
     }
+    if (threadId !== null && threadId !== newThreadId && items.length > 0) {
+      const exists = items.some((t) => t.id === threadId);
+      if (!exists) {
+        const newest = items[0];
+        threadId = newest ? newest.id : null;
+        ctx.state.threadId = threadId;
+        updateHash(threadId);
+      }
+    } else if (threadId !== null && threadId !== newThreadId && items.length === 0) {
+      threadId = null;
+      ctx.state.threadId = null;
+      updateHash(null);
+    }
+    rail.setActive(threadId);
     const name = threadId === null ? "" : rail.title(threadId);
-    title.textContent = name || "Your agent";
+    title.textContent = name || (threadId === newThreadId ? "New chat" : "Your agent");
   }
 
   async function selectThread(id) {
+    if (threadId === id) return;
+    newThreadId = null;
+    if (live) dropLive();
     threadId = id;
+    ctx.state.threadId = id;
+    updateHash(id);
     rail.setActive(id);
+    status.className = "msg";
     status.textContent = "";
+    lock();
     await loadHistory(true);
     await loadThreads();
   }
@@ -426,12 +489,17 @@ export function render(ctx) {
   async function newChat() {
     status.className = "msg";
     status.textContent = "";
+    if (live) dropLive();
     try {
       const t = await api.newThread();
+      newThreadId = t.id;
       threadId = t.id;
+      ctx.state.threadId = t.id;
+      updateHash(t.id);
       rail.setActive(threadId);
       showHistory([], null);
       await loadThreads();
+      lock();
       if (input.focus) input.focus();
     } catch (e) {
       status.className = "msg error";
@@ -477,10 +545,16 @@ export function render(ctx) {
     }
     // The progress card appears before the request leaves, so the owner sees the agent at once.
     live = startLive();
+    const sentInThread = threadId;
     try {
       const accepted = await api.chatSend(text, threadId);
+      busy = false;
+      newThreadId = null;
       live.prog.setReceived();
-      await follow(accepted.job_id);
+      await loadThreads();
+      if (sentInThread) rail.setActive(sentInThread);
+      title.textContent = (sentInThread && rail.title(sentInThread)) || (text ? text.slice(0, 40) : "") || "Your agent";
+      await follow(accepted.job_id, sentInThread);
     } catch (e) {
       dropLive();
       status.className = "msg error";
@@ -490,7 +564,7 @@ export function render(ctx) {
         // One job at a time: wait for the running one, then offer the message again.
         status.textContent += " Waiting for it to finish.";
         try {
-          await follow(active);
+          await follow(active, threadId);
         } catch (_) {
           // The message above already explains the situation.
         }
@@ -514,7 +588,7 @@ export function render(ctx) {
     }
     await loadState();
     loadSuggestions();
-    loadThreads();
+    await loadThreads();
     await loadHistory(true);
   }
 

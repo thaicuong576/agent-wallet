@@ -119,6 +119,40 @@ sequenceDiagram
 - **Stop**: while a job is queued or running the Send button reads "Stop" and calls `POST /jobs/{id}/cancel`. A 409 shows "Too late to stop: this order is already sent." A job that ends `failed` after the page saw `sent` shows "It may still land. Check Activity before trying again."
 - **Limit line** on pending and blocked cards, **quick fixes** ("Try 100 USDC", "Why is this blocked?") on the newest agent message, and **prompt chips** from `GET /chat/suggestions`.
 
+### Chat thread lifecycle and routing (ticket T1)
+- **In-memory thread state (`ctx.state.threadId`)**: The active thread selection is kept strictly in memory on `ctx.state.threadId` and cleared on logout/disconnect (`ctx.signedOut()`). In keeping with the zero-storage policy, neither `localStorage` nor `sessionStorage` is touched.
+- **URL hash mirroring (`#/chat/<thread_id>`)**: The selected thread is mirrored into the URL hash as `#/chat/<thread_id>` (or `#/chat` for the default conversation). `routeFor(hash)` in `main.js` delegates to `threadFromHash(hash)` so that deep links (`#/chat/t123`) route to Chat with the thread selection intact.
+- **Hash changes without remounting**: When switching between threads or pushing hash updates while already on the Chat screen, `showRoute(false)` avoids tearing down the view DOM. An in-view `hashchange` handler detects browser back/forward navigation within Chat, synchronizing `ctx.state.threadId` and loading the newly active thread seamlessly without full view reinitialization.
+- **404 and unknown thread fallback**: When navigating to a non-existent or unknown thread (e.g. an invalid deep link or a dropped thread), `GET /chat` throws a 404 ApiError. The view catches this, clears the stale `threadId` from `ctx.state`, smoothly falls back to the newest thread (`items[0]`), and updates the hash without displaying an error banner or breaking navigation.
+- **Thread-scoped running jobs**: Running background jobs (`follow(jobId, forThreadId)`) are strictly scoped to their originating `forThreadId`. If an owner navigates to another thread while an order is queued or confirming, live card progress and chat message reloads do not bleed into or corrupt the active thread view. Controls like the Stop button and composer lock are also scoped: the user can freely send prompts or read history in other threads while a job runs in another thread.
+
+```mermaid
+sequenceDiagram
+  participant U as User / Browser
+  participant M as main.js (routeFor)
+  participant C as views/chat.js
+  participant S as Server API
+
+  U->>M: Deep link / navigation to #/chat/t123
+  M->>C: Render Chat with ctx.state.threadId = t123
+  C->>S: GET /chat?thread_id=t123
+  alt Thread exists
+    S-->>C: 200 items (messages & step cards)
+    C->>U: Render thread messages, highlight rail row
+  else Thread not found (404)
+    S-->>C: 404 Thread not found
+    C->>C: Drop invalid threadId, select newest thread
+    C->>S: GET /chat?thread_id=newest
+    S-->>C: 200 items (newest thread messages)
+    C->>U: Update URL hash to #/chat/newest (no error shown)
+  end
+  U->>C: Click "+ New chat" & Send message
+  C->>S: POST /chat { message, thread_id: tnew }
+  S-->>C: 202 job_id
+  C->>U: Update header title & rail immediately, mirror #/chat/tnew
+  Note over C,S: Running job is followed only for tnew; owner can browse other threads
+```
+
 ## Holdings, icons and money dialogs
 - **`holdings.js`** is pure (BigInt cents, no floats, no DOM). `groupHoldings(portfolio, agent)` groups `GET /portfolio` positions by what the money is doing: `wallet` stablecoins idle, `aave-v3` lent, `aave-stata` vaults, `morpho-blue`, and any other wallet token as swapped. Zero or unreadable balances are left out, unknown locations land in idle, nothing throws. `allocationSegments` feeds the bar.
 - **`icons.js`** builds token avatars, protocol badges, the testnet "T" mark and a deterministic letter avatar (FNV-1a hash into eight palette colours, each at least 4.5:1 against white). Token images are five CC0 SVGs under `ui/assets/tokens/`; WETH is the ETH image plus a "W" badge, cbETH a letter avatar, protocol marks are monograms. Sources, licence and the rules for adding a token: [`docs/design/webapp/icons.md`](../design/webapp/icons.md).

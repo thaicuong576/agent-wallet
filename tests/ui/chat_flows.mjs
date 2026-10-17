@@ -147,6 +147,9 @@ function server(script = {}) {
     }
     if (method === "GET" && url.startsWith("/chat?")) {
       const tid = new URL(url, "http://x").searchParams.get("thread_id");
+      if (state.notFoundThread && tid === state.notFoundThread) {
+        return reply(404, { type: "urn:agent-wallet:problem:not-found", title: "Not found", status: 404 });
+      }
       return reply(200, { items: (tid && state.byThread && state.byThread[tid]) || state.items });
     }
     if (method === "GET" && url === "/limits") {
@@ -159,13 +162,22 @@ function server(script = {}) {
       return reply(200, { items: state.threads || [] });
     }
     if (method === "POST" && url === "/chat/threads") {
-      return reply(201, { id: "tnew", title: "New chat" });
+      const id = script.newThreadId || "tnew";
+      const t = { id, title: "New chat", last_message_at: new Date().toISOString(), status: "done" };
+      if (state.threads) state.threads.unshift(t);
+      return reply(201, { id, title: "New chat" });
     }
     if (method === "POST" && url === "/jobs/" + JOB + "/cancel") {
       const c = state.cancel || { status: 202, body: { job_id: JOB, status: "cancelling" } };
       return reply(c.status, c.body);
     }
     if (method === "POST" && url === "/chat") {
+      if (body.thread_id && state.threads) {
+        const found = state.threads.find((t) => t.id === body.thread_id);
+        if (found && (found.title === "New chat" || !found.title)) {
+          found.title = body.message.slice(0, 40);
+        }
+      }
       const out = script.onSend(body, state);
       if (out.problem) return reply(out.problem.status, out.problem.body, out.problem.headers);
       state.pending = out;
@@ -696,6 +708,254 @@ const postsTo = (srv, url) => srv.calls.filter((c) => c.method === "POST" && c.u
   out.uncertain = {
     text: root.textContent.includes("It may still land. Check Activity before trying again."),
     link: find(root, (n) => n.tagName === "A").map((n) => n.attrs.href),
+  };
+}
+
+// 15. thread survival: surviving remounts (same route, route back and forth, topbar, ctx.changed) and page reload
+{
+  const nowIso = new Date().toISOString();
+  const { ctx } = make({
+    state: {
+      threads: [
+        { id: "t1", title: "First thread", last_message_at: nowIso, status: "done" },
+        { id: "t2", title: "Second thread", last_message_at: "2026-01-01T10:00:00Z", status: "done" },
+      ],
+      byThread: {
+        t1: [msg("user", "Hello t1"), msg("agent", "Reply t1", [])],
+        t2: [msg("user", "Hello t2"), msg("agent", "Reply t2", [])],
+        tnew: [msg("user", "Starting new"), msg("agent", "New thread reply", [])],
+      },
+    },
+    onSend: (body) => ({ messages: [msg("user", body.message), msg("agent", "Okay.", [])] }),
+  });
+  await ctx.refreshSession();
+  let root = chat.render(ctx);
+  await tick();
+  // Click New chat
+  await fire(button(root, "+ New chat"), "click");
+  const threadAfterNew = ctx.state.threadId;
+  const hashAfterNew = globalThis.location.hash;
+
+  // Send a message
+  const box = input(root);
+  box.value = "Starting new";
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(80);
+  const titleAfterSend = (find(root, (n) => n.className.includes("chat-title"))[0] || {}).textContent;
+  const activeRailAfterSend = byClass(root, "rail-row").filter((n) => n.className.includes("active")).map((n) => n.textContent);
+
+  // Remount 1: hashchange to same route #/chat
+  globalThis.location.hash = "#/chat";
+  root = chat.render(ctx);
+  await tick();
+  const threadSameRoute = ctx.state.threadId;
+  const hashSameRoute = globalThis.location.hash;
+
+  // Remount 2: route back and forth
+  ctx.state.tier = "T2";
+  root = chat.render(ctx);
+  await tick();
+  const threadRouteBack = ctx.state.threadId;
+
+  // Remount 3: topbar refresh
+  await ctx.refreshSession();
+  const threadTopbar = ctx.state.threadId;
+
+  // Remount 4: ctx.changed()
+  ctx.changed();
+  const threadChanged = ctx.state.threadId;
+
+  // Page reload with hash
+  globalThis.location.hash = "#/chat/" + threadAfterNew;
+  const { ctx: reloadCtx } = make({
+    state: {
+      threads: [
+        { id: threadAfterNew, title: "Starting new", last_message_at: nowIso, status: "done" },
+        { id: "t1", title: "First thread", last_message_at: nowIso, status: "done" },
+      ],
+      byThread: {
+        [threadAfterNew]: [msg("user", "Starting new"), msg("agent", "New thread reply", [])],
+      },
+    },
+    onSend: () => ({ messages: [] }),
+  });
+  await reloadCtx.refreshSession();
+  const reloadRoot = chat.render(reloadCtx);
+  await tick();
+  const threadReload = reloadCtx.state.threadId;
+  const reloadTitle = (find(reloadRoot, (n) => n.className.includes("chat-title"))[0] || {}).textContent;
+  const reloadActiveRail = byClass(reloadRoot, "rail-row").filter((n) => n.className.includes("active")).map((n) => n.textContent);
+
+  out.threadSurvival = {
+    threadAfterNew,
+    hashAfterNew,
+    titleAfterSend,
+    activeRailAfterSend,
+    threadSameRoute,
+    hashSameRoute,
+    threadRouteBack,
+    threadTopbar,
+    threadChanged,
+    threadReload,
+    reloadTitle,
+    reloadActiveRail,
+  };
+}
+
+// 16. deep link, unknown thread id fallback, and 404 stored id drop
+{
+  const nowIso = new Date().toISOString();
+  // Case A: deep link to existing thread t2
+  globalThis.location.hash = "#/chat/t2";
+  const { ctx: ctxA } = make({
+    state: {
+      threads: [
+        { id: "t1", title: "Thread 1", last_message_at: nowIso, status: "done" },
+        { id: "t2", title: "Thread 2", last_message_at: "2026-01-01T10:00:00Z", status: "done" },
+      ],
+      byThread: {
+        t2: [msg("user", "Hello t2"), msg("agent", "Reply t2", [])],
+      },
+    },
+    onSend: () => ({ messages: [] }),
+  });
+  await ctxA.refreshSession();
+  const rootA = chat.render(ctxA);
+  await tick();
+  const deepLinkSelected = ctxA.state.threadId;
+  const deepLinkTitle = (find(rootA, (n) => n.className.includes("chat-title"))[0] || {}).textContent;
+  const deepLinkBubbles = bubbles(rootA).map((b) => b.textContent);
+
+  // Case B: deep link to unknown thread falls back to newest thread (t1) with no error
+  globalThis.location.hash = "#/chat/unknown_thread_id";
+  const { ctx: ctxB } = make({
+    state: {
+      threads: [
+        { id: "t1", title: "Thread 1", last_message_at: nowIso, status: "done" },
+        { id: "t2", title: "Thread 2", last_message_at: "2026-01-01T10:00:00Z", status: "done" },
+      ],
+      byThread: {
+        t1: [msg("user", "Hello t1"), msg("agent", "Reply t1", [])],
+      },
+    },
+    onSend: () => ({ messages: [] }),
+  });
+  await ctxB.refreshSession();
+  const rootB = chat.render(ctxB);
+  await tick();
+  const unknownFallbackSelected = ctxB.state.threadId;
+  const unknownFallbackTitle = (find(rootB, (n) => n.className.includes("chat-title"))[0] || {}).textContent;
+  const unknownFallbackHash = globalThis.location.hash;
+  const unknownStatus = (find(rootB, (n) => n.className.includes("msg"))[0] || {}).textContent;
+
+  // Case C: 404 response for stored id drops it and falls back to newest thread
+  globalThis.location.hash = "#/chat/t_missing";
+  const { ctx: ctxC } = make({
+    state: {
+      notFoundThread: "t_missing",
+      threads: [
+        { id: "t1", title: "Thread 1", last_message_at: nowIso, status: "done" },
+      ],
+      byThread: {
+        t1: [msg("user", "Hello t1"), msg("agent", "Reply t1", [])],
+      },
+    },
+    onSend: () => ({ messages: [] }),
+  });
+  await ctxC.refreshSession();
+  const rootC = chat.render(ctxC);
+  await tick();
+  const notFoundFallbackSelected = ctxC.state.threadId;
+  const notFoundStatus = (find(rootC, (n) => n.className.includes("msg"))[0] || {}).textContent;
+  const notFoundHash = globalThis.location.hash;
+
+  out.deepLinkAnd404 = {
+    deepLinkSelected,
+    deepLinkTitle,
+    deepLinkBubbles,
+    unknownFallbackSelected,
+    unknownFallbackTitle,
+    unknownFallbackHash,
+    unknownStatus,
+    notFoundFallbackSelected,
+    notFoundStatus,
+    notFoundHash,
+  };
+}
+
+// 17. job isolation: a running job of a thread is followed only in that thread
+{
+  const nowIso = new Date().toISOString();
+  let t1RunningLive = false;
+  let t1RunningStopBtn = false;
+  let t2DuringRunLive = false;
+  let t2DuringRunSendBtn = false;
+
+  const { ctx } = make({
+    state: {
+      threads: [
+        { id: "t1", title: "Thread 1", last_message_at: nowIso, status: "done" },
+        { id: "t2", title: "Thread 2", last_message_at: "2026-01-01T10:00:00Z", status: "done" },
+      ],
+      byThread: {
+        t1: [msg("user", "Job in t1"), msg("agent", "Earlier in t1", [])],
+        t2: [msg("user", "Message in t2"), msg("agent", "Earlier in t2", [])],
+      },
+      jobScript: [
+        { status: "running", phase: "rules_check" },
+        { status: "running", phase: "sent" },
+        { status: "succeeded", phase: "done" },
+      ],
+    },
+    onSend: (body) => ({
+      messages: [msg("user", body.message), msg("agent", "Finished in t1", [])],
+    }),
+  });
+  globalThis.location.hash = "#/chat/t1";
+  await ctx.refreshSession();
+  const root = chat.render(ctx);
+  await tick();
+
+  const origJob = ctx.api.job;
+  let pollCount = 0;
+  ctx.api.job = async (id) => {
+    pollCount++;
+    if (pollCount === 1) {
+      // In t1 while job is running
+      t1RunningLive = byClass(root, "live").length > 0;
+      t1RunningStopBtn = Boolean(find(root, (n) => n.className === "stop")[0]);
+      // Switch to t2 while t1 is running
+      const rows = byClass(root, "rail-row");
+      if (rows[1]) {
+        await fire(rows[1], "click");
+        t2DuringRunLive = byClass(root, "live").length > 0;
+        t2DuringRunSendBtn = Boolean(button(root, "Send"));
+      }
+    }
+    return origJob(id);
+  };
+
+  const box = input(root);
+  box.value = "Start background run in t1";
+  await fire(box, "keydown", { key: "Enter", shiftKey: false });
+  await tick(100);
+
+  // While in t2, t1's completed message was NOT appended to t2
+  const t2TextAfterJobDone = bubbles(root).map((b) => b.textContent);
+
+  // Switch back to t1: completed job message is in t1
+  const rows = byClass(root, "rail-row");
+  if (rows[0]) await fire(rows[0], "click");
+  await tick(50);
+  const t1TextFinal = bubbles(root).map((b) => b.textContent);
+
+  out.jobIsolation = {
+    t1RunningLive,
+    t1RunningStopBtn,
+    t2DuringRunLive,
+    t2DuringRunSendBtn,
+    t2TextAfterJobDone,
+    t1TextFinal,
   };
 }
 
