@@ -1,367 +1,60 @@
-"""Jobs: run, mint and withdraw as polled background jobs (design 8.2, 10).
-
-One active job per owner, rate limits per owner per hour, a single worker pool across owners.
-The jobs live in the owner's `JobStore` (`tenant.stores.jobs`: `webapp.sqlite` on SQLite, the
-`jobs` table on Postgres) and hold ids only (job id, order ids, audit seqs, planner label, error
-code), never an order body, a note or a key: the audit log is the truth. This module is the only
-place that proposes with `origin="owner"` (design 7.3, 13); the gateway decides, the job only
-reports what the gateway recorded.
-"""
+"""Job service managing background job lifecycle."""
 
 from __future__ import annotations
 
-import inspect
-import json
 import logging
-import os
 import re
 import threading
 import time
 import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Executor, ThreadPoolExecutor
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Any
 
-import jsonschema
-from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, ConfigDict, Field
-
-from api.auth import AuthProblem, Session, require_step_up
 from api.chat_compose import (
     FALLBACK_LLM_ERROR,
     FALLBACK_UNCONFIGURED,
     compose_agent_text,
-    outcome_sentence_from_records,
     text_for_error,
     user_facing_stop,
 )
-from api.wallet import current_tenant, get_webapp, problem_invalid
+from api.wallet import problem_invalid
 from core.agent import Planner, Reader, ScriptedClient
-from core.agent.client import LLMClient, LLMError, OpenAIClient
-from core.agent.planner import (
-    HISTORY_MAX_CHARS,
-    HISTORY_MAX_TURNS,
-    FallbackPlanner,
-    clean_history_text,
-)
+from core.agent.client import LLMClient, LLMError
+from core.agent.planner import FallbackPlanner
 from core.gateway.exceptions import GatewayBusy, GatewayError, InvalidOrder, ReconcileRequired
 from core.gateway.tenant import Tenant
 from core.runner.portfolio import PortfolioReader
-from core.runner.runner import SKIP_PREFIX, Runner
+from core.runner.runner import Runner
 from core.storage.interfaces import JobInProgress, JobStore, RateLimited
 from core.storage.sqlite.webapp import SqliteJobs, mark_jobs_interrupted
 
+from .constants import (
+    ACTION_KINDS,
+    ACTIVE,
+    CANCEL_CODE,
+    CHAT_MESSAGE_MAX_CHARS,
+    GLOBAL_STOP_CODE,
+    KINDS,
+    OWNER_STOP_CODE,
+    TERMINAL_PHASE,
+    USDC_UNIT,
+)
+from .gateway_calls import (
+    _hostile_plan,
+    _llm_from_env,
+    _order_validator,
+    propose_as_owner,
+)
+from .history import _build_chat_history
+from .limits import JobLimits, job_in_progress, rate_limited
+from .live import _CancelGate, _Live
+from .outcome import Outcome, _iso, _now_iso, _rule_codes, _ts, classify
+
 log = logging.getLogger("agent_wallet.jobs")
 timing_log = logging.getLogger("agent_wallet.timing")
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-ORDER_SCHEMA = ROOT_DIR / "contracts" / "schemas" / "order.schema.json"
-
-KINDS = ("run", "mint", "withdraw", "chat")
-# Chat action and run jobs share one hourly limit (ticket 115, chat-v3).
-ACTION_KINDS = ("run", "chat_action")
-RUN_LIKE = ("run", "chat")
-CHAT_MESSAGE_MAX_CHARS = 500
-ACTIVE = ("queued", "running")
-STOP_CODES = frozenset({"TIER.EMERGENCY_STOP", "TIER.GLOBAL_STOP"})
-OWNER_STOP_CODE = "TIER.EMERGENCY_STOP"
-# Cancel (contract C2): the job ends `denied` with this code; steps carry CANCEL_REASON.
-CANCEL_CODE = "OWNER_CANCELLED"
-CANCEL_REASON = "owner-cancelled"
-TERMINAL_PHASE = "done"
-_SKIP_TAIL = re.compile(rf"^({re.escape(SKIP_PREFIX)} [^:]*): .*$", re.DOTALL)
-GLOBAL_STOP_CODE = "TIER.GLOBAL_STOP"
-# Execution error codes of the record schema, reported under the job table's names (design 10).
-ERROR_CODE_MAP = {"SIGNER_UNAVAILABLE": "RPC_UNAVAILABLE"}
-USDC_UNIT = 10**6
-
-
-@dataclass(frozen=True)
-class JobLimits:
-    """Every job limit in one place (design 3, 7.3, 10)."""
-
-    runs_per_hour: int = 6
-    chat_inquiries_per_hour: int = 60
-    mint_calls_per_hour: int = 4
-    note_max_chars: int = 2000
-
-    @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> JobLimits:
-        env = os.environ if env is None else env
-        raw = env.get("AGENT_WALLET_MINT_CALLS_PER_HOUR", "")
-        mint = (
-            int(raw)
-            if re.fullmatch(r"[0-9]{1,6}", raw) and int(raw) > 0
-            else cls.mint_calls_per_hour
-        )
-        raw_inq = env.get("AGENT_WALLET_CHAT_INQUIRIES_PER_HOUR", "")
-        inq = (
-            int(raw_inq)
-            if re.fullmatch(r"[0-9]{1,6}", raw_inq) and int(raw_inq) > 0
-            else cls.chat_inquiries_per_hour
-        )
-        return cls(mint_calls_per_hour=mint, chat_inquiries_per_hour=inq)
-
-    @property
-    def chat_inquiry_per_hour(self) -> int:
-        return self.chat_inquiries_per_hour
-
-    @property
-    def chat_actions_per_hour(self) -> int:
-        return self.runs_per_hour
-
-    @property
-    def chat_action_per_hour(self) -> int:
-        return self.runs_per_hour
-
-    def per_hour(self, kind: str) -> int | None:
-        return {
-            "run": self.runs_per_hour,
-            "chat": self.runs_per_hour,
-            "chat_action": self.runs_per_hour,
-            "chat_inquiry": self.chat_inquiries_per_hour,
-            "mint": self.mint_calls_per_hour,
-        }.get(kind)
-
-
-# ---------------------------------------------------------------- problems (RFC 7807)
-
-
-def job_in_progress(job_id: str) -> AuthProblem:
-    return AuthProblem(
-        409,
-        "job-in-progress",
-        "A job is already running",
-        "wait for the active job to finish",
-        extra={"job_id": job_id},
-    )
-
-
-def rate_limited(retry_after_s: int) -> AuthProblem:
-    return AuthProblem(
-        429,
-        "rate-limited",
-        "Too many requests",
-        "the hourly limit for this action is used up",
-        headers={"Retry-After": str(max(1, retry_after_s))},
-    )
-
-
-# ---------------------------------------------------------------- timestamps
-
-
-def _ts(value: datetime) -> str:
-    return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
-def _parse(value: str) -> datetime:
-    """Stored job times: microseconds on SQLite, whole seconds on Postgres rows."""
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ"):
-        try:
-            return datetime.strptime(value, fmt).replace(tzinfo=UTC)
-        except ValueError:
-            continue
-    raise ValueError("unrecognised job timestamp")
-
-
-# ---------------------------------------------------------------- planners and the owner path
-
-
-@lru_cache(maxsize=1)
-def _order_validator() -> jsonschema.Draft202012Validator:
-    return jsonschema.Draft202012Validator(json.loads(ORDER_SCHEMA.read_text(encoding="utf-8")))
-
-
-def _hostile_plan() -> str:
-    """What a compromised LLM might emit: a schema-valid supply far above the per-tx limit."""
-    order = {
-        "schema_version": 1,
-        "order_id": str(uuid.uuid4()),
-        "created_at": "2026-01-01T00:00:00Z",
-        "proposed_by": "planner",
-        "protocol": "aave-v3",
-        "function": "supply",
-        "token": "USDC",
-        "amount": {"value": "1000000000000", "decimals": 6},
-        "recipient": "self",
-    }
-    return json.dumps({"action": "propose", "orders": [order]})
-
-
-def propose_with_origin(gateway: Any, order: dict[str, Any], *, origin: str) -> dict[str, Any]:
-    """Call `Gateway.propose`, passing `origin` when the gateway accepts it (ticket C3).
-
-    Until C3 lands the keyword does not exist and the call is a plain `propose(order)`, where the
-    engine treats the order as planner-origin and denies owner functions: fail closed.
-    """
-    if "origin" in inspect.signature(gateway.propose).parameters:
-        return gateway.propose(order, origin=origin)
-    return gateway.propose(order)
-
-
-def propose_as_owner(gateway: Any, order: dict[str, Any]) -> dict[str, Any]:
-    return propose_with_origin(gateway, order, origin="owner")
-
-
-def _now_iso(now: datetime) -> str:
-    return now.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-@dataclass
-class Outcome:
-    status: str
-    error_code: str | None = None
-    order_ids: list[str] | None = None
-    seqs: list[int] | None = None
-    planner_client: str = "none"
-    chat_text: str | None = None  # the agent message of a chat job, composed by code
-    intent: str | None = None
-
-
-def _records(tenant: Tenant, seqs: list[int]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for seq in seqs:
-        try:
-            out.append(tenant.gateway.audit_sink[seq])
-        except Exception:  # noqa: BLE001 - a missing record must not break history
-            continue
-    return out
-
-
-def _build_chat_history(
-    tenant: Tenant,
-    job_id: str,
-    thread_id: str | None,
-    store: JobStore,
-) -> list[dict[str, str]]:
-    raw_messages = tenant.stores.chat.list(limit=50, thread_id=thread_id)
-    # Exclude current job's messages
-    earlier = [m for m in raw_messages if m.get("job_id") != job_id]
-    turns: list[dict[str, str]] = []
-    for m in earlier:
-        role = m.get("role")
-        if role == "user":
-            turns.append({"role": "user", "text": clean_history_text(m.get("text") or "", 400)})
-        elif role == "agent":
-            agent_text = clean_history_text(m.get("text") or "", 400)
-            agent_job_id = m.get("job_id")
-            seqs: list[int] = []
-            if agent_job_id:
-                job_row = store.get(agent_job_id)
-                if job_row and job_row.get("seqs"):
-                    seqs = [int(s) for s in job_row["seqs"]]
-            recs = _records(tenant, seqs)
-            outcome_text = outcome_sentence_from_records(recs)
-            if (
-                outcome_text
-                and outcome_text != "No orders were proposed."
-                and outcome_text not in agent_text
-            ):
-                agent_text = f"{agent_text} {outcome_text}".strip() if agent_text else outcome_text
-            turn: dict[str, str] = {"role": "agent", "text": agent_text}
-            if m.get("intent") is not None:
-                turn["intent"] = str(m["intent"])
-            turns.append(turn)
-    if len(turns) > HISTORY_MAX_TURNS:
-        turns = turns[-HISTORY_MAX_TURNS:]
-    while turns and sum(len(t["text"]) for t in turns) > HISTORY_MAX_CHARS:
-        turns.pop(0)
-    return turns
-
-
-def _rule_codes(record: Mapping[str, Any]) -> list[str]:
-    block = record.get("decision") or record.get("no_action") or {}
-    return [str(h.get("code")) for h in block.get("rules_hit", [])]
-
-
-def classify(records: list[dict[str, Any]], kind: str) -> tuple[str, str | None]:
-    """Map the gateway's records to a job status and error code (design 10 table)."""
-    for rec in records:
-        if rec.get("outcome") == "failed":
-            code = str((rec.get("execution") or {}).get("error_code") or "EXECUTION_FAILED")
-            return "failed", ERROR_CODE_MAP.get(code, code)
-    for rec in records:
-        stop = STOP_CODES.intersection(_rule_codes(rec))
-        if rec.get("outcome") == "denied" and stop:
-            return "denied", sorted(stop)[0]
-    if kind != "run" and any(rec.get("outcome") == "denied" for rec in records):
-        codes = [c for rec in records for c in _rule_codes(rec)]
-        return "denied", codes[0] if codes else None
-    return "succeeded", None
-
-
-# ---------------------------------------------------------------- cancel (contract C2)
-
-
-def _order_label(order: Mapping[str, Any]) -> str:
-    """'supply (10 USDC)': the same shape the runner uses for a skipped step."""
-    amount = order.get("amount") or {}
-    try:
-        units, decimals = int(amount["value"]), int(amount["decimals"])
-        whole, frac = divmod(units, 10**decimals)
-        text = f"{whole}.{frac:0{decimals}d}".rstrip("0").rstrip(".") if decimals else str(whole)
-    except (KeyError, TypeError, ValueError):
-        text = "?"
-    token = str(order.get("token") or "")
-    return f"{order.get('function', 'step')} ({f'{text} {token}'.strip()})"
-
-
-class _CancelGate:
-    """The tenant's gateway as the job's runner sees it, with the owner's cancel applied.
-
-    Cancellation points are exactly the calls to `propose`: once the owner has cancelled, no
-    further order reaches the real gateway (so nothing is checked, simulated or signed), and each
-    one is recorded as a skipped step with reason `owner-cancelled`. An order already inside
-    `propose` is never interrupted. Everything else is delegated untouched.
-    """
-
-    def __init__(
-        self,
-        gateway: Any,
-        cancelled: Callable[[], bool],
-        on_order: Callable[[Any], None],
-        on_skip: Callable[[], None],
-        clock: Callable[[], datetime],
-    ) -> None:
-        self._gateway = gateway
-        self._cancelled = cancelled
-        self._on_order = on_order
-        self._on_skip = on_skip
-        self._clock = clock
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._gateway, name)
-
-    def propose(self, order: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
-        if self._cancelled():
-            self._on_skip()
-            reason = f"{SKIP_PREFIX} {_order_label(order)}: {CANCEL_REASON}"
-            return self._gateway.record_no_action(reason, _now_iso(self._clock()))
-        self._on_order(order.get("order_id"))
-        return self._gateway.propose(order, **kwargs)
-
-    def record_no_action(self, reason: str, now: str) -> dict[str, Any]:
-        # The runner words the steps after a blocked one itself; after a cancel they say why.
-        if self._cancelled():
-            reason = _SKIP_TAIL.sub(lambda m: m.group(1) + ": " + CANCEL_REASON, reason)
-        return self._gateway.record_no_action(reason, now)
-
-
-@dataclass
-class _Live:
-    """In-process state of one job that is queued or running (never stored, never an order body)."""
-
-    cancel: bool = False
-    skipped_by_cancel: bool = False
-    order_id: str | None = None
-    tokens: list[str] = field(default_factory=list)
-
-
-# ---------------------------------------------------------------- service
 
 
 class JobService:
@@ -936,117 +629,4 @@ class JobService:
         return "fallback", FallbackPlanner()
 
 
-def _llm_from_env() -> LLMClient | None:
-    return OpenAIClient() if os.environ.get("OPENAI_API_KEY", "").strip() else None
-
-
-def _iso(stored: str) -> str:
-    return _parse(stored).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-# ---------------------------------------------------------------- routes
-
-router = APIRouter()
-
-
-class MintRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    amount_usdc: str = Field(pattern=r"^[1-9][0-9]{0,6}$")
-
-
-class WithdrawAmount(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    value: str
-    decimals: int
-
-
-class WithdrawRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    token: Literal["USDC", "ETH"]
-    amount: WithdrawAmount
-
-
-class RunRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    note: str | None = Field(default=None, max_length=2000)
-    planner: Literal["auto", "scripted_hostile"] = "auto"
-
-
-def _accepted(job_id: str) -> dict[str, str]:
-    return {"job_id": job_id, "status": "queued"}
-
-
-@router.post("/agent/mint", status_code=202, tags=["agent"])
-def post_mint(
-    body: MintRequest, request: Request, tenant: Annotated[Tenant, Depends(current_tenant)]
-) -> dict[str, str]:
-    jobs = get_webapp(request).jobs
-    return _accepted(jobs.start(tenant, "mint", {"amount_usdc": body.amount_usdc}))
-
-
-@router.post("/agent/withdraw", status_code=202, tags=["agent"])
-def post_withdraw(
-    body: WithdrawRequest,
-    request: Request,
-    _session: Annotated[Session, Depends(require_step_up("withdraw"))],
-    tenant: Annotated[Tenant, Depends(current_tenant)],
-) -> dict[str, str]:
-    jobs = get_webapp(request).jobs
-    return _accepted(jobs.start(tenant, "withdraw", body.model_dump()))
-
-
-@router.post("/runs", status_code=202, tags=["jobs"])
-def post_run(
-    request: Request,
-    tenant: Annotated[Tenant, Depends(current_tenant)],
-    body: RunRequest | None = None,
-) -> dict[str, str]:
-    body = body or RunRequest()
-    jobs = get_webapp(request).jobs
-    return _accepted(jobs.start(tenant, "run", {"note": body.note, "planner": body.planner}))
-
-
-@router.get("/jobs/{job_id}", tags=["jobs"])
-def get_job(
-    job_id: str, request: Request, tenant: Annotated[Tenant, Depends(current_tenant)]
-) -> dict[str, Any]:
-    job = None
-    if len(job_id) == 32 and all(c in "0123456789abcdef" for c in job_id):
-        job = get_webapp(request).jobs.get(tenant, job_id)
-    if job is None:
-        raise AuthProblem(404, "not-found", "Not found", "unknown job")
-    return job
-
-
-@router.post("/jobs/{job_id}/cancel", status_code=202, tags=["jobs"])
-def cancel_job(
-    job_id: str, request: Request, tenant: Annotated[Tenant, Depends(current_tenant)]
-) -> dict[str, str]:
-    jobs = get_webapp(request).jobs
-    job = None
-    if len(job_id) == 32 and all(c in "0123456789abcdef" for c in job_id):
-        job = jobs.store(tenant).get(job_id)
-    if job is None:
-        raise AuthProblem(404, "not-found", "Not found", "unknown job")
-    if not jobs.cancel(tenant, job_id):
-        raise AuthProblem(
-            409,
-            "not-cancellable",
-            "Job cannot be cancelled",
-            "the job has already sent a transaction or finished",
-            extra={"job_id": job_id, "error": "not-cancellable"},
-        )
-    return {"job_id": job_id, "status": "cancelling"}
-
-
-@router.get("/jobs", tags=["jobs"])
-def list_jobs(
-    request: Request,
-    tenant: Annotated[Tenant, Depends(current_tenant)],
-    records: int = 0,
-) -> dict[str, Any]:
-    with_records = records == 1
-    return {"items": get_webapp(request).jobs.list(tenant, with_records=with_records)}
-
-
-__all__ = ["JobInProgress", "JobLimits", "JobService", "RateLimited", "SqliteJobs", "router"]
+__all__ = ["JobService", "SqliteJobs", "mark_jobs_interrupted"]

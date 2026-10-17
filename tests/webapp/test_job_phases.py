@@ -226,8 +226,10 @@ def test_another_owner_cannot_cancel_or_see_the_job(world, alice, bob):
 
 
 def test_jobs_module_still_never_names_the_signer():
-    tree = ast.parse((ROOT / "api" / "jobs.py").read_text(encoding="utf-8"))
-    attrs = {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    attrs = set()
+    for path in (ROOT / "api" / "jobs").glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        attrs |= {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
     assert "sign_and_send" not in attrs and "signer" not in attrs
 
 
