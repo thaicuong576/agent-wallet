@@ -44,6 +44,7 @@ from core.simulate import RpcSimulator
 from core.storage.factory import POSTGRES, create_backend, selected_backend
 from core.storage.interfaces import StorageBackend
 from core.storage.migrate import MigrationError
+from core.storage.postgres.pool import _request_db_acc, db_calls, db_ms, db_stats
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_RPC_URL = "https://sepolia.base.org"
@@ -319,11 +320,12 @@ def build_webapp(
 
 
 class TimingMiddleware:
-    """Pure ASGI middleware logging request timing and RPC metrics.
+    """Pure ASGI middleware logging request timing, RPC, and DB metrics.
 
-    Emits `method=<verb> path=<route> status=<code> elapsed_ms=<ms> rpc_calls=<n> rpc_ms=<ms>`
-    on logger `agent_wallet.http` for all requests except `/health`, `/health/deep`, and `/ui/*`.
-    For streaming responses (like `/chat/stream/*`), timing completes when the stream ends.
+    Emits `method=<verb> path=<route> status=<code> elapsed_ms=<ms> rpc_calls=<n> rpc_ms=<ms>
+    db_calls=<n> db_ms=<ms>` on logger `agent_wallet.http` for all requests except `/health`,
+    `/health/deep`, and `/ui/*`. For streaming responses (like `/chat/stream/*`), timing
+    completes when the stream ends.
     """
 
     def __init__(self, app: ASGIApp) -> None:
@@ -344,6 +346,10 @@ class TimingMiddleware:
         token_acc = _request_rpc_acc.set(acc)
         token_calls = rpc_calls.set(0)
         token_ms = rpc_ms.set(0)
+        db_acc = [0, 0]
+        token_db_acc = _request_db_acc.set(db_acc)
+        token_db_calls = db_calls.set(0)
+        token_db_ms = db_ms.set(0)
         t0 = time.perf_counter()
         status_code = 500
 
@@ -363,18 +369,30 @@ class TimingMiddleware:
             else:
                 calls = rpc_calls.get()
                 ms = rpc_ms.get()
+            if db_acc[0] > 0:
+                d_calls = db_acc[0]
+                d_ms = db_acc[1]
+            else:
+                d_calls = db_calls.get()
+                d_ms = db_ms.get()
             _request_rpc_acc.reset(token_acc)
             rpc_calls.reset(token_calls)
             rpc_ms.reset(token_ms)
+            _request_db_acc.reset(token_db_acc)
+            db_calls.reset(token_db_calls)
+            db_ms.reset(token_db_ms)
             method = scope.get("method", "GET")
             http_log.info(
-                "method=%s path=%s status=%d elapsed_ms=%d rpc_calls=%d rpc_ms=%d",
+                "method=%s path=%s status=%d elapsed_ms=%d rpc_calls=%d rpc_ms=%d "
+                "db_calls=%d db_ms=%d",
                 method,
                 path,
                 status_code,
                 elapsed_ms,
                 calls,
                 ms,
+                d_calls,
+                d_ms,
             )
 
 
@@ -435,6 +453,9 @@ __all__ = [
     "configure_logging",
     "create_app",
     "create_configured_app",
+    "db_calls",
+    "db_ms",
+    "db_stats",
     "http_rpc",
     "rpc_calls",
     "rpc_ms",
