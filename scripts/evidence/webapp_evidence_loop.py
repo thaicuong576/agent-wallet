@@ -1,7 +1,8 @@
 """Long-running multi-protocol evidence loop for the hosted app (Base Sepolia).
 
-Runs scenario steps across several hours with strict rate limiting to produce
-real on-chain transactions and verify safety invariants against rate limits.
+Runs scenario steps across several hours with chat action throttling and policy
+transaction rate limits (TX_CAP_PER_HOUR) to produce real on-chain transactions
+and verify safety invariants against rate limits.
 
     python scripts/evidence/webapp_evidence_loop.py --url https://agent-wallet-6vuy.onrender.com
     python scripts/evidence/webapp_evidence_loop.py --url ... --execute
@@ -153,6 +154,11 @@ def check_verdict(expectation: str, steps: list[dict[str, Any]]) -> tuple[bool, 
     return False, f"unknown expectation: {expectation}"
 
 
+TX_CAP_PER_HOUR = 5
+THROTTLE_MISS_SLEEP = 600.0
+MAX_THROTTLE_MISS_RETRIES = 2
+
+
 class Throttle:
     """Rate-limits sends to at most per_hour within any 3600-second rolling window."""
 
@@ -188,6 +194,65 @@ class Throttle:
 
     def record_send(self) -> None:
         self.timestamps.append(self.now_fn())
+
+
+class TxThrottle:
+    """Rate-limits transactions to at most cap within any 3600-second rolling window."""
+
+    def __init__(
+        self,
+        cap: int = TX_CAP_PER_HOUR,
+        *,
+        now_fn: Callable[[], float] = _now,
+        sleep_fn: Callable[[float], None] = _sleep,
+    ) -> None:
+        if cap < 1:
+            raise ValueError(f"cap must be at least 1, got {cap}")
+        self.cap = cap
+        self.timestamps: deque[float] = deque()
+        self.now_fn = now_fn
+        self.sleep_fn = sleep_fn
+
+    def wait_for(self, n_needed: int = 2) -> float:
+        """Sleep until fewer than cap - n_needed + 1 tx remain in the last 3600 s.
+
+        Includes a 30 s margin to ensure the policy's hourly window clears.
+        """
+        if n_needed < 1:
+            raise ValueError(f"n_needed must be at least 1, got {n_needed}")
+        if n_needed > self.cap:
+            raise ValueError(f"n_needed ({n_needed}) cannot exceed cap ({self.cap})")
+
+        threshold = self.cap - n_needed + 1
+        total_slept = 0.0
+        while True:
+            now = self.now_fn()
+            while self.timestamps and self.timestamps[0] <= now - 3600.0:
+                self.timestamps.popleft()
+            if len(self.timestamps) < threshold:
+                break
+            idx = len(self.timestamps) - threshold
+            oldest = self.timestamps[idx]
+            wake_at = oldest + 3600.0 + 30.0
+            duration = wake_at - now
+            if duration > 0:
+                self.sleep_fn(duration)
+                total_slept += duration
+        return total_slept
+
+    def record_tx(self, timestamp: float | None = None) -> None:
+        self.timestamps.append(self.now_fn() if timestamp is None else timestamp)
+
+    def record_txs(self, count: int, timestamp: float | None = None) -> None:
+        ts = self.now_fn() if timestamp is None else timestamp
+        for _ in range(count):
+            self.timestamps.append(ts)
+
+    def record(self, timestamp: float | None = None) -> None:
+        self.record_tx(timestamp)
+
+    def record_send(self) -> None:
+        self.record_tx()
 
 
 def is_rate_limited(job: dict[str, Any]) -> bool:
@@ -254,6 +319,65 @@ def append_state_record(path: str | Path, record: dict[str, Any]) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, separators=(",", ":")) + "\n")
+
+
+def parse_iso_timestamp(ts_str: str) -> float | None:
+    """Parse an ISO timestamp string to UTC POSIX timestamp float."""
+    try:
+        clean_str = ts_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return dt.timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def seed_throttles(
+    throttle: Throttle,
+    tx_throttle: TxThrottle,
+    records: list[dict[str, Any]],
+    *,
+    now: float,
+) -> None:
+    """Seed both throttles from records whose timestamp is within the last hour."""
+    cutoff = now - 3600.0
+    for r in records:
+        ts_str = r.get("timestamp")
+        if not ts_str or not isinstance(ts_str, str):
+            continue
+        ts = parse_iso_timestamp(ts_str)
+        if ts is None:
+            continue
+        if cutoff <= ts <= now:
+            throttle.timestamps.append(ts)
+            steps = r.get("steps") or []
+            tx_count = sum(1 for s in steps if s.get("outcome") == "executed" and s.get("tx_hash"))
+            for _ in range(tx_count):
+                tx_throttle.timestamps.append(ts)
+
+    throttle.timestamps = deque(sorted(throttle.timestamps))
+    tx_throttle.timestamps = deque(sorted(tx_throttle.timestamps))
+
+
+def is_throttle_miss(job: dict[str, Any], steps: list[dict[str, Any]]) -> bool:
+    """Return True if job or step was denied by a policy limit constraint."""
+    err = job.get("error_code")
+    if isinstance(err, str) and err.startswith("LIMIT."):
+        return True
+    if isinstance(err, list) and any(str(e).startswith("LIMIT.") for e in err):
+        return True
+    if job.get("status") == "denied" and err and str(err).startswith("LIMIT."):
+        return True
+    for s in steps:
+        if s.get("outcome") == "denied":
+            s_err = s.get("error_code")
+            if isinstance(s_err, str) and s_err.startswith("LIMIT."):
+                return True
+            rule_codes = s.get("rule_codes") or []
+            if any(str(r).startswith("LIMIT.") for r in rule_codes):
+                return True
+    return False
 
 
 def compute_counts(records: list[dict[str, Any]]) -> dict[str, int]:
@@ -454,7 +578,10 @@ def run_loop(
 
     start_time = now_fn()
     max_seconds = args.max_hours * 3600.0
+    tx_cap = getattr(args, "tx_cap", TX_CAP_PER_HOUR)
     throttle = Throttle(args.per_hour, now_fn=now_fn, sleep_fn=sleep_fn)
+    tx_throttle = TxThrottle(tx_cap, now_fn=now_fn, sleep_fn=sleep_fn)
+    seed_throttles(throttle, tx_throttle, existing_records, now=start_time)
     hostile_failed = False
 
     for r_item in existing_records:
@@ -486,24 +613,52 @@ def run_loop(
                 break
 
             prompt = phrasings[(round_num - 1) % len(phrasings)]
+            is_non_hostile = expectation != "deny_or_noaction"
 
-            throttle.wait_if_needed()
-            if now_fn() - start_time >= max_seconds:
-                print(f"Time limit reached ({args.max_hours}h) while throttling; stopping.")
-                break
-
-            throttle.record_send()
-            job = client.job("/chat", {"message": prompt}, timeout=300)
-
-            if is_rate_limited(job):
-                delay = parse_retry_after(job)
-                sleep_fn(delay)
+            attempt = 0
+            while attempt <= MAX_THROTTLE_MISS_RETRIES:
+                if is_non_hostile:
+                    tx_throttle.wait_for(n_needed=2)
                 throttle.wait_if_needed()
+                if now_fn() - start_time >= max_seconds:
+                    print(f"Time limit reached ({args.max_hours}h) while throttling; stopping.")
+                    break
+
                 throttle.record_send()
                 job = client.job("/chat", {"message": prompt}, timeout=300)
 
-            chat = client.req("GET", "/chat?limit=40").json()
-            steps = steps_of(chat, job.get("job_id", ""))
+                if is_rate_limited(job):
+                    delay = parse_retry_after(job)
+                    sleep_fn(delay)
+                    if is_non_hostile:
+                        tx_throttle.wait_for(n_needed=2)
+                    throttle.wait_if_needed()
+                    throttle.record_send()
+                    job = client.job("/chat", {"message": prompt}, timeout=300)
+
+                chat = client.req("GET", "/chat?limit=40").json()
+                steps = steps_of(chat, job.get("job_id", ""))
+
+                if (
+                    is_non_hostile
+                    and is_throttle_miss(job, steps)
+                    and attempt < MAX_THROTTLE_MISS_RETRIES
+                ):
+                    err_code = job.get("error_code") or "LIMIT.*"
+                    print(
+                        f"- Round {round_num} {name}: throttle miss ({err_code}), "
+                        f"sleeping 10m before retry {attempt + 1}/{MAX_THROTTLE_MISS_RETRIES}...",
+                        flush=True,
+                    )
+                    sleep_fn(THROTTLE_MISS_SLEEP)
+                    attempt += 1
+                    continue
+
+                break
+
+            if now_fn() - start_time >= max_seconds:
+                print(f"Time limit reached ({args.max_hours}h); stopping loop.")
+                break
 
             verdict_ok, verdict_label = check_verdict(expectation, steps)
             if not verdict_ok and expectation == "deny_or_noaction":
@@ -533,6 +688,11 @@ def run_loop(
             append_state_record(args.state, record)
             completed_pairs.add((round_num, name))
             all_records.append(record)
+
+            tx_count = sum(1 for s in steps if s.get("outcome") == "executed" and s.get("tx_hash"))
+            if tx_count > 0:
+                tx_throttle.record_txs(tx_count)
+
             print(
                 f"- Round {round_num} {name}: {verdict_label} (status={job.get('status')})",
                 flush=True,
@@ -575,6 +735,12 @@ def main(
     parser.add_argument("--rounds", type=int, default=3, help="Number of rounds")
     parser.add_argument("--max-hours", type=float, default=8.0, help="Maximum running hours")
     parser.add_argument("--per-hour", type=int, default=5, help="Actions per hour (max 6)")
+    parser.add_argument(
+        "--tx-cap",
+        type=int,
+        default=TX_CAP_PER_HOUR,
+        help=f"Transactions per hour cap (default {TX_CAP_PER_HOUR})",
+    )
     parser.add_argument("--out", default=DEFAULT_OUT, help="Path for markdown report")
     parser.add_argument("--state", default=DEFAULT_STATE, help="Path for jsonl state file")
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
@@ -584,6 +750,9 @@ def main(
         return 2
     if args.per_hour < 1:
         print("Error: --per-hour must be at least 1.", file=sys.stderr)
+        return 2
+    if args.tx_cap < 1:
+        print("Error: --tx-cap must be at least 1.", file=sys.stderr)
         return 2
 
     if client is None:
