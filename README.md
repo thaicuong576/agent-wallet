@@ -39,7 +39,7 @@ With keys: copy `.env.example` to `.env`, set `BASE_SEPOLIA_RPC_URL`, `OPENAI_AP
 
 ## Running Tests
 ```sh
-make test                                   # over 1,440 tests: unit, policy, gateway, storage, UI
+make test                                   # 1,482 tests: unit, policy, gateway, storage, UI
 make eval                                   # 46 replay scenarios covering 27/28 rule codes
 python -m core.audit.verify docs/evidence/audit-chain.jsonl  # verifies audit hash chain
 ```

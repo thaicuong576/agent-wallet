@@ -2,7 +2,7 @@
 
 Scope: the agent-wallet system as built in this repository, testnet only (Base Sepolia, chain 84532). This report covers the permission-tier implementation and the known-risk list that the competition asks for. It states what is enforced and which test proves it, and it lists what is not done yet. Status values are `enforced` (code and test exist), `partial`, `closed`, and `accepted`.
 
-Last updated against `main` following the multi-owner webapp architecture, protocol registry expansions (Aave Stata, Morpho Blue, Uniswap v3), split chat quota buckets, Server-Sent Events streaming, concurrent portfolio RPC reads, and UI v3. Webapp controls are in section 3b and risks K1 to K25 in section 4.
+Last updated against `main` following the multi-owner webapp architecture, protocol registry expansions (Aave Stata, Morpho Blue, Uniswap v3), split chat quota buckets, Server-Sent Events streaming, concurrent portfolio RPC reads, and UI v3. Webapp controls are in section 3b and risks K1 to K26 in section 4.
 
 ## 1. Principles
 1. **The LLM proposes, code decides.** The model never holds a key, never sees credentials, and cannot call the signer.
@@ -99,7 +99,7 @@ Authority changes are guarded by strict cryptographic and architectural mechanis
 | **K9** | Browser-based audit chain verification in UI is convenience only | Low | accepted | UI explicitly notes that authoritative verification is performed via the Python CLI (`python -m core.audit.verify`). |
 | **K10** | Single-process SQLite file locking (`BEGIN IMMEDIATE`) cannot scale horizontally across hosts | Low | accepted | Production multi-tenant mode utilizes PostgreSQL with row-level locks, transactional triggers, and RLS (`tests/storage`). |
 | **K11** | LLM provider outage or API rate limits | Low | accepted | Replay mode (`ScriptedClient`, fixtures) runs the entire system offline; `FallbackPlanner` handles basic balance and allocation inquiries locally. |
-| **K12** | No third-party professional audit or formal verification | Medium | accepted | Comprehensive self-assessment, 1,279 unit/e2e tests, and a 46-scenario evaluation harness serve as verification evidence. |
+| **K12** | No third-party professional audit or formal verification | Medium | accepted | Comprehensive self-assessment, 1,482 unit/e2e tests, and a 46-scenario evaluation harness serve as verification evidence. |
 | **K13** | Custodial agent keys: server holds encrypted testnet agent keys; server compromise exposes keys | High (mainnet) | accepted for testnet | Testnet only, clearly disclosed on every page; keys encrypted at rest with AES-GCM-256. Roadmap Phase 2 implements ERC-4337 smart accounts and scoped session keys. |
 | **K14** | Keystore secret and session secret stored in host environment variables | Medium | accepted | Secrets are managed via platform secrets management (Render/Supabase) outside git. Losing the keystore secret requires generating fresh testnet agent wallets. |
 | **K15** | Free hosting cold starts and in-process job queue restarts | Low | accepted | Automated keep-warm via `/health/deep`; `mark_interrupted_on_startup` safely cleans pending jobs; actions are idempotent by `order_id`. |
@@ -113,13 +113,14 @@ Authority changes are guarded by strict cryptographic and architectural mechanis
 | **K23** | In-flight job cancellation state maintained in process memory | Low | accepted | Valid for single-instance deployment; horizontally scaled production would store cancellation flags in the shared database. |
 | **K24** | Chat quota exhaustion from conversational balance or status inquiries | Low | closed | Quota accounting is split into `chat_action` (6/hour) and `chat_inquiry` (60/hour). Inquiries generating zero orders automatically refund the action bucket (`tests/webapp/test_chat.py`). |
 | **K25** | SSE streaming disconnects or proxy buffering on mobile connections | Low | closed | Implemented custom SSE client (`ui/sse.js`) with automatic reconnection backoff, keep-alive pings, and transparent fallback to standard HTTP polling (`tests/webapp/test_sse.py`). |
+| **K26** | After a supply that the policy engine denies, an exact-amount token allowance for the listed spender can remain from the earlier approve step (seen on Morpho USDC/cbETH) | Low | planned | The amount equals the denied order, the spender is allow-listed, and the agent wallet holds only testnet funds. Planned fix: evaluate approve and supply as one plan so a denied supply never leaves an approval. |
 
 ## 5. How to verify yourself (5 commands for judges)
 
 A judge or auditor can independently verify the entire security and functional posture of this submission using these 5 commands:
 
 ```sh
-# 1. Run the comprehensive test suite (1,279 unit, e2e, boundary, and contract tests pass)
+# 1. Run the comprehensive test suite (1,482 unit, e2e, boundary, and contract tests pass)
 python -m pytest -q
 
 # 2. Run the offline evaluation harness (replays 46 scenarios, verifies 27/28 rule codes, injection defense, zero keys)

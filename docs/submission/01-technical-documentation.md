@@ -127,7 +127,7 @@ See `README.md` (quick start) and section 5 of the self-assessment. In short:
 
 ```sh
 python -m pytest -q          # full suite
-python -m evals.run          # 44 offline scenarios, writes docs/evidence/eval-report.md
+python -m evals.run          # 46 offline scenarios, writes docs/evidence/eval-report.md
 python -m core.audit.verify docs/evidence/audit-chain.jsonl
 ```
 Live evidence on Base Sepolia: `docs/evidence/tx_hashes.md`.

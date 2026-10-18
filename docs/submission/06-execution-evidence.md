@@ -109,7 +109,7 @@ In an autonomous agent system, what is **blocked** is just as important as what 
 ## 5. Honest Notes on Engineering Limits
 
 1. **Exact-Amount Allowance Artifact:**
-   In Case 1 above, because the `approve` transaction succeeded before the `supply` order was denied by policy, a 5 USDC allowance remains open for Morpho Blue. Because our approval policy enforces exact amounts rather than unlimited allowances (`ACCESS.UNLIMITED_APPROVAL`), the potential exposure is capped strictly at 5 testnet USDC. This is documented in known risk **K19**.
+   In Case 1 above, because the `approve` transaction succeeded before the `supply` order was denied by policy, a 5 USDC allowance remains open for Morpho Blue. Because our approval policy enforces exact amounts rather than unlimited allowances (`ACCESS.UNLIMITED_APPROVAL`), the potential exposure is capped strictly at 5 testnet USDC. This is documented in known risk **K26**.
 2. **Model Variance in Free-Form Chat:**
    In local deterministic runs with `ScriptedClient` or consistent OpenAI responses, multi-step actions (approve then supply) are reliably planned. In free-tier hosted environments, cloud LLM latency and prompt variations occasionally result in the model explaining an action rather than proposing discrete JSON steps. These are recorded honestly as `no_action` rather than claimed as executions.
 3. **Testnet Reference Pricing:**
