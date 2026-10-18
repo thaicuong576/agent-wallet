@@ -1,6 +1,6 @@
 # Documentation Index
 
-Complete directory of technical documentation, architectural specifications, security designs, and verification evidence for `agent-wallet`.
+Complete directory of technical documentation, architectural specifications, security designs, and verification evidence for BaKhi Wallet.
 
 ## Overview and guides
 - [`README.md`](README.md): Documentation index grouped by reader.

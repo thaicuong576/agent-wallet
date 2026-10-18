@@ -1,6 +1,6 @@
 # Security self-assessment
 
-Scope: the agent-wallet system as built in this repository, testnet only (Base Sepolia, chain 84532). This report covers the permission-tier implementation and the known-risk list that the competition asks for. It states what is enforced and which test proves it, and it lists what is not done yet. Status values are `enforced` (code and test exist), `partial`, `closed`, and `accepted`.
+Scope: BaKhi Wallet (team BaKhi) as built in this repository, testnet only (Base Sepolia, chain 84532). This report covers the permission-tier implementation and the known-risk list that the competition asks for. It states what is enforced and which test proves it, and it lists what is not done yet. Status values are `enforced` (code and test exist), `partial`, `closed`, and `accepted`.
 
 Last updated against `main` following the multi-owner webapp architecture, protocol registry expansions (Aave Stata, Morpho Blue, Uniswap v3), split chat quota buckets, Server-Sent Events streaming, concurrent portfolio RPC reads, and UI v3. Webapp controls are in section 3b and risks K1 to K26 in section 4.
 

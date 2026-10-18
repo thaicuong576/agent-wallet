@@ -5,7 +5,7 @@ export function renderAccountControl(ctx) {
   const { el } = ctx;
   const btn = el("button", "logout", "Log out");
   btn.type = "button";
-  btn.setAttribute("aria-label", "Log out of agent-wallet");
+  btn.setAttribute("aria-label", "Log out of BaKhi Wallet");
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     await ctx.logout();

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the formal FinTechathon 2026 submission package for agent-wallet.
+"""Build the formal FinTechathon 2026 submission package for BaKhi Wallet.
 
 Creates the 6 submission folders:
 01-technical-documentation/
@@ -78,7 +78,7 @@ def build_package(
     # 4. 04-source-code
     dir_04 = dest_path / "04-source-code"
     dir_04.mkdir(parents=True, exist_ok=True)
-    readme_04_content = """# agent-wallet: Source Code and Deployment Guide
+    readme_04_content = """# BaKhi Wallet: Source Code and Deployment Guide
 FinTechathon 2026 — Topic F ("Agent Wallet")
 
 - GitHub Repository: https://github.com/thaicuong576/agent-wallet
@@ -156,10 +156,10 @@ From the root of the cloned repository:
             shutil.copy2(src, dir_06 / ev_file)
 
     # Top-level README.txt
-    top_readme_content = """# agent-wallet: Submission Package Index
+    top_readme_content = """# BaKhi Wallet: Submission Package Index
 FinTechathon 2026 — Topic F ("Agent Wallet")
 
-This package consolidates the complete submission materials for agent-wallet, an autonomous
+This package consolidates the complete submission materials for BaKhi Wallet, an autonomous
 AI wallet agent operating on Base Sepolia inside a mathematically enforced Investment Policy.
 
 Hosted Application: https://agent-wallet-6vuy.onrender.com

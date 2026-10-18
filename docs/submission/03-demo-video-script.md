@@ -1,6 +1,6 @@
-# Demo Video Script: agent-wallet (5-Minute Maximum Plan)
+# Demo Video Script: BaKhi Wallet (5-Minute Maximum Plan)
 
-Comprehensive shot list, exact clicks, narration script, checklists, and fail-safe recovery procedures for recording the FinTechathon 2026 demo video.
+BaKhi Wallet (team BaKhi) demo video script: comprehensive shot list, exact clicks, narration script, checklists, and fail-safe recovery procedures for recording the FinTechathon 2026 demo video.
 
 - **Target Duration:** 4 minutes 45 seconds (hard ceiling: 5:00).
 - **Target Network:** Base Sepolia (chain ID `84532`).
@@ -63,7 +63,7 @@ flowchart TD
 - **Visual:** Browser showing the home overview dashboard. Cursor hovers over the green **Base Sepolia testnet** chip in the header, then scrolls smoothly down to the footer disclaimer.
 - **Exact Clicks:** None (initial view on load).
 - **Narration:**
-  > "Welcome to agent-wallet, an autonomous AI wallet agent built for FinTechathon 2026.
+  > "Welcome to BaKhi Wallet, an autonomous AI wallet agent built for FinTechathon 2026.
   > Right on our landing page, we establish honest safety framing: we operate exclusively on Base Sepolia testnet, agent keys are held in an encrypted server keystore, and asset valuations reflect transparent reference prices.
   > The core thesis of this project is simple: the LLM proposes; deterministic code decides."
 
@@ -191,7 +191,7 @@ flowchart TD
   > "Every decision—including our approved deposits, the blocked hostile injection, and the emergency stop—is recorded in an append-only SHA-256 hash chain.
   > When I click 'Verify Chain', the client validates every block sequence, payload hash, and parent link. Nothing can be altered or erased.
   > In the Overview tab, our multi-protocol positions reflect real on-chain state.
-  > agent-wallet proves that AI delegation in Web3 can be both powerful and mathematically constrained. Thank you."
+  > BaKhi Wallet proves that AI delegation in Web3 can be both powerful and mathematically constrained. Thank you."
 
 ---
 

@@ -1,10 +1,10 @@
 # Deployment Guide
 
-This guide describes end-to-end deployment for `agent-wallet` across local Docker, Docker Compose, and hosted cloud infrastructure (Render and Supabase).
+This guide describes end-to-end deployment for BaKhi Wallet across local Docker, Docker Compose, and hosted cloud infrastructure (Render and Supabase).
 
 ## Architecture & Deployment Model
 
-`agent-wallet` runs as a stateless container using `python:3.11-slim` executed by an unprivileged user (`app`, UID 10001). The application serves both the FastAPI REST backend and the static single-page web application (`/ui/`).
+BaKhi Wallet runs as a stateless container using `python:3.11-slim` executed by an unprivileged user (`app`, UID 10001). The application serves both the FastAPI REST backend and the static single-page web application (`/ui/`).
 
 ```mermaid
 flowchart TD
@@ -294,7 +294,7 @@ The browser is allowed to store assets locally but is required to revalidate via
 
 ## 8. Container Topology
 
-The container deployment packages `agent-wallet` into a minimal `python:3.11-slim` image, running as a non-root user (`app`, UID 10001). The FastAPI service serves the REST API and the static owner console (`/ui`), with a health check on `/health` and a single uvicorn worker.
+The container deployment packages BaKhi Wallet into a minimal `python:3.11-slim` image, running as a non-root user (`app`, UID 10001). The FastAPI service serves the REST API and the static owner console (`/ui`), with a health check on `/health` and a single uvicorn worker.
 
 ```mermaid
 flowchart TD

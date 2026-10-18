@@ -7,7 +7,7 @@ Specification & data contract: [`contracts/schemas/order.schema.json`](../../../
 
 The Aave Stata adapter translates validated `Order` contracts for `protocol="aave-stata"` into executable Ethereum `Call(to, data, value)` objects targeting Aave's ERC-4626 static aToken vaults on Base Sepolia (Chain ID 84532). It also provides position readings that convert held static shares back to underlying asset balances via `convertToAssets`.
 
-Like all protocol adapters in `agent-wallet`, it is a pure, offline calldata encoder with no network access, no dependency on the signer, and strict bounds on spenders and targets in code.
+Like all protocol adapters in BaKhi Wallet, it is a pure, offline calldata encoder with no network access, no dependency on the signer, and strict bounds on spenders and targets in code.
 
 ## Architecture and Flow
 

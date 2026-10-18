@@ -1,4 +1,4 @@
-# Plan: agent-wallet (FinTechathon 2026, Topic F)
+# Plan: BaKhi Wallet (FinTechathon 2026, Topic F)
 
 To-do items live in this repo's GitHub Issues. This file holds only the goal, scope, phases and risks. Change it through a PR; a merge by the owner counts as approval.
 
