@@ -552,3 +552,13 @@ def test_planner_plan_without_on_token_uses_complete():
     assert client.complete_calls == 1
     assert client.complete_stream_calls == 0
     assert result.reply == "Direct"
+
+
+def test_rendered_system_prompt_contains_limit_history_instruction():
+    prompt = render_system_prompt(IPS)
+    expected = (
+        'Earlier refusals, denials and limit messages in "conversation_history" describe the past: '
+        "limits change with time and the policy engine re-checks them for every new order, so "
+        "never decline a new request because an earlier turn mentioned a limit; propose it."
+    )
+    assert expected in " ".join(prompt.split())

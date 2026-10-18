@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -49,6 +49,22 @@ def _records(tenant: Tenant, seqs: list[int]) -> list[dict[str, Any]]:
         except Exception:  # noqa: BLE001 - a missing record must not break history
             continue
     return out
+
+
+def _limit_denied(records: Sequence[Mapping[str, Any]]) -> bool:
+    for rec in records:
+        if rec.get("outcome") not in (None, "denied"):
+            continue
+        decision = rec.get("decision")
+        if not isinstance(decision, Mapping):
+            continue
+        if decision.get("decision") in ("allow", "escalate"):
+            continue
+        for hit in decision.get("rules_hit", []):
+            code = str(hit.get("code") or "") if isinstance(hit, Mapping) else ""
+            if code.startswith("LIMIT."):
+                return True
+    return False
 
 
 def _rule_codes(record: Mapping[str, Any]) -> list[str]:

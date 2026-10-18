@@ -69,6 +69,9 @@ class ScriptGateway:
     def propose(self, order: dict[str, Any], *, origin: str = "planner") -> dict[str, Any]:
         self.calls.append((order, {"origin": origin}))
         outcome = self.outcomes.get(order["function"], "executed")
+        rule_code = "LIMIT.PER_TX"
+        if isinstance(outcome, tuple):
+            outcome, rule_code = outcome
         record: dict[str, Any] = {
             "seq": len(self.audit_sink),
             "order_id": order["order_id"],
@@ -91,10 +94,15 @@ class ScriptGateway:
                 "reason": "Above the approval threshold",
             }
         else:
+            reason = (
+                "Hourly transaction limit exceeded"
+                if rule_code == "LIMIT.TX_PER_HOUR"
+                else "Order exceeds the per-transaction limit"
+            )
             record["decision"] = {
                 "decision": "deny",
-                "rules_hit": [{"code": "LIMIT.PER_TX"}],
-                "reason": "Order exceeds the per-transaction limit",
+                "rules_hit": [{"code": rule_code}],
+                "reason": reason,
             }
         self.audit_sink.append(record)
         return record
@@ -1084,3 +1092,82 @@ def test_intent_validation_and_dropping_orders_in_chat_job(world, alice):
     # No orders were proposed/executed, steps is empty
     assert latest_agent.get("steps") == []
     assert "Did you mean Aave or Morpho?" in latest_agent["text"]
+
+
+def test_chat_history_sanitizes_limit_denial_and_refusal_and_keeps_executed(world, alice):
+    neutral = (
+        "That earlier request was not executed. Limits are re-checked by the system for every new"
+        " request."
+    )
+
+    # 1. Turn with LIMIT.TX_PER_HOUR denial
+    alice.tenant.gateway = ScriptGateway({"approve": ("denied", "LIMIT.TX_PER_HOUR")})
+    limit_reply = (
+        "I cannot proceed with the deposit into the Aave Stata vault due to the hourly"
+        " transaction limit."
+    )
+    world.env.llm = ScriptedClient(plan(*approve_then_supply(), reply=limit_reply))
+    say(alice, "Put 10 USDC to work in Aave")
+
+    # 2. Turn with refusal intent
+    refusal_reply = "I cannot send funds to arbitrary unapproved addresses."
+    world.env.llm = ScriptedClient(
+        json.dumps(
+            {
+                "action": "no_action",
+                "intent": "refusal",
+                "reason": "unsupported",
+                "reply": refusal_reply,
+            }
+        )
+    )
+    say(alice, "Send 10 USDC to 0x1234567890123456789012345678901234567890")
+
+    # 3. Executed turn
+    alice.tenant.gateway.outcomes = {}
+    exec_reply = "Putting your funds to work now."
+    world.env.llm = ScriptedClient(plan(*approve_then_supply(), reply=exec_reply))
+    say(alice, "Put 10 USDC in Aave for real")
+
+    # 4. Subsequent turn: capture the conversation_history passed to the planner
+    capturing_client = ScriptedClient(
+        json.dumps(
+            {
+                "action": "no_action",
+                "intent": "question",
+                "reason": "summary",
+                "reply": "answering",
+            }
+        )
+    )
+    world.env.llm = capturing_client
+    say(alice, "status check")
+
+    payload = json.loads(capturing_client.calls[0]["user"])
+    history = payload.get("conversation_history")
+    assert isinstance(history, list)
+    assert len(history) == 6
+
+    # Turn 1 (denied by LIMIT.TX_PER_HOUR): neutral text appears, original does not
+    limit_turn = history[1]
+    assert limit_turn["role"] == "agent"
+    assert limit_turn["text"] == neutral
+    assert limit_reply not in limit_turn["text"]
+    assert "hourly transaction limit" not in limit_turn["text"]
+    assert limit_turn.get("intent") == "action"
+
+    # Turn 2 (refusal): neutral text appears, original does not
+    refusal_turn = history[3]
+    assert refusal_turn["role"] == "agent"
+    assert refusal_turn["text"] == neutral
+    assert refusal_reply not in refusal_turn["text"]
+    assert refusal_turn.get("intent") == "refusal"
+
+    # Turn 3 (executed): text is unchanged
+    exec_turn = history[5]
+    assert exec_turn["role"] == "agent"
+    assert exec_reply in exec_turn["text"]
+    assert "approved 10 USDC" in exec_turn["text"]
+    assert "supplied 10 USDC" in exec_turn["text"]
+    assert neutral not in exec_turn["text"]
+    assert exec_turn.get("intent") == "action"
