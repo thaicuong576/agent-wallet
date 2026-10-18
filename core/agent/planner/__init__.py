@@ -1,5 +1,6 @@
 """Planner package proposing candidate orders validating against order.schema.json."""
 
+from .amount_check import check_amounts_match_instruction
 from .fallback import FallbackPlanner
 from .history import (
     HISTORY_MAX_CHARS,
@@ -32,6 +33,7 @@ __all__ = [
     "Planner",
     "REPLY_MAX_CHARS",
     "VALID_INTENTS",
+    "check_amounts_match_instruction",
     "clean_history_text",
     "clean_reply",
     "format_conversation_history",
