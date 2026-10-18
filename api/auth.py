@@ -306,7 +306,7 @@ def build_signin_message(
 ) -> str:
     return "\n".join(
         [
-            "agent-wallet wants you to sign in with your Ethereum account.",
+            "BaKhi Wallet wants you to sign in with your Ethereum account.",
             f"Domain: {domain}",
             f"Address: {address}",
             f"Statement: {STATEMENT}",
