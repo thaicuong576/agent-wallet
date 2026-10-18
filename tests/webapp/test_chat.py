@@ -1095,11 +1095,6 @@ def test_intent_validation_and_dropping_orders_in_chat_job(world, alice):
 
 
 def test_chat_history_sanitizes_limit_denial_and_refusal_and_keeps_executed(world, alice):
-    neutral = (
-        "That earlier request was not executed. Limits are re-checked by the system for every new"
-        " request."
-    )
-
     # 1. Turn with LIMIT.TX_PER_HOUR denial
     alice.tenant.gateway = ScriptGateway({"approve": ("denied", "LIMIT.TX_PER_HOUR")})
     limit_reply = (
@@ -1123,13 +1118,27 @@ def test_chat_history_sanitizes_limit_denial_and_refusal_and_keeps_executed(worl
     )
     say(alice, "Send 10 USDC to 0x1234567890123456789012345678901234567890")
 
-    # 3. Executed turn
+    # 3. Question turn
+    question_reply = "You hold 2000 USDC idle in your wallet."
+    world.env.llm = ScriptedClient(
+        json.dumps(
+            {
+                "action": "no_action",
+                "intent": "question",
+                "reason": "balance",
+                "reply": question_reply,
+            }
+        )
+    )
+    say(alice, "What is my balance?")
+
+    # 4. Executed turn
     alice.tenant.gateway.outcomes = {}
     exec_reply = "Putting your funds to work now."
     world.env.llm = ScriptedClient(plan(*approve_then_supply(), reply=exec_reply))
     say(alice, "Put 10 USDC in Aave for real")
 
-    # 4. Subsequent turn: capture the conversation_history passed to the planner
+    # 5. Subsequent turn: capture the conversation_history passed to the planner
     capturing_client = ScriptedClient(
         json.dumps(
             {
@@ -1146,28 +1155,90 @@ def test_chat_history_sanitizes_limit_denial_and_refusal_and_keeps_executed(worl
     payload = json.loads(capturing_client.calls[0]["user"])
     history = payload.get("conversation_history")
     assert isinstance(history, list)
-    assert len(history) == 6
+    assert len(history) == 4
 
-    # Turn 1 (denied by LIMIT.TX_PER_HOUR): neutral text appears, original does not
-    limit_turn = history[1]
-    assert limit_turn["role"] == "agent"
-    assert limit_turn["text"] == neutral
-    assert limit_reply not in limit_turn["text"]
-    assert "hourly transaction limit" not in limit_turn["text"]
-    assert limit_turn.get("intent") == "action"
+    # Turn 1 (LIMIT denial) user and agent turns are absent
+    assert not any("Put 10 USDC to work in Aave" in t["text"] for t in history)
+    assert not any(limit_reply in t["text"] for t in history)
+    assert not any("hourly transaction limit" in t["text"] for t in history)
 
-    # Turn 2 (refusal): neutral text appears, original does not
-    refusal_turn = history[3]
-    assert refusal_turn["role"] == "agent"
-    assert refusal_turn["text"] == neutral
-    assert refusal_reply not in refusal_turn["text"]
-    assert refusal_turn.get("intent") == "refusal"
+    # Turn 2 (refusal) user and agent turns are absent
+    assert not any("Send 10 USDC to 0x" in t["text"] for t in history)
+    assert not any(refusal_reply in t["text"] for t in history)
+    assert not any(t.get("intent") == "refusal" for t in history)
 
-    # Turn 3 (executed): text is unchanged
-    exec_turn = history[5]
-    assert exec_turn["role"] == "agent"
-    assert exec_reply in exec_turn["text"]
-    assert "approved 10 USDC" in exec_turn["text"]
-    assert "supplied 10 USDC" in exec_turn["text"]
-    assert neutral not in exec_turn["text"]
-    assert exec_turn.get("intent") == "action"
+    # Turn 3 (question): present
+    q_user = history[0]
+    assert q_user["role"] == "user"
+    assert q_user["text"] == "What is my balance?"
+    q_agent = history[1]
+    assert q_agent["role"] == "agent"
+    assert q_agent["text"] == question_reply
+    assert q_agent.get("intent") == "question"
+
+    # Turn 4 (executed): present with outcome sentence
+    exec_user = history[2]
+    assert exec_user["role"] == "user"
+    assert exec_user["text"] == "Put 10 USDC in Aave for real"
+    exec_agent = history[3]
+    assert exec_agent["role"] == "agent"
+    assert exec_reply in exec_agent["text"]
+    assert "approved 10 USDC" in exec_agent["text"]
+    assert "supplied 10 USDC" in exec_agent["text"]
+    assert exec_agent.get("intent") == "action"
+
+
+def test_market_specific_request_after_denied_other_market_drops_denied_pair(world, alice):
+    # 1. Executed request
+    alice.tenant.gateway.outcomes = {}
+    exec_reply = "Putting 10 USDC to work in Aave."
+    world.env.llm = ScriptedClient(plan(*approve_then_supply(), reply=exec_reply))
+    say(alice, "Put 10 USDC in Aave")
+
+    # 2. Denied request for Morpho Blue USDC/WBTC market
+    alice.tenant.gateway.outcomes = {"approve": ("denied", "LIMIT.PER_TX")}
+    wbtc_orders = [
+        order("approve", "self", 3_000_000, protocol="morpho-blue"),
+        order("supply", "self", 3_000_000, protocol="morpho-blue", market="usdc-wbtc"),
+    ]
+    world.env.llm = ScriptedClient(
+        plan(*wbtc_orders, reply="Lending 3 USDC in the USDC/WBTC market.")
+    )
+    say(alice, "Lend 3 USDC on Morpho Blue in the USDC/WBTC market")
+
+    # 3. Market-specific request for another market (Morpho Blue USDC/cbETH)
+    capturing_client = ScriptedClient(
+        json.dumps(
+            {
+                "action": "no_action",
+                "intent": "question",
+                "reason": "summary",
+                "reply": "answering",
+            }
+        )
+    )
+    world.env.llm = capturing_client
+    say(alice, "Lend 3 USDC on Morpho Blue in the USDC/cbETH market")
+
+    payload = json.loads(capturing_client.calls[0]["user"])
+    history = payload.get("conversation_history")
+    assert isinstance(history, list)
+    assert len(history) == 2
+
+    # Denied WBTC market request and agent turn are dropped
+    assert not any("USDC/WBTC" in t["text"] for t in history)
+    assert not any("Lending 3 USDC in the USDC/WBTC market" in t["text"] for t in history)
+
+    # Executed Aave request is present
+    assert history[0]["role"] == "user"
+    assert history[0]["text"] == "Put 10 USDC in Aave"
+    assert history[1]["role"] == "agent"
+    assert exec_reply in history[1]["text"]
+    assert "approved 10 USDC" in history[1]["text"]
+    assert "supplied 10 USDC" in history[1]["text"]
+    assert history[1].get("intent") == "action"
+
+    # Current instruction is for cbETH market
+    assert payload["owner_instruction"]["text"] == (
+        "Lend 3 USDC on Morpho Blue in the USDC/cbETH market"
+    )

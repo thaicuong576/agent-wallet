@@ -557,8 +557,10 @@ def test_planner_plan_without_on_token_uses_complete():
 def test_rendered_system_prompt_contains_limit_history_instruction():
     prompt = render_system_prompt(IPS)
     expected = (
-        'Earlier refusals, denials and limit messages in "conversation_history" describe the past: '
-        "limits change with time and the policy engine re-checks them for every new order, so "
-        "never decline a new request because an earlier turn mentioned a limit; propose it."
+        "Earlier turns never decide the current request: judge only the current owner_instruction "
+        "against the protocol, function, token and market lists above. Every protocol and Morpho "
+        "market in those lists is supported; if the owner names one of them, propose it "
+        '(intent "action") even if a similar request was declined or denied before. Use intent '
+        '"refusal" only for a request outside those lists or an owner-only action.'
     )
     assert expected in " ".join(prompt.split())
