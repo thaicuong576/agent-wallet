@@ -3,7 +3,7 @@
 Competition deliverable 01: system architecture, core algorithm description, security design. Detail lives in the notes under `docs/architecture/`; this page is the map and the argument.
 
 ## 1. What the system does
-agent-wallet is an AI wallet agent that manages a small on-chain portfolio on Base Sepolia (testnet) inside limits the owner wrote down as an **Investment Policy Statement (IPS)**. The language model proposes orders. A deterministic policy engine, not the model, decides each one. Only the gateway can reach the signer. Every decision, including each refusal and its reason, is written to a hash-chained log that anyone can verify.
+BaKhi Wallet (team BaKhi) is an AI wallet agent that manages a small on-chain portfolio on Base Sepolia (testnet) inside limits the owner wrote down as an **Investment Policy Statement (IPS)**. The language model proposes orders. A deterministic policy engine, not the model, decides each one. Only the gateway can reach the signer. Every decision, including each refusal and its reason, is written to a hash-chained log that anyone can verify.
 
 Design claim: *the agent can only do what the IPS allows, and anything it does is provable afterwards.*
 

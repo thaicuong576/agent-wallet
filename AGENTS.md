@@ -1,4 +1,4 @@
-# Agent conventions: agent-wallet
+# Agent conventions: BaKhi Wallet
 
 Rules for every agent (orchestrator and workers) working in this repo. The plan, scope and milestones are in `PLAN.md`; the project description is in `README.md`.
 

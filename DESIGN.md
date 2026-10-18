@@ -1,7 +1,7 @@
 ---
 version: alpha
-name: agent-wallet design system
-description: Design system for the agent-wallet webapp. Derived from the Oracle analysis (getdesign), adapted with a bright light-yellow accent for a fintech feel. Warm neutral ladder, dark ink text, yellow only for primary actions and key highlights.
+name: BaKhi Wallet design system
+description: Design system for the BaKhi Wallet webapp. Derived from the Oracle analysis (getdesign), adapted with a bright light-yellow accent for a fintech feel. Warm neutral ladder, dark ink text, yellow only for primary actions and key highlights.
 
 colors:
   primary: "#ffd23f"
@@ -411,9 +411,9 @@ components:
 
 ---
 
-# agent-wallet design system
+# BaKhi Wallet design system
 
-> Source: `npx getdesign@latest add oracle` (an analysis of Oracle's design language), adapted for agent-wallet by the owner's request. **This file is the single source of truth for the webapp's look and feel.** Architecture and behaviour live in [`docs/design/webapp/system-design.md`](docs/design/webapp/system-design.md).
+> Source: `npx getdesign@latest add oracle` (an analysis of Oracle's design language), adapted for BaKhi Wallet by the owner's request. **This file is the single source of truth for the webapp's look and feel.** Architecture and behaviour live in [`docs/design/webapp/system-design.md`](docs/design/webapp/system-design.md).
 
 ## Project adaptations (read first; they win over everything below)
 

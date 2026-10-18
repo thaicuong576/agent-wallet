@@ -1,6 +1,6 @@
 # Testing Guide & Verification Catalogue
 
-This document details the test architecture, test layers, test case catalogue with exact counts, evaluation harness, CI mapping, and step-by-step verification commands for `agent-wallet`.
+This document details the test architecture, test layers, test case catalogue with exact counts, evaluation harness, CI mapping, and step-by-step verification commands for BaKhi Wallet.
 
 ## Test Philosophy: Defense in Depth
 

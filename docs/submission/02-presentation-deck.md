@@ -1,6 +1,6 @@
-# Presentation Deck: agent-wallet
+# Presentation Deck: BaKhi Wallet
 
-Slide-by-slide deck for FinTechathon 2026, Topic F ("Agent Wallet").
+Slide-by-slide deck for FinTechathon 2026, Topic F ("Agent Wallet") presented by BaKhi Wallet (team BaKhi).
 Target presentation duration: **9 minutes** (maximum allowed: 10 minutes).
 Speaker pacing: ~130–140 words per minute.
 
@@ -18,7 +18,7 @@ Speaker pacing: ~130–140 words per minute.
     subgraph StatusQuo["Vulnerable Approach"]
       M1[LLM Bot] -->|Raw Private Key| S1[(Unchecked Blockchain)]
     end
-    subgraph AgentWallet["agent-wallet Architecture"]
+    subgraph AgentWallet["BaKhi Wallet Architecture"]
       M2[LLM Proposes] -->|Order Schema| PE{Deterministic Policy Engine}
       PE -->|Simulate & Sign| S2[(Base Sepolia)]
       PE -->|Every Outcome| AL[(Hash-Chained Audit Log)]
@@ -27,7 +27,7 @@ Speaker pacing: ~130–140 words per minute.
 - **Speaker script (0:45):**
   "Welcome judges. As language models become capable of financial planning, the standard approach is simply to hand an LLM an API key or a wallet seed phrase. In Web3, this model fails catastrophically: prompt injection can drain funds in one message, models hallucinate parameters, and there is no auditable proof of why an action was taken.
   Asset owners—from retail DeFi participants to DAO treasury managers—do not want to trust an LLM. They want autonomous delegation bound by strict, mathematical rules.
-  We built agent-wallet to solve this: an AI agent that can only do what the owner's written policy allows, and mathematically proves every decision afterwards."
+  We built BaKhi Wallet to solve this: an AI agent that can only do what the owner's written policy allows, and mathematically proves every decision afterwards."
 - **Judging criterion served:** Innovation & Interaction (clear problem thesis and threat model).
 
 ---
@@ -41,7 +41,7 @@ Speaker pacing: ~130–140 words per minute.
 - **Visual:** System flow graphic:
   `Owner IPS (Policy)` ➔ `LLM Proposer` ➔ `Policy Engine (Pure)` ➔ `Simulation (eth_simulateV1)` ➔ `Signer (Chain 84532)` ➔ `Audit Log (SHA-256 Chain)`
 - **Speaker script (0:30):**
-  "In one sentence: agent-wallet is an autonomous AI wallet agent that operates strictly inside an owner-defined Investment Policy Statement, with zero ability to sign transactions outside those rules.
+  "In one sentence: BaKhi Wallet is an autonomous AI wallet agent that operates strictly inside an owner-defined Investment Policy Statement, with zero ability to sign transactions outside those rules.
   The LLM acts purely as a proposer. A deterministic policy engine evaluates every order against spending caps, token universes, and on-chain risk metrics. Allowed orders are simulated before signing; denied orders are halted and permanently recorded with the violated rule codes."
 - **Judging criterion served:** Task Completion (concise, direct product definition).
 
@@ -113,7 +113,7 @@ Speaker pacing: ~130–140 words per minute.
   | **RISK** | TVL floors, pool utilization caps, oracle depeg thresholds | `RISK.UTILIZATION_TOO_HIGH`, `RISK.DATA_STALE` |
   | **TIER** | Tier enforcement, emergency stop, owner approval escalations | `TIER.READ_ONLY`, `TIER.APPROVAL_REQUIRED`, `TIER.EMERGENCY_STOP` |
 - **Speaker script (1:00):**
-  "The heart of agent-wallet is our deterministic policy engine. It is written as a pure function: given an order, an IPS, a portfolio state, and risk metrics, it returns a decision and the exact list of violated rules. Because it uses exact integer and Decimal math with zero network I/O, its decisions are 100% reproducible.
+  "The heart of BaKhi Wallet is our deterministic policy engine. It is written as a pure function: given an order, an IPS, a portfolio state, and risk metrics, it returns a decision and the exact list of violated rules. Because it uses exact integer and Decimal math with zero network I/O, its decisions are 100% reproducible.
   We implement four distinct permission tiers:
   T0 is completely read-only. The agent can answer questions about yields and balances, but every proposed transaction is denied at the gateway.
   T1 allows the agent to propose strategies for logging without execution.
@@ -244,7 +244,7 @@ Speaker pacing: ~130–140 words per minute.
   | **K22** | Medium | Testnet pool mispricing | `eth_simulateV1` bundle reverts before signing if slippage trips |
 - **Speaker script (0:45):**
   "A credible security assessment must be honest about its limits.
-  Today, agent-wallet is strictly a testnet system. The server holds custodial agent keys encrypted at rest. On mainnet, this would be a high risk; on Base Sepolia, it allows evaluating the entire agent lifecycle without putting user funds in jeopardy.
+  Today, BaKhi Wallet is strictly a testnet system. The server holds custodial agent keys encrypted at rest. On mainnet, this would be a high risk; on Base Sepolia, it allows evaluating the entire agent lifecycle without putting user funds in jeopardy.
   Second, asset valuation is pegged to Aave testnet oracles. Testnet DEX pools frequently suffer from extreme mispricing; our defense is computing swap minimums from oracle fair value so simulated swaps revert safely before signing.
   Our self-assessment documents 26 known risks in detail, with explicit mitigations for each."
 - **Judging criterion served:** Security and Compliance (intellectual honesty, comprehensive risk register).
@@ -288,7 +288,7 @@ Speaker pacing: ~130–140 words per minute.
     ```
 - **Visual:** Verification terminal output snippet showing `1482 passed`, `46/46 passed`, and `OK: verified records (hash chain intact)`.
 - **Speaker script (0:15):**
-  "To conclude: agent-wallet proves that AI autonomy in Web3 does not require surrendering control. The LLM proposes; deterministic code decides.
+  "To conclude: BaKhi Wallet proves that AI autonomy in Web3 does not require surrendering control. The LLM proposes; deterministic code decides.
   We invite the judges to visit our hosted app, examine our GitHub repository, and run these five verification commands. Thank you."
 - **Judging criterion served:** Task Completion (strong close, verifiable evidence).
 

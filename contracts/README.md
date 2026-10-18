@@ -1,6 +1,6 @@
 # Data contracts v1
 
-One language-neutral definition of every object that crosses a module boundary in agent-wallet: the policy engine, the gateway, the audit log, the API and the minimal UI all build against these files. Documents only; there is no product code here.
+One language-neutral definition of every object that crosses a module boundary in BaKhi Wallet: the policy engine, the gateway, the audit log, the API and the minimal UI all build against these files. Documents only; there is no product code here.
 
 Where they sit and how they relate: [`docs/architecture/core/contracts.md`](../docs/architecture/core/contracts.md).
 

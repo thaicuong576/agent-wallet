@@ -1,6 +1,6 @@
-# Execution Evidence Index: agent-wallet
+# Execution Evidence Index: BaKhi Wallet
 
-Master evidence compilation for FinTechathon 2026, Topic F ("Agent Wallet").
+Master evidence compilation for FinTechathon 2026, Topic F ("Agent Wallet") by BaKhi Wallet (team BaKhi).
 All on-chain transactions were executed on **Base Sepolia (Chain ID `84532`)**.
 
 This document indexes every real on-chain transaction hash found across the repository's evidence files, confirms their on-chain verification status, summarizes cryptographic audit chain verifications, and details denied/blocked scenarios demonstrating policy enforcement.
