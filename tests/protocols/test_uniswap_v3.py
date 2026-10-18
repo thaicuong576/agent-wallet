@@ -29,6 +29,7 @@ from core.protocols.uniswap_v3 import (
     build_quote_exact_input_single_calldata,
     check_pool_price_guard,
     compute_amount_out_minimum,
+    quote_exact_input_single,
     validate_order,
 )
 
@@ -73,8 +74,11 @@ def approve_order(**over: Any) -> dict[str, Any]:
     return base
 
 
-def mock_oracle_rpc(prices: dict[str, int]) -> Any:
-    """Mock RPC returning 8-decimal asset prices for AaveOracle.getAssetPrice."""
+def mock_oracle_rpc(
+    prices: dict[str, int],
+    quotes: dict[str, int] | int | None = None,
+) -> Any:
+    """Mock RPC returning 8-decimal asset prices for AaveOracle and QuoterV2 quotes."""
 
     def rpc(method: str, params: list[Any]) -> Any:
         if method == "eth_call":
@@ -87,6 +91,26 @@ def mock_oracle_rpc(prices: dict[str, int]) -> Any:
                     if asset == addr.lower():
                         price_int = prices.get(sym, 0)
                         return "0x" + price_int.to_bytes(32, "big").hex()
+            # QuoterV2 quoteExactInputSingle
+            if data.startswith(QUOTE_EXACT_INPUT_SINGLE_SELECTOR):
+                if isinstance(quotes, int):
+                    quote_val = quotes
+                elif isinstance(quotes, dict):
+                    quote_val = 0
+                    for sym, _addr in [
+                        ("WETH", WETH_ADDRESS),
+                        ("WBTC", WBTC_ADDRESS),
+                        ("USDC", USDC_ADDRESS),
+                    ]:
+                        if sym in quotes:
+                            quote_val = quotes[sym]
+                else:
+                    quote_val = 0
+                encoded = eth_abi.encode(
+                    ["uint256", "uint160", "uint32", "uint256"],
+                    [quote_val, 0, 0, 100_000],
+                )
+                return "0x" + encoded.hex()
         raise RuntimeError(f"Unhandled mock RPC call: {method} {params}")
 
     return rpc
@@ -207,7 +231,8 @@ def test_build_calls_approve_via_registry():
 
 def test_build_calls_exact_input_single_via_registry():
     prices = {"WBTC": 82_204 * 10**8}  # $82,204 per WBTC
-    rpc = mock_oracle_rpc(prices)
+    quote_out = 12_000  # Pool quote (~1.35% below fair value 12,164, within 3% deviation guard)
+    rpc = mock_oracle_rpc(prices, quotes=quote_out)
     o = swap_order(
         token="USDC",
         token_out="WBTC",
@@ -229,15 +254,15 @@ def test_build_calls_exact_input_single_via_registry():
     assert decoded[2] == 500  # USDC/WBTC fee tier
     assert decoded[3].lower() == WALLET.lower()  # Recipient is wallet
     assert decoded[4] == 10_000_000
-    # Expected: 10 / 82204 = 0.00012164858 WBTC = 12164 satoshis.
-    # Slippage 50 bps (0.5%): 12164 * 0.995 = 12104 satoshis.
-    assert decoded[5] == 12104
+    # Slippage 50 bps on executable pool quote: 12000 * 9950 // 10000 = 11940 satoshis.
+    assert decoded[5] == 11940
     assert decoded[6] == 0
 
 
 def test_build_calls_usdc_to_weth_fee_tier_3000():
     prices = {"WETH": 2_500 * 10**8}  # $2,500 per WETH
-    rpc = mock_oracle_rpc(prices)
+    quote_out = 4_000_000_000_000_000  # 0.004 WETH executable pool quote (matches fair value)
+    rpc = mock_oracle_rpc(prices, quotes=quote_out)
     o = swap_order(
         token="USDC",
         token_out="WETH",
@@ -250,8 +275,55 @@ def test_build_calls_usdc_to_weth_fee_tier_3000():
         bytes.fromhex(calls[0].data[10:]),
     )
     assert decoded[2] == 3000  # USDC/WETH fee tier
-    # 10 USD / 2500 = 0.004 WETH = 4e15 wei. With 1% slippage: 3.96e15 wei.
+    # 4e15 * (10000 - 100) // 10000 = 3.96e15 wei.
     assert decoded[5] == 3_960_000_000_000_000
+
+
+def test_quote_exact_input_single_helper():
+    rpc = mock_oracle_rpc({}, quotes=6013)
+    quote = quote_exact_input_single("USDC", "WBTC", 5_000_000, rpc=rpc)
+    assert quote == 6013
+
+
+def test_build_calls_min_out_equals_floor_quote_minus_slippage():
+    # Demonstrates floor division behavior: 6013 * 9950 / 10000 = 5982.935 -> floor 5982
+    # Oracle price set so fair value is ~6096, so 6013 is ~1.36% below oracle (< 3% deviation)
+    prices = {"WBTC": 82_021 * 10**8}
+    quote_out = 6013
+    rpc = mock_oracle_rpc(prices, quotes=quote_out)
+    o = swap_order(
+        token="USDC",
+        token_out="WBTC",
+        amount={"value": "5000000", "decimals": 6},
+        max_slippage_bps=50,
+    )
+    calls = _uni_build(o, BuildContext(WALLET), rpc=rpc)
+    (decoded,) = eth_abi.decode(
+        ["(address,address,uint24,address,uint256,uint256,uint160)"],
+        bytes.fromhex(calls[0].data[10:]),
+    )
+    expected_min_out = quote_out * (10000 - 50) // 10000
+    assert expected_min_out == 5982
+    assert decoded[5] == expected_min_out
+
+
+def test_build_calls_raises_when_quote_4_percent_below_oracle():
+    # Oracle fair value: 10 USDC / 80,000 = 12,500 satoshis.
+    # Quote 4% below fair value: 12,500 * 0.96 = 12,000 satoshis (deviation 400 bps > 300 bps cap)
+    prices = {"WBTC": 80_000 * 10**8}
+    quote_out = 12_000
+    rpc = mock_oracle_rpc(prices, quotes=quote_out)
+    o = swap_order(
+        token="USDC",
+        token_out="WBTC",
+        amount={"value": "10000000", "decimals": 6},
+        max_slippage_bps=50,
+    )
+    with pytest.raises(
+        OrderValidationError,
+        match=r"^RISK\.POOL_PRICE_DEVIATION: pool quote is 400 bps below oracle fair value",
+    ):
+        _uni_build(o, BuildContext(WALLET), rpc=rpc)
 
 
 # ----------------------------------------------------------------- Math & decimals
