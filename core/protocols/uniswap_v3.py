@@ -1,7 +1,7 @@
 """Uniswap V3 protocol adapter for Base Sepolia (Chain ID 84532).
 
 Encodes calldata for ERC-20 approve and SwapRouter02 exactInputSingle swaps.
-Amount out minimum is derived from AaveOracle fair value and max_slippage_bps.
+Amount out minimum is derived from QuoterV2 pool quotes with AaveOracle deviation guard.
 """
 
 from __future__ import annotations
@@ -281,6 +281,32 @@ def compute_amount_out_minimum(
     return int(min_out)
 
 
+def quote_exact_input_single(
+    token_in: str,
+    token_out: str,
+    amount_in: int,
+    rpc: Callable[[str, list[Any]], Any] | None = None,
+) -> int:
+    """Query Uniswap v3 QuoterV2 for expected output amount of exactInputSingle."""
+    rpc_caller = rpc or _default_rpc
+    fee = SUPPORTED_PAIRS[(token_in, token_out)]
+    calldata = build_quote_exact_input_single_calldata(
+        token_in=TOKEN_ADDRESSES[token_in],
+        token_out=TOKEN_ADDRESSES[token_out],
+        amount_in=amount_in,
+        fee=fee,
+        sqrt_price_limit_x96=0,
+    )
+    res = rpc_caller("eth_call", [{"to": QUOTER_V2, "data": calldata}, "latest"])
+    if isinstance(res, Mapping):
+        if "error" in res:
+            raise RuntimeError(str(res["error"]))
+        res = res.get("result")
+    raw_bytes = bytes.fromhex(res[2:] if isinstance(res, str) and res.startswith("0x") else res)
+    decoded = eth_abi.decode(["uint256", "uint160", "uint32", "uint256"], raw_bytes)
+    return int(decoded[0])
+
+
 def check_pool_price_guard(
     token_in: str,
     token_out: str,
@@ -300,24 +326,8 @@ def check_pool_price_guard(
             "evidence": {"pair": f"{token_in}-{token_out}"},
         }
 
-    fee = SUPPORTED_PAIRS[(token_in, token_out)]
-    calldata = build_quote_exact_input_single_calldata(
-        token_in=TOKEN_ADDRESSES[token_in],
-        token_out=TOKEN_ADDRESSES[token_out],
-        amount_in=amount_in,
-        fee=fee,
-        sqrt_price_limit_x96=0,
-    )
-
     try:
-        res = rpc_caller("eth_call", [{"to": QUOTER_V2, "data": calldata}, "latest"])
-        if isinstance(res, Mapping):
-            if "error" in res:
-                raise RuntimeError(str(res["error"]))
-            res = res.get("result")
-        raw_bytes = bytes.fromhex(res[2:] if isinstance(res, str) and res.startswith("0x") else res)
-        decoded = eth_abi.decode(["uint256", "uint160", "uint32", "uint256"], raw_bytes)
-        pool_amount_out = decoded[0]
+        pool_amount_out = quote_exact_input_single(token_in, token_out, amount_in, rpc=rpc_caller)
     except Exception as exc:
         return {
             "code": "RISK.POOL_PRICE_DEVIATION",
@@ -363,7 +373,11 @@ def build_calls(
     *,
     rpc: Callable[[str, list[Any]], Any] | None = None,
 ) -> list[Call]:
-    """Turn a validated Uniswap v3 Order into Call(to, data, value) objects."""
+    """Turn a validated Uniswap v3 Order into Call(to, data, value) objects.
+
+    Slippage is measured against the executable pool quote, the oracle guard
+    bounds how far that quote may be from fair value (3 percent).
+    """
     order_dict = dict(order)
     validate_order(order_dict)
 
@@ -384,13 +398,21 @@ def build_calls(
 
         rpc_caller = rpc or getattr(ctx, "rpc", None) or _default_rpc
 
-        amount_out_min = compute_amount_out_minimum(
-            token_in=token,
-            token_out=token_out,
-            amount_in=amount,
-            max_slippage_bps=max_slippage,
-            rpc=rpc_caller,
-        )
+        guard_hit = check_pool_price_guard(token, token_out, amount, rpc=rpc_caller)
+        if guard_hit:
+            code = guard_hit.get("code", "RISK.POOL_PRICE_DEVIATION")
+            evidence = guard_hit.get("evidence", {})
+            if "deviation_bps" in evidence:
+                dev = evidence["deviation_bps"]
+                msg = f"{code}: pool quote is {dev} bps below oracle fair value"
+            elif "error" in evidence:
+                msg = f"{code}: {evidence['error']}"
+            else:
+                msg = f"{code}: {evidence}"
+            raise OrderValidationError(msg)
+
+        quote = quote_exact_input_single(token, token_out, amount, rpc=rpc_caller)
+        amount_out_min = quote * (10000 - max_slippage) // 10000
 
         data = build_exact_input_single_calldata(
             token_in=TOKEN_ADDRESSES[token],
