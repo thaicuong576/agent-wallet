@@ -1,4 +1,4 @@
--- Chat messages of the webapp. Text and ids only: an agent step is rebuilt from the
+-- Chat messages of the webapp (ticket 115). Text and ids only: an agent step is rebuilt from the
 -- audit log by `job_id`, so no order body, key or model transcript is stored here.
 --
 -- Same protection as every other tenant table (0001 to 0003): row-level security is enabled and
