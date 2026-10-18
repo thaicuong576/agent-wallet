@@ -11,3 +11,4 @@ data/
 .pytest_cache/
 .ruff_cache/
 .data/
+docs/evidence/.loop-progress.jsonl
