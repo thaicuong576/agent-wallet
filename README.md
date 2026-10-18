@@ -40,7 +40,7 @@ With keys: copy `.env.example` to `.env`, set `BASE_SEPOLIA_RPC_URL`, `OPENAI_AP
 ## Running Tests
 ```sh
 make test                                   # 1,482 tests: unit, policy, gateway, storage, UI
-make eval                                   # 46 replay scenarios covering 27/28 rule codes
+make eval                                   # 46 replay scenarios covering 27 of the 28 codes in the evaluation report
 python -m core.audit.verify docs/evidence/audit-chain.jsonl  # verifies audit hash chain
 ```
 Detailed testing guide and suite breakdowns: [`docs/guides/testing.md`](docs/guides/testing.md).
@@ -49,7 +49,7 @@ Detailed testing guide and suite breakdowns: [`docs/guides/testing.md`](docs/gui
 - **Aave v3**: USDC and USDT supply & withdraw on Base Sepolia ([`docs/architecture/protocols/aave-adapter.md`](docs/architecture/protocols/aave-adapter.md))
 - **Aave Stata**: ERC-4626 static yield-bearing aToken vaults for USDC/USDT ([`docs/architecture/protocols/aave-stata.md`](docs/architecture/protocols/aave-stata.md))
 - **Morpho Blue**: Isolated lending markets for USDC/cbETH and USDC/WBTC ([`docs/architecture/protocols/morpho-blue.md`](docs/architecture/protocols/morpho-blue.md))
-- **Uniswap v3**: DEX token swaps with oracle-based minimum output protection ([`docs/architecture/protocols/uniswap-v3.md`](docs/architecture/protocols/uniswap-v3.md))
+- **Uniswap v3**: DEX token swaps with quote-based minimum output protection and oracle price deviation guard ([`docs/architecture/protocols/uniswap-v3.md`](docs/architecture/protocols/uniswap-v3.md))
 - Protocol registry & strategy presets (Conservative vs Diversified): [`docs/architecture/protocols/protocols.md`](docs/architecture/protocols/protocols.md), [`docs/architecture/core/presets.md`](docs/architecture/core/presets.md)
 - Latency visibility & UI cache control: [`docs/architecture/webapp/timing-logs.md`](docs/architecture/webapp/timing-logs.md), [`docs/guides/deployment.md`](docs/guides/deployment.md)
 
@@ -84,7 +84,7 @@ Real testnet transactions executed on Base Sepolia (chain ID 84532):
 │   ├── storage/  # Dual-backend persistence (SQLite and PostgreSQL with RLS)
 │   └── tiers/    # Permission tier state machine (T0-T2), emergency stop, approvals
 ├── docs/         # Documentation index, architecture specs, guides, research, and evidence
-├── evals/        # 46 offline evaluation scenarios covering 27 of 28 rule codes
+├── evals/        # 46 offline evaluation scenarios covering 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report)
 ├── scripts/      # Operational scripts: checks, evidence generation, submission packaging
 ├── tests/        # Comprehensive pytest test suite (1,460+ tests across all layers)
 └── ui/           # Zero-build single-page webapp console (plain HTML, CSS, ES modules)

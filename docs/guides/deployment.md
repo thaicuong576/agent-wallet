@@ -180,7 +180,7 @@ In `core/storage/migrate.py` and `api/main.py`:
 | Secret | Impact | Rotation Procedure |
 | :--- | :--- | :--- |
 | `AGENT_WALLET_SESSION_SECRET` | Active user sessions | 1. Generate new 32+ character random string.<br/>2. Update variable in Render dashboard.<br/>3. Redeploy service. Active session cookies become invalid; users simply sign in again via wallet signature (zero data loss). |
-| `AGENT_WALLET_KEYSTORE_SECRET` | Custodial private keys at rest | Master key encrypting wallet keystores via AES-256-GCM. To rotate: decrypt stored keystores with old secret and re-encrypt with new secret in a maintenance script before updating the service. |
+| `AGENT_WALLET_KEYSTORE_SECRET` | Custodial private keys at rest | Master key for wallet keystores, encrypted at rest in the standard Ethereum keystore format (key derived from a host secret). To rotate: decrypt stored keystores with old secret and re-encrypt with new secret in a maintenance script before updating the service. |
 | `AGENT_WALLET_PRIVATE_KEY` | Single-owner wallet funds | 1. Transfer remaining testnet ETH/USDC to new wallet address.<br/>2. Update `AGENT_WALLET_PRIVATE_KEY` in `.env`.<br/>3. Restart service. |
 | `OPENAI_API_KEY` | LLM Planner & Reader | 1. Issue new key in OpenAI console.<br/>2. Update `OPENAI_API_KEY` in environment.<br/>3. Revoke old key. If revoked unexpectedly, the app falls back to labeled rule-based fallback planning without crashing. |
 | `DATABASE_URL` | PostgreSQL access | 1. Rotate password in Supabase database settings.<br/>2. Update `DATABASE_URL` in Render environment.<br/>3. Service reconnects on restart. |

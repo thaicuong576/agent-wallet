@@ -39,7 +39,7 @@ Complete directory of technical documentation, architectural specifications, sec
 ### Architecture: Webapp
 - [`architecture/webapp/api.md`](architecture/webapp/api.md): REST API specification, RFC 7807 problem details, and session endpoints.
 - [`architecture/webapp/auth.md`](architecture/webapp/auth.md): EIP-4361 Sign-In with Ethereum (SIWE), HttpOnly cookies, and step-up authorization.
-- [`architecture/webapp/custody-tenancy.md`](architecture/webapp/custody-tenancy.md): Multi-owner custody model, AES-256-GCM keystore encryption, and tenant isolation.
+- [`architecture/webapp/custody-tenancy.md`](architecture/webapp/custody-tenancy.md): Multi-owner custody model, encrypted keystore (standard Ethereum keystore format), and tenant isolation.
 - [`architecture/webapp/storage.md`](architecture/webapp/storage.md): Dual storage backend design supporting SQLite and PostgreSQL with Row Level Security.
 - [`architecture/webapp/webapp.md`](architecture/webapp/webapp.md): Webapp component architecture and state management.
 - [`architecture/webapp/ui.md`](architecture/webapp/ui.md): Static single-page webapp architecture, client views, and route controllers.

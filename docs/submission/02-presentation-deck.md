@@ -27,7 +27,7 @@ Speaker pacing: ~130–140 words per minute.
 - **Speaker script (0:45):**
   "Welcome judges. As language models become capable of financial planning, the standard approach is simply to hand an LLM an API key or a wallet seed phrase. In Web3, this model fails catastrophically: prompt injection can drain funds in one message, models hallucinate parameters, and there is no auditable proof of why an action was taken.
   Asset owners—from retail DeFi participants to DAO treasury managers—do not want to trust an LLM. They want autonomous delegation bound by strict, mathematical rules.
-  We built BaKhi Wallet to solve this: an AI agent that can only do what the owner's written policy allows, and mathematically proves every decision afterwards."
+  We built BaKhi Wallet to solve this: an AI agent that can only do what the owner's written policy allows, and verifiably proves every decision afterwards."
 - **Judging criterion served:** Innovation & Interaction (clear problem thesis and threat model).
 
 ---
@@ -98,7 +98,7 @@ Speaker pacing: ~130–140 words per minute.
 - **Title:** Policy Engine & Four Permission Tiers
 - **Exact on-slide text:**
   - Pure mathematical engine: 0 I/O operations, 0 floating point math, 0 in-memory mutation.
-  - Evaluates 28 formal rule codes across ACCESS, LIMIT, ALLOC, RISK, and TIER families.
+  - Evaluates 31 rule codes across ACCESS, LIMIT, ALLOC, RISK, and TIER families.
   - **T0 (Read-Only):** Agent queries balances and market data; all orders rejected (`TIER.READ_ONLY`).
   - **T1 (Propose-Only):** Agent proposes plans for review; never signed (`TIER.PROPOSE_ONLY`).
   - **T2 (Autonomous Execution):** Executes allowed orders strictly within the Investment Policy Statement (IPS).
@@ -131,10 +131,10 @@ Speaker pacing: ~130–140 words per minute.
     1. **Aave v3:** Supply & withdraw for USDC and USDT.
     2. **Aave Stata Vaults:** Yield-bearing ERC-4626 tokenized vaults.
     3. **Morpho Blue:** Isolated peer-to-peer lending across allow-listed markets.
-    4. **Uniswap v3:** Exact-input swaps with oracle-based slippage protection.
+    4. **Uniswap v3:** Exact-input swaps with quote-based slippage protection and oracle price guards.
   - Spec-driven registry: Calldata formats, target contracts, and spenders exist in code specs only.
   - The LLM outputs high-level enums; it can **never** inject arbitrary target addresses.
-  - Safe valuation: Swap minimum output derived from Aave oracle, not manipulable pool reserves.
+  - Safe valuation: Swap minimum output derived from executable pool quote minus slippage, guarded against oracle price deviation.
 - **Visual:** Protocol Registry Flow:
   ```mermaid
   flowchart TD
@@ -148,7 +148,7 @@ Speaker pacing: ~130–140 words per minute.
   "Real portfolio management requires multiple DeFi primitives. We integrated four major protocols on Base Sepolia: Aave v3, Aave Stata ERC-4626 vaults, Morpho Blue lending, and Uniswap v3 swaps.
   Rather than letting the LLM construct raw transaction calldata or specify target contract addresses, we built a spec-driven Protocol Registry. The model only specifies enums: for example, protocol 'aave-stata', action 'supply', amount '5 USDC'.
   The gateway looks up verified target contracts and spenders directly from immutable code specifications.
-  Furthermore, when performing a swap on Uniswap, the minimum acceptable output amount is calculated using the Aave oracle reference price, completely eliminating sandwich attacks and pool reserve manipulation."
+  Furthermore, when performing a swap on Uniswap, the minimum acceptable output amount is calculated from the executable pool quote minus slippage and protected by an oracle price guard, reducing exposure to bad prices and pool reserve manipulation."
 - **Judging criterion served:** Task Completion (breadth and depth of multi-protocol integration).
 
 ---
@@ -181,7 +181,7 @@ Speaker pacing: ~130–140 words per minute.
 - **Title:** Verification Evidence: 100% Pass Rate in Replay Mode
 - **Exact on-slide text:**
   - **46 / 46 scenarios passed (100.0%)** in offline deterministic replay mode.
-  - **27 / 28 rule codes covered (96.4%)** across all rule families (28th code is a status, not a violation).
+  - **27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report)**.
   - Tests allow, deny, escalate, injection, integrity, and tier transitions without network dependencies or private keys.
   - Independent reproduction command: `python -m evals.run`.
 - **Visual:** Evaluation Results Breakdown (from `docs/evidence/eval-report.md`):
@@ -198,7 +198,7 @@ Speaker pacing: ~130–140 words per minute.
 - **Speaker script (0:45):**
   "To prove reliability, we built an offline evaluation harness covering 46 comprehensive scenarios.
   Every category passed with a 100% success rate: from normal allows to 20 distinct deny conditions, approval escalations, tier stops, and audit tampering detection.
-  We achieve 96.4% coverage over the rule code catalog—27 of 28 codes are verified under realistic test conditions. The single uncovered code is `TIER.POLICY_CHANGED`, which is an administrative audit status rather than a policy violation.
+  We cover 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report).
   Any judge or auditor can clone the repository, run `python -m evals.run`, and reproduce this exact report locally in seconds."
 - **Judging criterion served:** Security and Compliance / Innovation (evaluation harness and reproducibility).
 
@@ -210,16 +210,20 @@ Speaker pacing: ~130–140 words per minute.
   - **10 real on-chain transactions** on Base Sepolia (chain ID 84532), all verified with receipt status `0x1`.
   - Protocols exercised on-chain: Aave v3 lending, Aave Stata ERC-4626 vaults, Morpho Blue, and native ETH top-up.
   - Cryptographic audit chain verified: SHA-256 hash-linked records validate sequence, previous hashes, and payload hashes.
-  - **Honest negative evidence:** Morpho cbETH supply was denied on-chain due to 93.56% market utilization exceeding the 90% risk ceiling (`RISK.DATA_STALE` / high utilization).
+  - **Honest negative evidence:** Morpho cbETH supply was denied by the policy engine before signing due to 93.56% market utilization exceeding the 90% risk ceiling (`RISK.DATA_STALE` / high utilization).
 - **Visual:** Verified On-Chain Transactions Table:
   | Action | Protocol | Amount | Tx Hash | Block | Status |
   | :--- | :--- | :--- | :--- | :--- | :---: |
-  | Approve | Aave v3 | 1 USDC | `0xba7595...630221` | 48102358 | ✅ `0x1` |
-  | Supply | Aave v3 | 1 USDC | `0x7c81b0...a6f233` | 48102361 | ✅ `0x1` |
-  | Approve | Aave Stata | 5 USDC | `0xd10c77...ca7274` | 48201645 | ✅ `0x1` |
-  | Supply | Aave Stata | 5 USDC | `0xa61e6d...960221` | 48201652 | ✅ `0x1` |
-  | Approve | Morpho Blue | 5 USDC | `0x03dec0...282ecc` | 48201694 | ✅ `0x1` |
-  | Top-up | Native ETH | 0.0001 ETH | `0xf9db01...af0e9a` | 48137006 | ✅ `0x1` |
+  | Approve | Aave v3 | 1 USDC | [`0xba7595...630221`](https://sepolia.basescan.org/tx/0xba75953fca67a96112ec7f11bfeeb03235629e0cc7415033ddb7a6b244630221) | 48102358 | ✅ `0x1` |
+  | Supply | Aave v3 | 1 USDC | [`0x7c81b0...a6f233`](https://sepolia.basescan.org/tx/0x7c81b0ad32c8213081a0e142ee50e5de72f750ad23425c9267ecb81a0ea6f233) | 48102361 | ✅ `0x1` |
+  | Approve | Aave v3 | 1 USDC | [`0xa3f880...4b4ac4`](https://sepolia.basescan.org/tx/0xa3f88092d802c22cd40569e9c488e082a3130221f9521f68ebdb8ddc264b4ac4) | 48112080 | ✅ `0x1` |
+  | Supply | Aave v3 | 1 USDC | [`0x05f408...6a4cb5`](https://sepolia.basescan.org/tx/0x05f4089567b5091b7f979214f4cf6115db2364c6839b3d374633a2e72e6a4cb5) | 48112088 | ✅ `0x1` |
+  | Top-up | Native ETH | 0.0001 ETH | [`0xf9db01...af0e9a`](https://sepolia.basescan.org/tx/0xf9db01704315836598e0496a7ee9233caf5aedc25ab16eec6002bbd9d3af0e9a) | 48137006 | ✅ `0x1` |
+  | Approve | Aave v3 | 10 USDC | [`0xe08022...4a0749`](https://sepolia.basescan.org/tx/0xe08022a78165c51f8b4c2b79142906b6e31439634993756582470adf6a4a0749) | 48137327 | ✅ `0x1` |
+  | Supply | Aave v3 | 10 USDC | [`0xcc49ca...0444ff`](https://sepolia.basescan.org/tx/0xcc49ca6da6435519fb15291b95887bbcd16f9934ce81076efff93836ed4044ff) | 48138889 | ✅ `0x1` |
+  | Approve | Aave Stata | 5 USDC | [`0xd10c77...ca7274`](https://sepolia.basescan.org/tx/0xd10c778b9b496a0b185a01679a59466a957883f2b01619f683fe8c0b68ca7274) | 48201645 | ✅ `0x1` |
+  | Supply | Aave Stata | 5 USDC | [`0xa61e6d...960221`](https://sepolia.basescan.org/tx/0xa61e6dcae14132cd74efe19bdd7fb38f16e5d34e1a825625f3745383df960221) | 48201652 | ✅ `0x1` |
+  | Approve | Morpho Blue | 5 USDC | [`0x03dec0...282ecc`](https://sepolia.basescan.org/tx/0x03dec0e246b5d355731020567f94a2aed72a11490bdd6a2060b44fe63c282ecc) | 48201694 | ✅ `0x1` |
 - **Speaker script (1:00):**
   "We also provide concrete on-chain evidence. In `docs/submission/06-execution-evidence.md`, we document 10 real on-chain transaction hashes executed on Base Sepolia.
   Every transaction receipt was verified via read-only JSON-RPC against the Base Sepolia network, confirming successful execution with status 0x1. We executed approvals and supplies on Aave v3, deposited 5 USDC into the Aave Stata ERC-4626 vault, and performed multi-protocol approvals for Morpho Blue.
@@ -238,14 +242,14 @@ Speaker pacing: ~130–140 words per minute.
 - **Visual:** Known Risk Matrix (from `docs/submission/05-security-self-assessment.md`):
   | Risk ID | Severity | Nature of Risk | Current Mitigation |
   | :--- | :---: | :--- | :--- |
-  | **K4** | Medium | Reference prices vs live spot | Token registry fails closed; swaps bound to oracle minimum |
-  | **K13** | High | Server-side custodial keys | Restricted to testnet; AES-256 encrypted at rest; zero real funds |
+  | **K4** | Medium | Reference prices vs live spot | Token registry fails closed; swaps protected by pool price guard |
+  | **K13** | High | Server-side custodial keys | Restricted to testnet; encrypted at rest in the standard Ethereum keystore format (key derived from a host secret); zero real funds |
   | **K15** | Low | Free tier hosting cold starts | Keep-warm endpoint (`/health/deep`), idempotent jobs by `order_id` |
   | **K22** | Medium | Testnet pool mispricing | `eth_simulateV1` bundle reverts before signing if slippage trips |
 - **Speaker script (0:45):**
   "A credible security assessment must be honest about its limits.
   Today, BaKhi Wallet is strictly a testnet system. The server holds custodial agent keys encrypted at rest. On mainnet, this would be a high risk; on Base Sepolia, it allows evaluating the entire agent lifecycle without putting user funds in jeopardy.
-  Second, asset valuation is pegged to Aave testnet oracles. Testnet DEX pools frequently suffer from extreme mispricing; our defense is computing swap minimums from oracle fair value so simulated swaps revert safely before signing.
+  Second, asset valuation is pegged to Aave testnet oracles. Testnet DEX pools frequently suffer from extreme mispricing; our defense is computing swap minimums from executable pool quotes with an oracle price deviation guard so simulated swaps revert safely before signing.
   Our self-assessment documents 26 known risks in detail, with explicit mitigations for each."
 - **Judging criterion served:** Security and Compliance (intellectual honesty, comprehensive risk register).
 
@@ -281,7 +285,7 @@ Speaker pacing: ~130–140 words per minute.
   - Five commands to verify our entire submission:
     ```sh
     python -m pytest -q                                # 1,482 unit, e2e, and contract tests pass
-    python -m evals.run                                # 46 offline scenarios, 27/28 rule codes
+    python -m evals.run                                # 46 offline scenarios, 27 of 28 evaluated rule codes
     python -m core.audit.verify docs/evidence/audit-chain.jsonl # Cryptographic hash chain check
     python scripts/checks/check_no_secrets.py         # Clean repository scan (0 secrets)
     python scripts/submission/build_submission_package.py # Builds verified 6-folder package
@@ -300,7 +304,7 @@ Speaker pacing: ~130–140 words per minute.
 - **Answer:**
   For this competition track on Base Sepolia testnet, server-side custodial keys allow complete testing of autonomous multi-step planning without requiring users to sign individual ERC-20 approvals on a faucet wallet.
   However, security is strictly maintained through defense-in-depth:
-  1. Agent private keys are generated in an encrypted keystore using AES-GCM-256 with key derivation from host environment secrets.
+  1. Agent private keys are generated in an standard Ethereum encrypted-keystore format with a key derived from host environment secrets.
   2. The keys are never exposed via any API endpoint, never printed to logs, and never returned to the UI.
   3. Every transaction must pass the deterministic policy engine, simulation, and audit logging before signing.
   4. Our documented roadmap transitions to non-custodial ERC-4337 session keys, meaning the policy engine will govern smart account transactions without the server holding raw seed material.
@@ -322,7 +326,7 @@ Speaker pacing: ~130–140 words per minute.
 
 ### Q4: "Why did you deploy on Base Sepolia testnet instead of deploying directly to mainnet?"
 - **Answer:**
-  The FinTechathon 2026 competition explicitly requires testnet-only operation to safeguard funds and eliminate financial risk during judging.
+  The FinTechathon 2026 competition accepts testnet execution evidence, and we chose testnet-only operation to eliminate financial risk during judging.
   Operating on Base Sepolia allowed us to test real on-chain interactions with live institutional protocols—including Aave v3, Aave Stata vaults, Morpho Blue, and Uniswap v3—using real transactions, gas fees, and event receipts without risking judge or participant capital.
   The architecture has been designed so that transitioning to mainnet requires only reconfiguring network chain IDs, contract registry addresses, and deploying non-custodial session accounts.
 

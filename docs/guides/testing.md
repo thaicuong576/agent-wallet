@@ -64,7 +64,7 @@ python -m core.audit.verify docs/evidence/audit-chain.jsonl
 | **Layer 5** | Storage & Tenancy | Verifies dual-backend persistence (SQLite and PostgreSQL). Proves strict tenant isolation under PostgreSQL Row Level Security (RLS), advisory locking concurrency, and fail-closed schema checks. | Run in CI |
 | **Layer 6** | Webapp & Authentication | Verifies EIP-4361 / SIWE wallet authentication, HttpOnly session cookies, CSRF protection, and cryptographic step-up challenge-response signatures for tier elevation and emergency stop release. | Run in CI |
 | **Layer 7** | UI Node.js DOM Harness | Verifies frontend rendering, modal dialogs, focus trapping, holdings grouping, and streaming progress cards against a simulated DOM in Node.js. | Run in CI |
-| **Layer 8** | Evaluation Harness | Replays 46 adversarial and real-world scenarios across prompt injection, risk feeds, and tier limits, measuring policy adherence across 27 of 28 rule codes. | Run in CI |
+| **Layer 8** | Evaluation Harness | Replays 46 adversarial and real-world scenarios across prompt injection, risk feeds, and tier limits, measuring policy adherence across 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report). | Run in CI |
 | **Layer 9** | Live On-Chain Scripts | Executes real transactions on Base Sepolia testnet using live RPC and funded agent keys. Proves real protocol interaction with Aave v3, Stata vaults, and Morpho Blue. | Manual only (needs keys) |
 
 ---
@@ -153,7 +153,7 @@ Outputs are written to:
 - Markdown report: [`docs/evidence/eval-report.md`](../evidence/eval-report.md)
 - JSON results: `docs/evidence/eval-results.json`
 
-Rule-code coverage: **27 of 28 rule codes** are tested and covered by scenarios. (The 28th rule code, `TIER.POLICY_CHANGED`, is an administrative status rather than a policy violation).
+Rule-code coverage: **27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report)**.
 
 ### 7. Live Scripts (Require Keys & RPC — NOT Run in CI)
 These scripts communicate with Base Sepolia and are intended for manual testing and generating submission evidence:
