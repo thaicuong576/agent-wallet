@@ -285,7 +285,7 @@ def test_db_accumulator_per_request_isolation(
     from fastapi import FastAPI
 
     from api.main import TimingMiddleware
-    from core.storage.postgres.pool import _request_db_acc, db_calls, db_ms, db_stats
+    from core.storage.postgres.pool import db_calls, db_ms, db_stats, request_db_acc
 
     db_calls.set(0)
     db_ms.set(0)
@@ -296,7 +296,7 @@ def test_db_accumulator_per_request_isolation(
 
     @sub_app.get("/req1")
     def req1() -> dict[str, Any]:
-        acc = _request_db_acc.get()
+        acc = request_db_acc.get()
         if acc is not None:
             acc[0] += 3
             acc[1] += 45
@@ -304,7 +304,7 @@ def test_db_accumulator_per_request_isolation(
 
     @sub_app.get("/req2")
     def req2() -> dict[str, Any]:
-        acc = _request_db_acc.get()
+        acc = request_db_acc.get()
         if acc is not None:
             acc[0] += 1
             acc[1] += 10
