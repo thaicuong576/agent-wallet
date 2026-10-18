@@ -96,11 +96,11 @@ if [ "$UI_STATUS" != "200" ]; then
 fi
 
 UI_BODY=$(curl -s "$UI_URL" 2>/dev/null || true)
-if ! echo "$UI_BODY" | grep -q "agent-wallet"; then
-  echo "ERROR: Response body from $UI_URL does not contain 'agent-wallet'."
+if ! echo "$UI_BODY" | grep -q "BaKhi Wallet"; then
+  echo "ERROR: Response body from $UI_URL does not contain 'BaKhi Wallet'."
   exit 1
 fi
-echo "Verified /ui/ returns HTTP 200 and contains 'agent-wallet'."
+echo "Verified /ui/ returns HTTP 200 and contains 'BaKhi Wallet'."
 
 echo "Checking container process user..."
 CONFIG_USER=$(docker inspect -f '{{.Config.User}}' "$CONTAINER_ID" 2>/dev/null || true)
