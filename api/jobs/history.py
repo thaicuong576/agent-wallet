@@ -11,7 +11,12 @@ from core.agent.planner import (
 from core.gateway.tenant import Tenant
 from core.storage.interfaces import JobStore
 
-from .outcome import _records
+from .outcome import _limit_denied, _records
+
+NEUTRAL_LIMIT_REFUSAL_SENTENCE = (
+    "That earlier request was not executed. Limits are re-checked by the system"
+    " for every new request."
+)
 
 
 def _build_chat_history(
@@ -37,16 +42,22 @@ def _build_chat_history(
                 if job_row and job_row.get("seqs"):
                     seqs = [int(s) for s in job_row["seqs"]]
             recs = _records(tenant, seqs)
-            outcome_text = outcome_sentence_from_records(recs)
-            if (
-                outcome_text
-                and outcome_text != "No orders were proposed."
-                and outcome_text not in agent_text
-            ):
-                agent_text = f"{agent_text} {outcome_text}".strip() if agent_text else outcome_text
+            intent = str(m["intent"]) if m.get("intent") is not None else None
+            if intent == "refusal" or _limit_denied(recs):
+                agent_text = NEUTRAL_LIMIT_REFUSAL_SENTENCE
+            else:
+                outcome_text = outcome_sentence_from_records(recs)
+                if (
+                    outcome_text
+                    and outcome_text != "No orders were proposed."
+                    and outcome_text not in agent_text
+                ):
+                    agent_text = (
+                        f"{agent_text} {outcome_text}".strip() if agent_text else outcome_text
+                    )
             turn: dict[str, str] = {"role": "agent", "text": agent_text}
-            if m.get("intent") is not None:
-                turn["intent"] = str(m["intent"])
+            if intent is not None:
+                turn["intent"] = intent
             turns.append(turn)
     if len(turns) > HISTORY_MAX_TURNS:
         turns = turns[-HISTORY_MAX_TURNS:]
