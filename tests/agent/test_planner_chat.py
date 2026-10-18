@@ -15,6 +15,7 @@ from core.agent.planner import (
     REPLY_MAX_CHARS,
     FallbackPlanner,
     Planner,
+    check_amounts_match_instruction,
     clean_history_text,
     clean_reply,
     format_conversation_history,
@@ -564,3 +565,156 @@ def test_rendered_system_prompt_contains_limit_history_instruction():
         '"refusal" only for a request outside those lists or an owner-only action.'
     )
     assert expected in " ".join(prompt.split())
+
+
+# ---------------------------------------------------------------- amount guard (ticket EV9)
+
+
+def test_amount_guard_mismatch_returns_clarify_and_drops_orders():
+    # Model mis-scaled smallest-unit string: proposed 5 USDC instead of 5000 USDC
+    bad_order = order("supply", "self", units="5000000")
+    result, _ = plan_with(
+        {"action": "propose", "orders": [bad_order], "intent": "action"},
+        message="Deposit 5000 USDC into Aave v3",
+    )
+    assert result.orders == []
+    assert result.intent == "clarify"
+    assert result.is_no_action
+    assert result.reply is not None
+    assert "5" in result.reply and "5000" in result.reply
+    assert "USDC" in result.reply
+    assert result.no_action == {"reason": result.reply, "rules_hit": []}
+    assert result.warnings == [result.reply]
+    assert result.validation_errors == []
+
+
+def test_amount_guard_matching_amount_passes():
+    matching_order = order("supply", "self", units="5000000")
+    result, _ = plan_with(
+        {"action": "propose", "orders": [matching_order], "intent": "action"},
+        message="Deposit 5 USDC into Aave v3",
+    )
+    assert len(result.orders) == 1
+    assert result.orders[0]["amount"]["value"] == "5000000"
+    assert result.intent == "action"
+    assert not result.is_no_action
+
+
+def test_amount_guard_morpho_decimal_amount_passes():
+    morpho_order = {
+        "schema_version": 1,
+        "order_id": str(uuid.uuid4()),
+        "created_at": "2026-10-15T12:00:00Z",
+        "proposed_by": "planner",
+        "protocol": "morpho-blue",
+        "function": "supply",
+        "token": "USDC",
+        "market": "usdc-wbtc",
+        "amount": {"value": "2500000", "decimals": 6},
+        "recipient": "self",
+    }
+    result, _ = plan_with(
+        {"action": "propose", "orders": [morpho_order], "intent": "action"},
+        message="Lend 2.5 USDC on Morpho",
+    )
+    assert len(result.orders) == 1
+    assert result.orders[0]["amount"]["value"] == "2500000"
+    assert result.intent == "action"
+
+
+def test_amount_guard_no_number_in_instruction_passes():
+    matching_order = order("supply", "self", units="5000000")
+    result, _ = plan_with(
+        {"action": "propose", "orders": [matching_order], "intent": "action"},
+        message="Put all my USDC to work",
+    )
+    assert len(result.orders) == 1
+    assert result.intent == "action"
+
+
+def test_amount_guard_swap_with_comma_passes():
+    swap_order = {
+        "schema_version": 1,
+        "order_id": str(uuid.uuid4()),
+        "created_at": "2026-10-15T12:00:00Z",
+        "proposed_by": "planner",
+        "protocol": "uniswap-v3",
+        "function": "exactInputSingle",
+        "token": "USDC",
+        "token_out": "WBTC",
+        "max_slippage_bps": 50,
+        "amount": {"value": "1000000000", "decimals": 6},
+        "recipient": "self",
+    }
+    result, _ = plan_with(
+        {"action": "propose", "orders": [swap_order], "intent": "action"},
+        message="Swap 1,000 USDC to WBTC",
+    )
+    assert len(result.orders) == 1
+    assert result.orders[0]["amount"]["value"] == "1000000000"
+    assert result.intent == "action"
+
+
+def test_amount_guard_two_orders_approve_and_supply_passes():
+    orders = [
+        order("approve", "aave_pool", units="3000000"),
+        order("supply", "self", units="3000000"),
+    ]
+    result, _ = plan_with(
+        {"action": "propose", "orders": orders, "intent": "action"},
+        message="Supply 3 USDC",
+    )
+    assert len(result.orders) == 2
+    assert result.intent == "action"
+
+
+def test_amount_guard_skipped_when_no_owner_instruction():
+    order_item = order("supply", "self", units="5000000")
+    result, _ = plan_with(
+        {"action": "propose", "orders": [order_item], "intent": "action"},
+        message=None,
+    )
+    assert len(result.orders) == 1
+    assert result.intent == "action"
+
+
+def test_check_amounts_match_instruction_pure_unit_cases():
+    # Empty or missing
+    assert check_amounts_match_instruction("", [order("supply", "self")]) is None
+    assert check_amounts_match_instruction("Deposit 5 USDC", []) is None
+
+    # No number extracted
+    assert (
+        check_amounts_match_instruction("Deposit half my USDC", [order("supply", "self")]) is None
+    )
+
+    # Dollar sign formats
+    orders_5 = [order("supply", "self", units="5000000")]
+    orders_5000 = [order("supply", "self", units="5000000000")]
+    assert check_amounts_match_instruction("Deposit $5000 into Aave", orders_5000) is None
+    assert check_amounts_match_instruction("Deposit $5,000 into Aave", orders_5000) is None
+    assert check_amounts_match_instruction("Deposit $ 5000 into Aave", orders_5000) is None
+    err = check_amounts_match_instruction("Deposit $5000 into Aave", orders_5)
+    assert err == (
+        "The proposed amount (5 USDC) does not match the amount in your message (5000 USDC); "
+        "nothing was proposed. Please repeat the request."
+    )
+
+    # Dollars word and usd word
+    assert check_amounts_match_instruction("Deposit 5000 dollars", orders_5000) is None
+    assert check_amounts_match_instruction("Deposit 5000 usd", orders_5000) is None
+
+    # Case insensitivity
+    assert check_amounts_match_instruction("Deposit 5000 usdc", orders_5000) is None
+
+    # ETH token decimals (18 decimals)
+    eth_order = {
+        "token": "ETH",
+        "amount": {"value": "500000000000000000", "decimals": 18},  # 0.5 ETH
+    }
+    assert check_amounts_match_instruction("Deposit 0.5 ETH", [eth_order]) is None
+    err_eth = check_amounts_match_instruction("Deposit 1.5 ETH", [eth_order])
+    assert err_eth == (
+        "The proposed amount (0.5 ETH) does not match the amount in your message (1.5 ETH); "
+        "nothing was proposed. Please repeat the request."
+    )

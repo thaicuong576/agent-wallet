@@ -13,6 +13,7 @@ from typing import Any
 from core.agent.client import LLMClient, ReplyExtractor
 from core.agent.reader import ReaderFacts
 
+from .amount_check import check_amounts_match_instruction
 from .history import (
     _CONTROL_RE,
     VALID_INTENTS,
@@ -353,6 +354,19 @@ class Planner:
 
             # The order remains a candidate order (policy engine decides!)
             valid_orders.append(candidate)
+
+        if owner_instruction is not None and intent == "action" and valid_orders:
+            amount_err = check_amounts_match_instruction(owner_instruction, valid_orders)
+            if amount_err:
+                return PlanResult(
+                    orders=[],
+                    no_action={"reason": amount_err, "rules_hit": []},
+                    warnings=[amount_err],
+                    validation_errors=[],
+                    raw_response=raw_response,
+                    reply=amount_err,
+                    intent="clarify",
+                )
 
         return PlanResult(
             orders=valid_orders,
