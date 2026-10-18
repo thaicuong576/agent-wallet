@@ -246,7 +246,7 @@ Speaker pacing: ~130–140 words per minute.
   "A credible security assessment must be honest about its limits.
   Today, agent-wallet is strictly a testnet system. The server holds custodial agent keys encrypted at rest. On mainnet, this would be a high risk; on Base Sepolia, it allows evaluating the entire agent lifecycle without putting user funds in jeopardy.
   Second, asset valuation is pegged to Aave testnet oracles. Testnet DEX pools frequently suffer from extreme mispricing; our defense is computing swap minimums from oracle fair value so simulated swaps revert safely before signing.
-  Our self-assessment documents 25 known risks in detail, with explicit mitigations for each."
+  Our self-assessment documents 26 known risks in detail, with explicit mitigations for each."
 - **Judging criterion served:** Security and Compliance (intellectual honesty, comprehensive risk register).
 
 ---
@@ -280,13 +280,13 @@ Speaker pacing: ~130–140 words per minute.
   - **Live Web App:** `https://agent-wallet-6vuy.onrender.com`
   - Five commands to verify our entire submission:
     ```sh
-    python -m pytest -q                                # 1,279 unit, e2e, and contract tests pass
+    python -m pytest -q                                # 1,482 unit, e2e, and contract tests pass
     python -m evals.run                                # 46 offline scenarios, 27/28 rule codes
     python -m core.audit.verify docs/evidence/audit-chain.jsonl # Cryptographic hash chain check
     python scripts/checks/check_no_secrets.py         # Clean repository scan (0 secrets)
     python scripts/submission/build_submission_package.py # Builds verified 6-folder package
     ```
-- **Visual:** Verification terminal output snippet showing `1279 passed`, `46/46 passed`, and `OK: verified records (hash chain intact)`.
+- **Visual:** Verification terminal output snippet showing `1482 passed`, `46/46 passed`, and `OK: verified records (hash chain intact)`.
 - **Speaker script (0:15):**
   "To conclude: agent-wallet proves that AI autonomy in Web3 does not require surrendering control. The LLM proposes; deterministic code decides.
   We invite the judges to visit our hosted app, examine our GitHub repository, and run these five verification commands. Thank you."
