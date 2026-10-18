@@ -120,9 +120,9 @@ flowchart TD
 
 ---
 
-### Shot 5: Action 2 — Multi-Protocol Lending & Oracle-Bound Swaps
+### Shot 5: Action 2 — Multi-Protocol Lending & Quote-Bound Swaps
 - **Timestamp:** `2:05 - 2:50` (Duration: 45s)
-- **Visual:** Type a lending instruction for Morpho Blue, then a swap on Uniswap v3. Point out how calldata builders restrict spending to exact allowances and oracle-based slippage.
+- **Visual:** Type a lending instruction for Morpho Blue, then a swap on Uniswap v3. Point out how calldata builders restrict spending to exact allowances and quote-based slippage with oracle price guards.
 - **Exact Clicks & Input:**
   1. In Chat, type:
      ```
@@ -138,7 +138,7 @@ flowchart TD
   > "Next, we diversify into Morpho Blue and Uniswap v3.
   > Notice that the model never writes raw calldata or injects smart contract addresses. It only emits protocol enums.
   > Our code registry provides verified spender addresses, calldata encoders, and position readers.
-  > For the Uniswap swap, the minimum output amount is calculated from the on-chain Aave oracle, protecting the agent against testnet DEX pool manipulation."
+  > For the Uniswap swap, the minimum output amount is calculated from the executable pool quote minus slippage, while an oracle deviation guard protects the agent against mispriced pools."
 
 ---
 
@@ -191,7 +191,7 @@ flowchart TD
   > "Every decision—including our approved deposits, the blocked hostile injection, and the emergency stop—is recorded in an append-only SHA-256 hash chain.
   > When I click 'Verify Chain', the client validates every block sequence, payload hash, and parent link. Nothing can be altered or erased.
   > In the Overview tab, our multi-protocol positions reflect real on-chain state.
-  > BaKhi Wallet proves that AI delegation in Web3 can be both powerful and mathematically constrained. Thank you."
+  > BaKhi Wallet proves that AI delegation in Web3 can be both powerful and verifiably constrained. Thank you."
 
 ---
 

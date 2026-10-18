@@ -62,7 +62,7 @@ flowchart LR
 │   ├── storage/  # Dual-backend persistence (SQLite and PostgreSQL with RLS)
 │   └── tiers/    # Permission tier state machine (T0-T2), emergency stop, approvals
 ├── docs/         # Documentation index, architecture specs, guides, research, and evidence
-├── evals/        # 46 offline evaluation scenarios covering 27 of 28 rule codes
+├── evals/        # 46 offline evaluation scenarios covering 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report)
 ├── scripts/      # Operational scripts: checks, evidence generation, submission packaging
 ├── tests/        # Comprehensive pytest test suite (1,460+ tests across all layers)
 └── ui/           # Zero-build single-page webapp console (plain HTML, CSS, ES modules)

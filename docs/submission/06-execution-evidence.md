@@ -62,8 +62,7 @@ $$\text{prev\_hash}_n = \text{hash}_{n-1} \quad (\text{genesis prev\_hash} = 0^{
 The offline deterministic evaluation harness (`evals/run.py`) executes 46 test scenarios without network access or private keys, validating end-to-end policy compliance:
 
 - **Overall Result:** **PASSED (46 / 46 scenarios, 100.0%)**
-- **Rule Code Catalog Coverage:** **27 / 28 rule codes (96.4%)**
-  *(The 28th code, `TIER.POLICY_CHANGED`, is an administrative status recorded upon preset updates rather than a policy violation).*
+- **Rule Code Catalog Coverage:** **27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report)**
 - **Reproduction:** `python -m evals.run`
 
 ### Results by Scenario Category

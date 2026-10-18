@@ -1,6 +1,6 @@
 # Uniswap v3 Adapter Architecture
 
-The Uniswap v3 adapter (`core/protocols/uniswap_v3.py`) plugs DEX swap execution into the protocol registry. It enables the agent wallet to execute `exactInputSingle` token swaps on Uniswap v3 (Base Sepolia) with oracle-based slippage protection and pool price deviation guardrails.
+The Uniswap v3 adapter (`core/protocols/uniswap_v3.py`) plugs DEX swap execution into the protocol registry. It enables the agent wallet to execute `exactInputSingle` token swaps on Uniswap v3 (Base Sepolia) with quote-based slippage protection and pool price deviation guardrails.
 
 ```mermaid
 flowchart TD

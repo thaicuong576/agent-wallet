@@ -32,18 +32,18 @@ flowchart LR
 
 | Layer | Package | Responsibility | Note |
 | :--- | :--- | :--- | :--- |
-| Contracts | `contracts/` | JSON Schemas, OpenAPI, 28 rule codes, IPS presets, examples | [`contracts.md`](../architecture/core/contracts.md) |
+| Contracts | `contracts/` | JSON Schemas, OpenAPI, 31 rule codes, IPS presets, examples | [`contracts.md`](../architecture/core/contracts.md) |
 | Agent | `core/agent` | Reader (untrusted text to structured facts), Planner (facts to orders), LLM client | [`planner-reader.md`](../architecture/agent/planner-reader.md) |
 | Policy | `core/policy` | IPS loader (immutable, hashed), pure rule engine | [`ips-loader.md`](../architecture/core/ips-loader.md), [`policy-engine.md`](../architecture/core/policy-engine.md) |
 | Gateway | `core/gateway` | propose, tier gate, policy, simulate, sign, record; idempotency | [`gateway.md`](../architecture/core/gateway.md), [`gateway-wiring.md`](../architecture/core/gateway-wiring.md) |
 | Signer | `core/signer` | Local key, signs only chain 84532, never imported outside the gateway | [`signer.md`](../architecture/core/signer.md) |
-| Protocols | `core/protocols` | One registry: each protocol is a spec with its calldata builder, spenders, positions and plain-English description. Aave v3 (USDC, USDT), Aave stata ERC-4626 vaults, Morpho Blue (two allow-listed markets), Uniswap v3 swaps with an oracle-based minimum output | [`protocols.md`](../architecture/protocols/protocols.md), [`aave-adapter.md`](../architecture/protocols/aave-adapter.md), [`aave-stata.md`](../architecture/protocols/aave-stata.md), [`morpho-blue.md`](../architecture/protocols/morpho-blue.md), [`uniswap-v3.md`](../architecture/protocols/uniswap-v3.md) |
+| Protocols | `core/protocols` | One registry: each protocol is a spec with its calldata builder, spenders, positions and plain-English description. Aave v3 (USDC, USDT), Aave stata ERC-4626 vaults, Morpho Blue (two allow-listed markets), Uniswap v3 swaps with a quote-based minimum output and oracle price guard | [`protocols.md`](../architecture/protocols/protocols.md), [`aave-adapter.md`](../architecture/protocols/aave-adapter.md), [`aave-stata.md`](../architecture/protocols/aave-stata.md), [`morpho-blue.md`](../architecture/protocols/morpho-blue.md), [`uniswap-v3.md`](../architecture/protocols/uniswap-v3.md) |
 | Risk | `core/risk` | Risk inputs by protocol and market, read from chain (Aave reserves, Morpho markets, Uniswap pools), fail closed, each field labelled on-chain or reference; offline fixtures for tests | [`risk-inputs.md`](../architecture/agent/risk-inputs.md) |
 | Tiers | `core/tiers` | Persistent tier, emergency stop, approval queue; read-only view vs owner controls | [`tiers.md`](../architecture/core/tiers.md) |
 | Audit | `core/audit` | Append-only SQLite hash chain, verifier, JSONL export | [`audit-log.md`](../architecture/core/audit-log.md) |
 | Interface | `api`, `ui` | REST API from the OpenAPI contract; web app with chat as home, portfolio, activity, rules, owner sign-in, step-up signatures | [`api.md`](../architecture/webapp/api.md), [`ui.md`](../architecture/webapp/ui.md), [`webapp.md`](../architecture/webapp/webapp.md) |
 | Hosting and storage | `core/storage`, `Dockerfile` | Multi-owner mode: per-owner agent wallet, encrypted keystore, Postgres (row level security) or SQLite, jobs, chat threads | [`custody-tenancy.md`](../architecture/webapp/custody-tenancy.md), [`storage.md`](../architecture/webapp/storage.md), [`deployment.md`](../guides/deployment.md) |
-| Evaluation | `evals` | Offline replay harness, 46 scenarios, 27 of 28 rule codes covered (the 28th is a status, not a violation), report | [`evals.md`](../architecture/agent/evals.md) |
+| Evaluation | `evals` | Offline replay harness, 46 scenarios, 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report), report | [`evals.md`](../architecture/agent/evals.md) |
 
 ### 2b. Hosted web app, protocol registry and trust boundary
 
@@ -73,7 +73,7 @@ flowchart LR
 - **Trust boundary today.** The owner keeps the rules and the kill switch: tier, preset, approvals and releasing a stop need a fresh owner signature bound to that action and its parameters. The server holds the agent's key (generated server-side, encrypted at rest, never returned by a route) and can only use it through the gateway, which enforces the owner's IPS. A compromised server could sign anything its keys allow, so the keys hold testnet value only. This is stated on every page and in known risks K7 and K13.
 - **Path to mainnet (out of scope for this submission).** Replace the server-held key with a smart account whose session key is limited by the same policy (ERC-4337 or a comparable account standard), or with threshold signing, so the server can no longer sign outside the owner's limits even if compromised. The policy engine, tiers, registry and audit log stay unchanged; only the signer behind the gateway changes.
 - **Protocol registry.** A protocol is a spec registered in code (`core/protocols/registry.py`): the order carries enums and amounts only, never an address. Spenders, targets, fee tiers and market parameters live in the spec; the gateway re-checks that the protocol and market are enabled after the policy decision (`ACCESS.PROTOCOL_NOT_ENABLED`, `ACCESS.MARKET_NOT_ALLOWED`) and the IPS universe must list the protocol. Presets (`conservative`, `diversified`) are files under `contracts/presets/`; choosing one needs an owner signature bound to the preset.
-- **Valuation.** Every USD figure goes through one function over a token registry; a token without a readable price is denied, never valued at zero. Swaps compute their minimum output from the Aave oracle, never from the pool.
+- **Valuation.** Every USD figure goes through one function over a token registry; a token without a readable price is denied, never valued at zero. Swaps compute the minimum output from the executable pool quote minus slippage, with a guard refusing pools more than 3% worse than the oracle fair value.
 
 ## 3. Core algorithm: one order, end to end
 `Gateway.propose(order)`:
@@ -108,7 +108,7 @@ Summarised here, argued in full in [`security/self-assessment.md`](05-security-s
 - **Fail closed**: missing data, unreadable tier, unset owner token, unsupported simulation all deny.
 - **Testnet containment**: chain id check in the signer; testnet addresses only.
 - **Secrets**: `.env` ignored, names only in `.env.example`, secret scan in CI.
-- **Evidence over claims**: every control names its test; the eval harness exercises 27 of 28 rule codes offline (the 28th, `TIER.POLICY_CHANGED`, is a status, not a violation).
+- **Evidence over claims**: every control names its test; the eval harness exercises 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report).
 
 ## 5. Data model
 ```mermaid

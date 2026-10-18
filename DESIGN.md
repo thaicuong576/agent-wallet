@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: BaKhi Wallet design system
-description: Design system for the BaKhi Wallet webapp. Derived from the Oracle analysis (getdesign), adapted with a bright light-yellow accent for a fintech feel. Warm neutral ladder, dark ink text, yellow only for primary actions and key highlights.
+description: Design system for the BaKhi Wallet webapp. Warm neutral ladder, dark ink text, yellow only for primary actions and key highlights.
 
 colors:
   primary: "#ffd23f"
@@ -47,85 +47,85 @@ typography:
     lineHeight: 43.2px
     letterSpacing: 0
   display-sans-lg:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 40px
     fontWeight: 300
     lineHeight: 52px
     letterSpacing: 0
   display-sans-md:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 32px
     fontWeight: 300
     lineHeight: 44px
     letterSpacing: 0
   heading-xl:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 28px
     fontWeight: 800
     lineHeight: 33.6px
     letterSpacing: 0
   heading-lg:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 24px
     fontWeight: 800
     lineHeight: 28.8px
     letterSpacing: 0
   heading-md:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 20px
     fontWeight: 800
     lineHeight: 24px
     letterSpacing: 0
   heading-sm:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 18px
     fontWeight: 800
     lineHeight: 21.6px
     letterSpacing: 0
   heading-card:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 24px
     fontWeight: 600
     lineHeight: 32px
     letterSpacing: 0
   lead:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 24px
     fontWeight: 400
     lineHeight: 33.6px
     letterSpacing: 0
   body:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 16px
     fontWeight: 400
     lineHeight: 22.4px
     letterSpacing: 0
   body-loose:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 16px
     fontWeight: 350
     lineHeight: 24px
     letterSpacing: 0
   body-strong:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 16px
     fontWeight: 700
     lineHeight: 22.4px
     letterSpacing: 0
   label:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 14px
     fontWeight: 500
     lineHeight: 16.8px
     letterSpacing: 0
   label-strong:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 14px
     fontWeight: 600
     lineHeight: 20px
     letterSpacing: 0
   caption:
-    fontFamily: Oracle Sans
+    fontFamily: the reference sans
     fontSize: 12px
     fontWeight: 400
     lineHeight: 20px
@@ -413,16 +413,16 @@ components:
 
 # BaKhi Wallet design system
 
-> Source: `npx getdesign@latest add oracle` (an analysis of Oracle's design language), adapted for BaKhi Wallet by the owner's request. **This file is the single source of truth for the webapp's look and feel.** Architecture and behaviour live in [`docs/design/webapp/system-design.md`](docs/design/webapp/system-design.md).
+> Design system for BaKhi Wallet. **This file is the single source of truth for the webapp's look and feel.** Architecture and behaviour live in [`docs/design/webapp/system-design.md`](docs/design/webapp/system-design.md).
 
 ## Project adaptations (read first; they win over everything below)
 
 | Topic | Rule |
 | :--- | :--- |
-| Accent | Bright light yellow replaces Oracle's dark primary and red mark: `primary #ffd23f`, `primary-pressed #e9b800`, `accent-gold-soft #fff1b8`. Yellow is a **fill** for primary actions, active markers and highlights; never use yellow as text colour on white (contrast fails). |
+| Accent | Bright light yellow replaces the reference design's dark primary and red mark: `primary #ffd23f`, `primary-pressed #e9b800`, `accent-gold-soft #fff1b8`. Yellow is a **fill** for primary actions, active markers and highlights; never use yellow as text colour on white (contrast fails). |
 | Text on yellow | Always `on-accent #161513`. White text only on the dark ink surfaces (`ink`, `ink-deep`, `primary` is not one of them any more). |
 | Brand mark | `brand-mark #8a6700` (dark gold) so a wordmark stays legible on white; pair it with a yellow underline or chip. |
-| Fonts | `Oracle Sans` is proprietary and not shipped. Use the system stack `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif` for UI and `Georgia, serif` for display headings; no web fonts, no CDN (judges may be offline). |
+| Fonts | `the reference sans` is proprietary and not shipped. Use the system stack `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif` for UI and `Georgia, serif` for display headings; no web fonts, no CDN (judges may be offline). |
 | Semantic states | Executed or confirmed: forest `band-forest`; blocked by policy: `error`; waiting for approval: yellow soft chip with dark text; failed: `error` outline; scripted, fallback or reference values: neutral tint chip labelled in words. State is never conveyed by colour alone (icon and word too). |
 | Dark mode | Supported: swap `canvas` to `ink-deep`, `ink` to `canvas`, keep the same yellow with `on-accent` text. |
 | Radius, spacing, elevation | As defined below (small radii, generous whitespace, almost no shadows). |
@@ -430,22 +430,22 @@ components:
 | Content tone | Plain language. A decision is explained in a sentence a non-expert can read; rule codes appear as secondary detail. |
 | Honesty | Reference prices, scripted planner output and testnet-only status are always labelled in the UI. |
 
-## Original analysis (Oracle)
+## Original analysis (reference design)
 
 
 ## Overview
 
-Oracle's web system is unusual for an enterprise brand in that it barely uses colour at all. The page ground is a six-step ladder of warm neutrals that runs from pure white through three off-whites to a warm near-black, and that ladder does almost all the structural work. Sections are distinguished from one another not by cards or rules or shadows but by which rung of the ladder they sit on, stacked full-bleed and square-cornered so the page reads as a series of tonal shifts rather than a stack of containers.
+the reference design's web system is unusual for an enterprise brand in that it barely uses colour at all. The page ground is a six-step ladder of warm neutrals that runs from pure white through three off-whites to a warm near-black, and that ladder does almost all the structural work. Sections are distinguished from one another not by cards or rules or shadows but by which rung of the ladder they sit on, stacked full-bleed and square-cornered so the page reads as a series of tonal shifts rather than a stack of containers.
 
-The famous Oracle red appears exactly once per page, in the masthead wordmark, and nowhere else. Every action on the site is carried by `{colors.primary}`, a warm dark charcoal, in a small 4px-radius button that never grows louder than its label. The restraint is deliberate and total: there is no coloured CTA, no accent-tinted card, no gradient. When colour does arrive it arrives at full-band scale, a whole section width of `{colors.band-teal}` or `{colors.band-forest}`, and then the page returns to neutral.
+The reference red appears exactly once per page, in the masthead wordmark, and nowhere else. Every action on the site is carried by `{colors.primary}`, a warm dark charcoal, in a small 4px-radius button that never grows louder than its label. The restraint is deliberate and total: there is no coloured CTA, no accent-tinted card, no gradient. When colour does arrive it arrives at full-band scale, a whole section width of `{colors.band-teal}` or `{colors.band-forest}`, and then the page returns to neutral.
 
-What gives the system its character is the type. Two display registers run side by side. The corporate index sets its headings in Oracle Sans at weight 300, very large and very light, while the product pages set theirs in Georgia, a bookish transitional serif that is genuinely surprising on a database landing page. Beneath both, Oracle Sans handles everything else across a wide weight range, dropping to 350 for running copy and jumping all the way to 800 for section headings, so the contrast between a paragraph and the heading above it is enormous without either changing size very much. A single gold rule, 40 by 4 pixels, sits under the hero headline. It is the only decorative mark in the system, and against this much neutral it does a lot of work.
+What gives the system its character is the type. Two display registers run side by side. The corporate index sets its headings in the reference sans at weight 300, very large and very light, while the product pages set theirs in Georgia, a bookish transitional serif that is genuinely surprising on a database landing page. Beneath both, the reference sans handles everything else across a wide weight range, dropping to 350 for running copy and jumping all the way to 800 for section headings, so the contrast between a paragraph and the heading above it is enormous without either changing size very much. A single gold rule, 40 by 4 pixels, sits under the hero headline. It is the only decorative mark in the system, and against this much neutral it does a lot of work.
 
 **Key Characteristics:**
 - A six-rung warm neutral ladder — `{colors.canvas}` → `{colors.canvas-soft}` → `{colors.canvas-tint}` → `{colors.canvas-warm}` → `{colors.hairline}` → `{colors.ink-deep}` — carrying nearly every surface
 - `{colors.brand-mark}` reserved for the wordmark and used nowhere else in the interface
 - Every action in one warm charcoal `{colors.primary}` at `{rounded.xs}`, with no coloured CTA anywhere
-- Two display registers, being Oracle Sans at weight 300 on the corporate index and Georgia serif across the product pages
+- Two display registers, being the reference sans at weight 300 on the corporate index and Georgia serif across the product pages
 - An extreme body-to-heading weight jump, from 350/400 running copy straight to 800 section headings
 - Full-bleed square-cornered bands with no shadows — depth comes from tonal steps alone
 - A 40 × 4px `{colors.accent-gold}` rule under the hero headline as the system's only ornament
@@ -454,7 +454,7 @@ What gives the system its character is the type. Two display registers run side 
 ## Colors
 
 ### Brand & Accent
-- **Oracle Red** (`{colors.brand-mark}` — #c74634): the wordmark, and only the wordmark. It appears in the masthead at the top of every page and is not used for any button, link, border, band or highlight. Elsewhere on the page red shows up only inside photography and inside logos printed on product hardware.
+- **Reference Red** (`{colors.brand-mark}` — #c74634): the wordmark, and only the wordmark. It appears in the masthead at the top of every page and is not used for any button, link, border, band or highlight. Elsewhere on the page red shows up only inside photography and inside logos printed on product hardware.
 - **Action Charcoal** (`{colors.primary}` — #312d2a): the fill behind every primary action on the site. Warm rather than neutral, and a clear step lighter than `{colors.ink}` so a filled button reads as an object rather than as a block of text.
 - **Action Charcoal Pressed** (`{colors.primary-pressed}` — #47423e): the active state of that button.
 - **On Primary** (`{colors.on-primary}` — #ffffff): the label on a filled action, and the text colour on every inverted surface.
@@ -493,7 +493,7 @@ Chromatic colour enters the system only as a full section band, never as a contr
 ### Font Family
 Three families, with a clear division of labour.
 
-**Oracle Sans** is the workhorse — a variable humanist sans with open apertures and a slightly squared construction. Its variable axis is exercised hard: the declared base weight is 350, running copy sits at 350 or 400, and section headings jump all the way to 800. It also supplies the corporate index's display sizes at weight 300.
+**the reference sans** is the workhorse — a variable humanist sans with open apertures and a slightly squared construction. Its variable axis is exercised hard: the declared base weight is 350, running copy sits at 350 or 400, and section headings jump all the way to 800. It also supplies the corporate index's display sizes at weight 300.
 
 **Georgia** is the display serif on the product pages. It carries h1, h2 and h3 at 36 to 56px in regular weight, with its bracketed serifs and ball terminals reading as distinctly bookish next to the sans beneath it. It is declared as an explicit stack led by Georgia, so it renders as Georgia on virtually every machine rather than falling back.
 
@@ -506,8 +506,8 @@ Three families, with a clear division of labour.
 | `{typography.display-serif-xl}` | 56px | 400 | 67.2px | 0 | Product hero headline, Georgia |
 | `{typography.display-serif-lg}` | 40px | 400 | 48px | 0 | Major section headline, Georgia |
 | `{typography.display-serif-md}` | 36px | 400 | 43.2px | 0 | Product page headline and section headline, Georgia |
-| `{typography.display-sans-lg}` | 40px | 300 | 52px | 0 | Corporate index section headline, Oracle Sans Light |
-| `{typography.display-sans-md}` | 32px | 300 | 44px | 0 | Corporate index page headline, Oracle Sans Light |
+| `{typography.display-sans-lg}` | 40px | 300 | 52px | 0 | Corporate index section headline, the reference sans Light |
+| `{typography.display-sans-md}` | 32px | 300 | 44px | 0 | Corporate index page headline, the reference sans Light |
 | `{typography.heading-xl}` | 28px | 800 | 33.6px | 0 | Product section heading |
 | `{typography.heading-lg}` | 24px | 800 | 28.8px | 0 | Section and channel-column heading |
 | `{typography.heading-md}` | 20px | 800 | 24px | 0 | Sub-section heading |
@@ -529,7 +529,7 @@ Line-height moves in two registers. Display and heading roles run at a tight 1.2
 The weight range is the most distinctive thing about the system. Running copy sits at 350 or 400 and section headings sit at 800, with almost nothing in between, so hierarchy is carried by weight far more than by size. A 24px 800-weight heading over 16px 400-weight body is a much sharper break than the 1.5× size ratio alone would suggest. The 300-weight display sizes on the corporate index run in the opposite direction, being lighter than the body text they sit above.
 
 ### Note on Font Substitutes
-**Oracle Sans** is a proprietary variable face. The closest open substitute is **Inter**, which shares the humanist skeleton and open apertures and offers a full variable weight axis including the 350 and 800 stops this system depends on; **Source Sans 3** is a warmer alternative but tops out lower and needs the 800 roles dropped to 700. **Georgia** ships with virtually every operating system and needs no substitution; if a webfont is required, **Gelasio** is metric-compatible with it. **Consolas** substitutes cleanly with **JetBrains Mono**. Keep the 1.2 heading line-height, the 1.4 body line-height, and zero tracking on any substitute.
+**the reference sans** is a proprietary variable face. The closest open substitute is **Inter**, which shares the humanist skeleton and open apertures and offers a full variable weight axis including the 350 and 800 stops this system depends on; **Source Sans 3** is a warmer alternative but tops out lower and needs the 800 roles dropped to 700. **Georgia** ships with virtually every operating system and needs no substitution; if a webfont is required, **Gelasio** is metric-compatible with it. **Consolas** substitutes cleanly with **JetBrains Mono**. Keep the 1.2 heading line-height, the 1.4 body line-height, and zero tracking on any substitute.
 
 ## Layout
 
@@ -794,7 +794,7 @@ All six band variants are full-bleed, square-cornered and padded `48px 0`. They 
 - Don't use pure black. `{colors.ink}` is warm and deliberately a few points off it.
 - Don't round a band, a section, a masthead or a footer — `{rounded.none}` on full-width chrome is the rule.
 - Don't mix the two card radii. `{rounded.xl}` belongs to the corporate index and `{rounded.md}` to the product pages; using both on one page breaks the template read.
-- Don't set a headline in Oracle Sans on a product page or in Georgia on the corporate index — the two registers do not cross templates.
+- Don't set a headline in the reference sans on a product page or in Georgia on the corporate index — the two registers do not cross templates.
 - Don't underline `{components.link-inline}`; `{colors.link}` alone carries the affordance.
 - Don't add a fourth or fifth tint between the ladder rungs. They are already close enough that another step would be invisible.
 - Don't give `{components.hero-eyebrow-rule}` a second colour or a second instance per page; one 40 × 4px gold bar is the whole ornament budget.
