@@ -25,8 +25,8 @@ DEFAULT_CONNECT_TIMEOUT_S = 10
 
 db_calls: contextvars.ContextVar[int] = contextvars.ContextVar("db_calls", default=0)
 db_ms: contextvars.ContextVar[int] = contextvars.ContextVar("db_ms", default=0)
-_request_db_acc: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
-    "_request_db_acc", default=None
+request_db_acc: contextvars.ContextVar[list[int] | None] = contextvars.ContextVar(
+    "request_db_acc", default=None
 )
 
 
@@ -48,7 +48,7 @@ def parse_pool_size(raw: str | None, default: int = DEFAULT_POOL_SIZE) -> int:
 
 def db_stats() -> tuple[int, int]:
     """Return (calls, ms) for the current context."""
-    acc = _request_db_acc.get()
+    acc = request_db_acc.get()
     if acc is not None:
         return (acc[0], acc[1])
     return (db_calls.get(), db_ms.get())
@@ -186,7 +186,7 @@ class PgPool:
             try:
                 db_calls.set(db_calls.get() + 1)
                 db_ms.set(db_ms.get() + elapsed_ms)
-                acc = _request_db_acc.get()
+                acc = request_db_acc.get()
                 if acc is not None:
                     acc[0] += 1
                     acc[1] += elapsed_ms
