@@ -31,6 +31,28 @@ Each transaction above was independently verified using standard Python `urllib`
 ```
 All returned valid receipt structures with `status: "0x1"` confirming execution in the specified Base Sepolia block.
 
+## 1b. Multi-protocol run on the hosted app (2026-10-18)
+
+A scripted owner session (`scripts/evidence/webapp_evidence_loop.py`) sent chat instructions to the hosted app. Full table, refusals and notes: [`docs/evidence/defi-evidence-loop.md`](../evidence/defi-evidence-loop.md). Every hash below is a Base Sepolia transaction sent by the agent through the gateway (policy engine, simulation, signer, audit chain).
+
+| # | Scenario | Step | Tx Hash |
+| :---: | :--- | :--- | :--- |
+| 1 | aave-supply | approve | [`0xf5ae62...3d053b`](https://sepolia.basescan.org/tx/0xf5ae62c9926ebd4c3abca7b97352a30c90b85f8367b1f79f8e8fd7c6c73d053b) |
+| 2 | aave-supply | supply | [`0x4993ce...9f88af`](https://sepolia.basescan.org/tx/0x4993ce41fe6a6920b512db4eee0c9296c44bec163f649c73bfb629e90b9f88af) |
+| 3 | swap | approve | [`0xec8d67...3897f4`](https://sepolia.basescan.org/tx/0xec8d67e2d25cff95a45e0cd454d165e5b4e2e901baeac1769da5f73b8d3897f4) |
+| 4 | swap | exactInputSingle | [`0xe5b0da...94eda4`](https://sepolia.basescan.org/tx/0xe5b0dae4156a7eff167de570c59445a31c62da02d9c3e6a293088095c894eda4) |
+| 5 | stata-deposit | approve | [`0x5383a3...b819ad`](https://sepolia.basescan.org/tx/0x5383a377de3ba5afa0f640919fe674d83309bad0fb7b1963f7310a1e18b819ad) |
+| 6 | stata-deposit | supply | [`0x532d86...3522cb`](https://sepolia.basescan.org/tx/0x532d86e74e21e375e298466636907410f0c1fd5aebc75c88fd393c900e3522cb) |
+| 7 | morpho-wbtc | approve | [`0xa9fc45...78c869`](https://sepolia.basescan.org/tx/0xa9fc45898923248c3fc0222404141e7ce851a2c75daa5699145b4ed01a78c869) |
+| 8 | morpho-wbtc | supply | [`0x20ef51...fc213b`](https://sepolia.basescan.org/tx/0x20ef510012788bd10dd604a20cb004daf945381a3f14693ff2e3db9b47fc213b) |
+| 9 | morpho-cbeth | approve | [`0xba8db0...b42859`](https://sepolia.basescan.org/tx/0xba8db017f6701277df3196ff4a8d4f7cbfc5bd6ffb64c18b4851d5cac1b42859) |
+| 10 | stata-withdraw | withdraw | [`0x99f787...f41824`](https://sepolia.basescan.org/tx/0x99f787c3d43d5628eec02cc68cb9ab7449c90f4104245c24bf9ea69440f41824) |
+| 11 | morpho-withdraw | withdraw | [`0x3f15f2...c9012f`](https://sepolia.basescan.org/tx/0x3f15f2f249897a8caf14f9816c8e4db92cda0e6128f4d72e55a54ad326c9012f) |
+| 12 | hostile-large | approve | [`0x6441a5...2a2228`](https://sepolia.basescan.org/tx/0x6441a52257b965c82b4e10ea3543faa208d35fb503150db9f41becc4a22a2228) |
+| 13 | hostile-large | supply | [`0x6b7477...da756f`](https://sepolia.basescan.org/tx/0x6b74774cd3e1e5042a4f0f04a6894643711041d7664a404acf583f5509da756f) |
+
+These hashes are in addition to the 10 listed in section 1. All 13 receipts were re-queried read-only with `eth_getTransactionReceipt` on 2026-10-18 and returned status `0x1`.
+
 ---
 
 ## 2. Cryptographic Audit Chain Verification
