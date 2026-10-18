@@ -50,8 +50,10 @@ A scripted owner session (`scripts/evidence/webapp_evidence_loop.py`) sent chat 
 | 11 | morpho-withdraw | withdraw | [`0x3f15f2...c9012f`](https://sepolia.basescan.org/tx/0x3f15f2f249897a8caf14f9816c8e4db92cda0e6128f4d72e55a54ad326c9012f) |
 | 12 | hostile-large | approve | [`0x6441a5...2a2228`](https://sepolia.basescan.org/tx/0x6441a52257b965c82b4e10ea3543faa208d35fb503150db9f41becc4a22a2228) |
 | 13 | hostile-large | supply | [`0x6b7477...da756f`](https://sepolia.basescan.org/tx/0x6b74774cd3e1e5042a4f0f04a6894643711041d7664a404acf583f5509da756f) |
+| 14 | screenshot | approve | [`0x3c99e2...59fca7`](https://sepolia.basescan.org/tx/0x3c99e2eda7308b9f7c6c21eb3c0c2e0a674aaef44d39c657de956c2c6859fca7) |
+| 15 | screenshot | supply | [`0x7cb88a...fd21f8`](https://sepolia.basescan.org/tx/0x7cb88acefd428d085a0b5a7ba14de97a442752f54deb1637ebef243aa4fd21f8) |
 
-These hashes are in addition to the 10 listed in section 1. All 13 receipts were re-queried read-only with `eth_getTransactionReceipt` on 2026-10-18 and returned status `0x1`.
+These hashes are in addition to the 10 listed in section 1. All 15 receipts were re-queried read-only with `eth_getTransactionReceipt` on `https://sepolia.base.org` on 2026-10-18 and returned status `0x1`.
 
 ---
 

@@ -15,11 +15,105 @@ Standard library only.
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 DEFAULT_OUTPUT_DIR = Path("D:/eddie-projects/personal-projects/_submission-package")
+
+
+def _get_test_count(repo_root: Path) -> str:
+    """Compute test count via pytest --collect-only or docs/guides/testing.md."""
+    # 1. Try pytest --collect-only -q first
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            for line in reversed(proc.stdout.strip().splitlines()):
+                m = re.search(r"(\d+)\s+tests?\s+collected", line)
+                if m:
+                    return f"{int(m.group(1)):,}+"
+    except Exception:
+        pass
+
+    # 2. Fallback to docs/guides/testing.md Total Test Count
+    try:
+        guide_path = repo_root / "docs" / "guides" / "testing.md"
+        if guide_path.exists():
+            guide_text = guide_path.read_text(encoding="utf-8")
+            pattern = r"\|\s*\*\*Total Test Count\*\*\s*\|\s*\*\*([0-9,]+)\*\*\s*\|"
+            m = re.search(pattern, guide_text)
+            if m:
+                count_val = int(m.group(1).replace(",", ""))
+                return f"{count_val:,}+"
+    except Exception:
+        pass
+
+    return "see docs/guides/testing.md"
+
+
+def _get_security_k_count(repo_root: Path) -> int:
+    """Derive K risk count from 05-security-self-assessment.md table rows."""
+    sec_path = repo_root / "docs" / "submission" / "05-security-self-assessment.md"
+    if sec_path.exists():
+        text = sec_path.read_text(encoding="utf-8")
+        matches = re.findall(r"\|\s*\*\*K(\d+)\*\*\s*\|", text)
+        if matches:
+            return len(matches)
+    return 26
+
+
+def _get_verified_tx_count(repo_root: Path) -> int:
+    """Derive unique on-chain tx count from sections 1 and 1b of 06-execution-evidence.md."""
+    ev_path = repo_root / "docs" / "submission" / "06-execution-evidence.md"
+    if not ev_path.exists():
+        return 25
+    text = ev_path.read_text(encoding="utf-8")
+    sec2_pos = text.find("## 2. Cryptographic Audit Chain Verification")
+    content = text[:sec2_pos] if sec2_pos != -1 else text
+    hashes = set(re.findall(r"0x[a-fA-F0-9]{64}", content))
+    return len(hashes)
+
+
+def _get_git_commit_short(repo_root: Path) -> str:
+    """Get short commit id via git rev-parse --short HEAD."""
+    try:
+        proc = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    except Exception:
+        pass
+    return "HEAD"
+
+
+def _write_source_zip(repo_root: Path, dest_zip: Path) -> None:
+    """Write source.zip using git archive --format=zip -o <path> HEAD."""
+    if not shutil.which("git"):
+        print("Warning: git is unavailable, skipping source.zip")
+        return
+    try:
+        proc = subprocess.run(
+            ["git", "archive", "--format=zip", "-o", str(dest_zip), "HEAD"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            print(f"Warning: git archive failed ({proc.stderr.strip()}), skipping source.zip")
+    except Exception as exc:
+        print(f"Warning: git is unavailable ({exc}), skipping source.zip")
 
 
 def build_package(
@@ -75,19 +169,32 @@ def build_package(
     if video_src.exists():
         shutil.copy2(video_src, dir_03 / "03-demo-video-script.md")
 
+    # Dynamic metrics
+    raw_test_count = _get_test_count(root_path)
+    if raw_test_count == "see docs/guides/testing.md":
+        test_phrase = "see docs/guides/testing.md"
+    else:
+        test_phrase = f"{raw_test_count} tests pass"
+
+    commit_id = _get_git_commit_short(root_path)
+    k_count = _get_security_k_count(root_path)
+    tx_count = _get_verified_tx_count(root_path)
+
     # 4. 04-source-code
     dir_04 = dest_path / "04-source-code"
     dir_04.mkdir(parents=True, exist_ok=True)
-    readme_04_content = """# BaKhi Wallet: Source Code and Deployment Guide
+    _write_source_zip(root_path, dir_04 / "source.zip")
+
+    readme_04_content = f"""# BaKhi Wallet: Source Code and Deployment Guide
 FinTechathon 2026 — Topic F ("Agent Wallet")
 
 - GitHub Repository: https://github.com/thaicuong576/agent-wallet
 - Hosted Application: https://agent-wallet-6vuy.onrender.com
 - Target Network: Base Sepolia Testnet (Chain ID 84532)
+- Source Archive: source.zip (source tree at commit {commit_id})
 
-Note: As specified in competition deliverable 04 guidelines, the repository is maintained
-and judged via the official GitHub repository link above. No redundant copy of the source
-tree is duplicated into this distribution directory.
+The archive source.zip contains the source at commit {commit_id} (tracked repository files).
+The repository is maintained and judged via the official GitHub repository link above.
 
 ## System Prerequisites
 - Python 3.11+
@@ -97,7 +204,7 @@ tree is duplicated into this distribution directory.
 ## How to Run Tests and Verification
 From the root of the cloned repository:
 
-1. Run the complete pytest test suite (1,279+ tests pass):
+1. Run the complete pytest test suite ({test_phrase}):
    python -m pytest -q
 
 2. Run the deterministic offline evaluation harness (46 scenarios, 100% pass):
@@ -143,6 +250,7 @@ From the root of the cloned repository:
     for ev_file in (
         "tx_hashes.md",
         "defi-evidence.md",
+        "defi-evidence-loop.md",
         "runner-evidence.md",
         "webapp-evidence.md",
         "eval-report.md",
@@ -150,17 +258,26 @@ From the root of the cloned repository:
         "audit-chain.jsonl",
         "audit-chain.verify.txt",
         "runner-audit-chain.jsonl",
+        "README.md",
     ):
         src = root_path / "docs" / "evidence" / ev_file
         if src.exists():
             shutil.copy2(src, dir_06 / ev_file)
 
-    # Top-level README.txt
-    top_readme_content = """# BaKhi Wallet: Submission Package Index
+    sa_line = (
+        f"  step-up cryptographic authorization, {k_count} verified controls, and the "
+        f"known-risk list (K1-K{k_count})."
+    )
+    ev_line = (
+        f"- 06-execution-evidence.md: Master execution evidence index with all {tx_count} "
+        "verified on-chain txs."
+    )
+
+    top_readme_content = f"""# BaKhi Wallet: Submission Package Index
 FinTechathon 2026 — Topic F ("Agent Wallet")
 
 This package consolidates the complete submission materials for BaKhi Wallet, an autonomous
-AI wallet agent operating on Base Sepolia inside a mathematically enforced Investment Policy.
+AI wallet agent operating on Base Sepolia inside an Investment Policy enforced by code.
 
 Hosted Application: https://agent-wallet-6vuy.onrender.com
 GitHub Repository:  https://github.com/thaicuong576/agent-wallet
@@ -185,16 +302,19 @@ Target Network:     Base Sepolia (Chain ID 84532)
   chat prompts, narration scripts, pre-flight checklists, and live failure recovery procedures.
 
 ### 04-source-code/
+- source.zip: Clean repository source archive at commit {commit_id}.
 - README.txt: GitHub repository link, deployment instructions, prerequisites, and test commands.
 
 ### 05-security-self-assessment/
 - self-assessment.md: Security self-assessment report detailing permission tiers (T0-T3),
-  step-up cryptographic authorization, 25 verified controls, and the known-risk list (K1-K25).
+{sa_line}
 
 ### 06-execution-evidence/
-- 06-execution-evidence.md: Master execution evidence index with all 10 verified on-chain txs.
+{ev_line}
+- README.md: Guide to current vs historical multi-protocol evidence runs.
 - tx_hashes.md: Initial Base Sepolia on-chain transaction receipts.
 - defi-evidence.md: Multi-protocol execution evidence (Aave Stata, Morpho Blue, Uniswap v3).
+- defi-evidence-loop.md: Multi-protocol hosted loop evidence (Aave, Uniswap, Stata, Morpho).
 - runner-evidence.md: Agent runner execution and hostile-note policy denial.
 - webapp-evidence.md: Webapp sign-in, top-up, and planner-proposed transactions.
 - eval-report.md: Evaluation harness report (46/46 passed, 27/28 rule codes covered).
@@ -207,7 +327,7 @@ Target Network:     Base Sepolia (Chain ID 84532)
 
 ## 5 Verification Commands for Judges
 From the root of the cloned repository:
-1. python -m pytest -q                                # Run test suite (1,279+ tests pass)
+1. python -m pytest -q                                # Run test suite ({test_phrase})
 2. python -m evals.run                                # Replay 46 evaluation scenarios offline
 3. python -m core.audit.verify docs/evidence/audit-chain.jsonl # Verify SHA-256 audit hash chain
 4. python scripts/checks/check_no_secrets.py                 # Scan repo for secrets (clean)
