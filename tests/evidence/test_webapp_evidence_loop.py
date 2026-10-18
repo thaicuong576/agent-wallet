@@ -6,20 +6,25 @@ import argparse
 import json
 import re
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from scripts.evidence.webapp_evidence_loop import (
     SCENARIOS,
+    TX_CAP_PER_HOUR,
     Throttle,
+    TxThrottle,
     check_verdict,
     compute_counts,
     is_rate_limited,
     main,
+    parse_iso_timestamp,
     parse_retry_after,
     read_state_file,
     render_report,
     run_loop,
+    seed_throttles,
 )
 
 
@@ -547,3 +552,332 @@ def test_pure_logic_helpers() -> None:
     )
     assert "Multi-protocol loop evidence" in report
     assert "Audit verification" in report
+
+
+def test_tx_throttle_never_exceeds_cap_in_3600s() -> None:
+    current_time = 1000.0
+    sleep_calls: list[float] = []
+
+    def fake_now() -> float:
+        return current_time
+
+    def fake_sleep(dur: float) -> None:
+        nonlocal current_time
+        sleep_calls.append(dur)
+        current_time += dur
+
+    cap = TX_CAP_PER_HOUR
+    tx_throttle = TxThrottle(cap=cap, now_fn=fake_now, sleep_fn=fake_sleep)
+
+    executed_txs: list[float] = []
+    # Send 12 scenarios needing 2 tx each
+    for _ in range(12):
+        tx_throttle.wait_for(n_needed=2)
+        tx_throttle.record_txs(count=2)
+        executed_txs.append(current_time)
+        executed_txs.append(current_time)
+        current_time += 45.0
+
+    # Invariant: in any 3600s rolling window, no more than cap tx were executed
+    for t in executed_txs:
+        window_count = sum(1 for s in executed_txs if t - 3600.0 < s <= t)
+        assert window_count <= cap, f"At t={t}, found {window_count} txs > {cap}"
+
+    assert len(sleep_calls) > 0
+
+
+def test_tx_throttle_validation() -> None:
+    try:
+        TxThrottle(cap=0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected ValueError for cap=0")
+
+    t = TxThrottle(cap=5)
+    try:
+        t.wait_for(n_needed=0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected ValueError for n_needed=0")
+
+    try:
+        t.wait_for(n_needed=6)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("Expected ValueError for n_needed > cap")
+
+
+def test_hostile_scenarios_do_not_wait(tmp_path: Path) -> None:
+    chat_map: dict[str, list[dict[str, Any]]] = {}
+    for _name, phrasings, _exp in SCENARIOS:
+        chat_map[phrasings[0]] = []
+
+    client = FakeClient(chat_steps_map=chat_map)
+    out_file = tmp_path / "out.md"
+    state_file = tmp_path / "state.jsonl"
+
+    sim_time = 1000.0
+    sleep_calls: list[float] = []
+
+    def fake_now() -> float:
+        return sim_time
+
+    def fake_sleep(dur: float) -> None:
+        nonlocal sim_time
+        sleep_calls.append(dur)
+        sim_time += dur
+
+    orig_scenarios = list(SCENARIOS)
+    hostile_scenarios = [s for s in orig_scenarios if s[2] == "deny_or_noaction"]
+    try:
+        SCENARIOS.clear()
+        SCENARIOS.append(hostile_scenarios[0])
+
+        # Pre-seed state file with 5 executed transactions within the last 10 minutes
+        # so that TxThrottle is completely saturated
+        pre_record = {
+            "round": 1,
+            "scenario": "previous-step",
+            "status": "succeeded",
+            "error_code": None,
+            "expectation": "execute",
+            "verdict": "executed",
+            "verdict_ok": True,
+            "steps": [
+                {"function": "act", "outcome": "executed", "tx_hash": f"0x{i:064x}"}
+                for i in range(1, 6)
+            ],
+            "timestamp": "2026-10-18T10:00:00Z",
+        }
+        ref_time = parse_iso_timestamp("2026-10-18T10:00:00Z")
+        assert ref_time is not None
+        sim_time = ref_time + 600.0
+
+        with state_file.open("w", encoding="utf-8") as f:
+            f.write(json.dumps(pre_record) + "\n")
+
+        code = main(
+            [
+                "--url",
+                "https://agent-wallet-fake.example.com",
+                "--execute",
+                "--rounds",
+                "1",
+                "--out",
+                str(out_file),
+                "--state",
+                str(state_file),
+            ],
+            client=client,
+            now_fn=fake_now,
+            sleep_fn=fake_sleep,
+        )
+        assert code == 0
+        # Hostile scenarios do not wait on TxThrottle; no long tx sleep should have occurred
+        assert not any(dur > 1000.0 for dur in sleep_calls)
+    finally:
+        SCENARIOS.clear()
+        SCENARIOS.extend(orig_scenarios)
+
+
+def test_resume_seeds_from_recent_records_only(tmp_path: Path) -> None:
+    now = 1_000_000.0
+    throttle = Throttle(per_hour=5, now_fn=lambda: now)
+    tx_throttle = TxThrottle(cap=5, now_fn=lambda: now)
+
+    # 1. Record from 2 hours ago (7200s ago) - should NOT be seeded
+    t_old = datetime.fromtimestamp(now - 7200.0, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # 2. Record from 30 minutes ago (1800s ago) with 2 tx - should BE seeded
+    t_recent1 = datetime.fromtimestamp(now - 1800.0, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # 3. Record from 5 minutes ago (300s ago) with 1 tx - should BE seeded
+    t_recent2 = datetime.fromtimestamp(now - 300.0, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # 4. Record in future (+600s) - should NOT be seeded
+    t_future = datetime.fromtimestamp(now + 600.0, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    records = [
+        {
+            "round": 1,
+            "scenario": "s1",
+            "timestamp": t_old,
+            "steps": [{"outcome": "executed", "tx_hash": "0x1111"}],
+        },
+        {
+            "round": 1,
+            "scenario": "s2",
+            "timestamp": t_recent1,
+            "steps": [
+                {"outcome": "executed", "tx_hash": "0x2222"},
+                {"outcome": "executed", "tx_hash": "0x3333"},
+            ],
+        },
+        {
+            "round": 1,
+            "scenario": "s3",
+            "timestamp": t_recent2,
+            "steps": [
+                {"outcome": "executed", "tx_hash": "0x4444"},
+                {"outcome": "denied", "tx_hash": None},
+            ],
+        },
+        {
+            "round": 1,
+            "scenario": "s4",
+            "timestamp": t_future,
+            "steps": [{"outcome": "executed", "tx_hash": "0x5555"}],
+        },
+    ]
+
+    seed_throttles(throttle, tx_throttle, records, now=now)
+
+    # Only s2 and s3 are recent (within last 3600s): 2 chat actions in throttle
+    assert len(throttle.timestamps) == 2
+    # s2 has 2 executed tx, s3 has 1 executed tx: total 3 tx in tx_throttle
+    assert len(tx_throttle.timestamps) == 3
+
+    expected_ts1 = parse_iso_timestamp(t_recent1)
+    expected_ts2 = parse_iso_timestamp(t_recent2)
+    assert list(throttle.timestamps) == [expected_ts1, expected_ts2]
+    assert list(tx_throttle.timestamps) == [expected_ts1, expected_ts1, expected_ts2]
+
+
+def test_limit_tx_per_hour_retried_instead_of_recorded(tmp_path: Path) -> None:
+    chat_calls = 0
+    sleep_calls: list[float] = []
+    sim_time = 1000.0
+
+    def fake_now() -> float:
+        return sim_time
+
+    def fake_sleep(dur: float) -> None:
+        nonlocal sim_time
+        sleep_calls.append(dur)
+        sim_time += dur
+
+    def job_handler(path: str, body: dict[str, Any]) -> dict[str, Any]:
+        nonlocal chat_calls
+        if path == "/chat":
+            chat_calls += 1
+            if chat_calls == 1:
+                return {
+                    "job_id": "job-miss",
+                    "status": "denied",
+                    "error_code": "LIMIT.TX_PER_HOUR",
+                }
+            client._chat_items.append(
+                {
+                    "job_id": "job-ok",
+                    "role": "agent",
+                    "steps": [
+                        {"function": "deposit", "outcome": "executed", "tx_hash": "0x" + "a" * 64}
+                    ],
+                }
+            )
+            return {"job_id": "job-ok", "status": "succeeded"}
+        return {"job_id": "job-misc", "status": "succeeded"}
+
+    client = FakeClient(job_handler=job_handler)
+    out_file = tmp_path / "out.md"
+    state_file = tmp_path / "state.jsonl"
+
+    orig_scenarios = list(SCENARIOS)
+    try:
+        SCENARIOS.clear()
+        SCENARIOS.append(orig_scenarios[0])
+
+        code = main(
+            [
+                "--url",
+                "https://agent-wallet-fake.example.com",
+                "--execute",
+                "--rounds",
+                "1",
+                "--out",
+                str(out_file),
+                "--state",
+                str(state_file),
+            ],
+            client=client,
+            now_fn=fake_now,
+            sleep_fn=fake_sleep,
+        )
+        assert code == 0
+        assert chat_calls == 2
+        # Slept 10 minutes (600s) on throttle miss
+        assert 600.0 in sleep_calls
+
+        # The denied attempt was NOT recorded as completed in state file
+        records = read_state_file(state_file)
+        assert len(records) == 1
+        assert records[0]["status"] == "succeeded"
+        assert records[0]["verdict"] == "executed"
+    finally:
+        SCENARIOS.clear()
+        SCENARIOS.extend(orig_scenarios)
+
+
+def test_limit_tx_per_hour_exhausted_retries_recorded(tmp_path: Path) -> None:
+    chat_calls = 0
+    sleep_calls: list[float] = []
+    sim_time = 1000.0
+
+    def fake_now() -> float:
+        return sim_time
+
+    def fake_sleep(dur: float) -> None:
+        nonlocal sim_time
+        sleep_calls.append(dur)
+        sim_time += dur
+
+    def job_handler(path: str, body: dict[str, Any]) -> dict[str, Any]:
+        nonlocal chat_calls
+        if path == "/chat":
+            chat_calls += 1
+            return {
+                "job_id": f"job-{chat_calls}",
+                "status": "denied",
+                "error_code": "LIMIT.TX_PER_HOUR",
+            }
+        return {"job_id": "job-misc", "status": "succeeded"}
+
+    client = FakeClient(job_handler=job_handler)
+    out_file = tmp_path / "out.md"
+    state_file = tmp_path / "state.jsonl"
+
+    orig_scenarios = list(SCENARIOS)
+    try:
+        SCENARIOS.clear()
+        SCENARIOS.append(orig_scenarios[0])
+
+        code = main(
+            [
+                "--url",
+                "https://agent-wallet-fake.example.com",
+                "--execute",
+                "--rounds",
+                "1",
+                "--out",
+                str(out_file),
+                "--state",
+                str(state_file),
+            ],
+            client=client,
+            now_fn=fake_now,
+            sleep_fn=fake_sleep,
+        )
+        assert code == 0
+        # Attempt 0, retry 1, retry 2 = 3 calls
+        assert chat_calls == 3
+        # Slept 600s twice
+        assert sleep_calls.count(600.0) == 2
+
+        # After retries exhausted, it is finally recorded
+        records = read_state_file(state_file)
+        assert len(records) == 1
+        assert records[0]["status"] == "denied"
+        assert records[0]["error_code"] == "LIMIT.TX_PER_HOUR"
+    finally:
+        SCENARIOS.clear()
+        SCENARIOS.extend(orig_scenarios)
