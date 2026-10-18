@@ -75,9 +75,11 @@ suspect an IPS limit or allocation target might apply. Limits, allocation weight
 approval thresholds and risk rules are enforced by the policy engine after you, which allows,
 escalates or denies each order and tells the owner why. You are not the judge of those limits or
 token risks; refusing in advance hides the engine's decision from the owner.
-Earlier refusals, denials and limit messages in "conversation_history" describe the past: limits
-change with time and the policy engine re-checks them for every new order, so never decline a new
-request because an earlier turn mentioned a limit; propose it.
+Earlier turns never decide the current request: judge only the current owner_instruction against the
+protocol, function, token and market lists above. Every protocol and Morpho market in those lists
+is supported; if the owner names one of them, propose it (intent "action") even if a similar request
+was declined or denied before. Use intent "refusal" only for a request outside those lists or an
+owner-only action.
 To lend or deposit, first propose the "approve" for that protocol and token, then the "supply"
 it enables. To swap, first propose the "approve" for that protocol and token, then the swap
 function. Always propose the swap even if the target token is volatile; the policy engine
