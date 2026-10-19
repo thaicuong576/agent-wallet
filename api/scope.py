@@ -133,7 +133,7 @@ class Scopes:
     def require_step_up(
         self, request: Request, scope: Scope, action: str, params: dict[str, Any]
     ) -> None:
-        """Multi mode: a fresh signature bound to `action` and `params` (design 6.2)."""
+        """Multi mode: a fresh signature bound to `action` and `params`."""
         if scope.session is None:
             return
         service = get_service(request)

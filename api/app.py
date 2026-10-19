@@ -166,7 +166,7 @@ def create_app(
     )
     app.state.scopes = scopes
 
-    # Webapp routes (design 12.2). Always mounted so the contract and the app agree; without
+    # Webapp routes. Always mounted so the contract and the app agree; without
     # `webapp` services every session route answers 503 (fail closed). Existing routes are
     # unchanged and keep the single-owner token mode.
     app.state.webapp = webapp

@@ -37,7 +37,7 @@ def tenant_dir(data_dir: Path | str, owner: str) -> Path:
 
 @dataclass
 class SqliteTenantStores:
-    """The per-owner stores of the SQLite backend that exist today (design 5.1)."""
+    """The per-owner stores of the SQLite backend that exist today."""
 
     owner: str
     path: Path

@@ -1,4 +1,4 @@
-"""Storage Protocols (design 5.1). No import of sqlite3 or psycopg lives here.
+"""Storage Protocols. No import of sqlite3 or psycopg lives here.
 
 The gateway, runner and API see only these Protocols. The existing split is kept: a read protocol
 for the gateway and agent side, a write protocol that only OwnerControls receives. Adapters

@@ -1,6 +1,6 @@
 // Activate agent: the control that lifts a new owner from tier T0 (read only) to T2.
 // Raising the tier widens the agent's authority, so it needs a fresh wallet signature bound to
-// the new tier (design 6.2). Lowering and the emergency stop need the session only. The button
+// the new tier. Lowering and the emergency stop need the session only. The button
 // itself lives on the Setup screen (views/setup.js).
 
 export const ACTIVATE_TIER = "T2";

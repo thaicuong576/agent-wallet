@@ -1,4 +1,4 @@
-"""Migrations: applied once under an advisory lock, idempotent, checksummed (design 5.2)."""
+"""Migrations: applied once under an advisory lock, idempotent, checksummed."""
 
 from __future__ import annotations
 

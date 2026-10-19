@@ -1,6 +1,6 @@
 # Webapp UI (UI v3: fits the viewport, never silent, grouped holdings)
 
-> Look and layout: [`docs/design/webapp/ui-contract.md`](../../design/webapp/ui-contract.md) (the approved contract, with the v3 changes listed at its end) and the plan that led to this version, [`docs/design/webapp/ui-v3-plan.md`](../../design/webapp/ui-v3-plan.md) (audit, screenshots, wireframes, data contract). Tokens and behaviour: [`DESIGN.md`](../../../DESIGN.md), [`docs/design/webapp/system-design.md`](../../design/webapp/system-design.md) (sections 12 and 14). Where a mockup and `DESIGN.md` disagree, `DESIGN.md` wins.
+> Look and feel: [`DESIGN.md`](../../../DESIGN.md) holds the tokens and component rules. Screenshots of the current screens are in `docs/previews/`.
 
 A static single page under `ui/`, mounted by `api/main.py` at `/ui`. Plain ES modules, no build step, no dependency, no CDN, no web font, no `localStorage`: it works offline except for the wallet and the RPC behind it. Every image is a local file under `ui/assets/`.
 
@@ -18,7 +18,7 @@ flowchart LR
     V --> W[wallet adapter]
   end
   W -->|EIP-1193: connect, personal_sign, send ETH| Wlt[Injected wallet]
-  A -->|cookie + X-AW-CSRF, design 12.2 routes| S[FastAPI]
+  A -->|cookie + X-AW-CSRF, listed routes| S[FastAPI]
   A -.->|?fixtures=1| F[ui/fixtures/*.json]
   W -.->|?fixtures=1| T[TestWallet stub]
 ```
@@ -163,7 +163,7 @@ sequenceDiagram
 
 ## Holdings, icons and money dialogs
 - **`holdings.js`** is pure (BigInt cents, no floats, no DOM). `groupHoldings(portfolio, agent)` groups `GET /portfolio` positions by what the money is doing: `wallet` stablecoins idle, `aave-v3` lent, `aave-stata` vaults, `morpho-blue`, and any other wallet token as swapped. Zero or unreadable balances are left out, unknown locations land in idle, nothing throws. `allocationSegments` feeds the bar.
-- **`icons.js`** builds token avatars, protocol badges, the testnet "T" mark and a deterministic letter avatar (FNV-1a hash into eight palette colours, each at least 4.5:1 against white). Token images are five CC0 SVGs under `ui/assets/tokens/`; WETH is the ETH image plus a "W" badge, cbETH a letter avatar, protocol marks are monograms. Sources, licence and the rules for adding a token: [`docs/design/webapp/icons.md`](../../design/webapp/icons.md).
+- **`icons.js`** builds token avatars, protocol badges, the testnet "T" mark and a deterministic letter avatar (FNV-1a hash into eight palette colours, each at least 4.5:1 against white). Token images are five CC0 SVGs under `ui/assets/tokens/`; WETH is the ETH image plus a "W" badge, cbETH a letter avatar, protocol marks are monograms. Sources, licence and the rules for adding a token: [[`icons.md`](icons.md)](../../design/webapp/icons.md).
 - **`dialog.js`** is the shared modal (focus trap, Escape, scrim click, focus returns); under 520 px it is a bottom sheet. **`funds.js`**: "Send ETH for gas" (the existing `sendGas` flow) and "Get test USDC" (the faucet mint job). **`withdraw.js`**: USDC or ETH to the owner's own address only, Max (ETH keeps the gas floor), a note when money is lent or in vaults, one signature; the amount that is signed and the amount that is sent are the same object, and the staged progress card and the transaction link follow.
 
 ## Known gaps
@@ -228,21 +228,21 @@ flowchart TD
 | `views/overview.js`, `funds.js`, `withdraw.js`, `dialog.js`, `approvals.js`, `topup.js` | Overview, the money dialogs, the approvals card, the gas top-up flow |
 | `views/activity.js`, `rules.js`, `setup.js`, `activate.js`, `account.js`, `confirm.js`, `cards.js`, `jobs.js` | The other screens and shared pieces |
 | `wallet/adapter.js`, `injected.js`, `test.js` | Adapter interface, EIP-1193 implementation (EIP-6963 first), `TestWallet` stub |
-| `assets/tokens/*.svg` | Five CC0 token images, listed in `docs/design/webapp/icons.md` |
+| `assets/tokens/*.svg` | Five CC0 token images, listed in [`icons.md`](icons.md) |
 | `fixtures/*.json` | Data for the no-backend mode |
 
 ## Rules the page keeps
 - **API strings are text.** Every value from the API is written with `textContent`; no `innerHTML` anywhere. Local token images are fixed paths under `assets/tokens/`.
 - **No storage.** No `localStorage`, `sessionStorage` or cookie access from JS; the session is an HttpOnly cookie. Step-up signatures are asked per action and not kept.
 - **Honest labels.** Reference prices and fixture data carry a chip in words; "Agent says" text is labelled; step cards come from the audit log only; the progress card names only stages the backend reports.
-- **Only listed routes.** `tests/ui/test_ui_*.py` checks that every path in `api.js` is in the design 12.2 list and in `contracts/openapi.yaml`. The only external URLs are the BaseScan transaction link (navigation) and the chain parameters handed to the wallet.
+- **Only listed routes.** `tests/ui/test_ui_*.py` checks that every path in `api.js` is in the route list and in `contracts/openapi.yaml`. The only external URLs are the BaseScan transaction link (navigation) and the chain parameters handed to the wallet.
 - **Keyboard and focus.** Every control is a button, link or form field; `:focus-visible` draws a 3 px ring; the skip link jumps to `#view`; dialogs trap focus and return it.
 
 ## Fixtures mode
 `/chat?fixtures=1` (or any screen path) serves everything from `ui/fixtures/` with an in-memory state and `TestWallet`; `&demo=1` starts signed in and funded at T2, `&scenario=t0` starts at T0 (Setup with Activate), `&scenario=hostile` starts with a blocked hostile order in Activity. In a real browser every fixture chat job walks the stages one poll at a time (a question or a blocked order stops before "Sending"). It exists for judges, previews and tests.
 
 ## Tests
-`tests/ui/test_ui_*.py` (static scans, contract checks, route list, rule-code coverage, tokens) and node programs that run the real modules against a fake DOM: `harness.mjs`, `flows.mjs`, `chat_flows.mjs`, `f3_flows.mjs` (the existing flows) plus one per new module: `progress_check.mjs`, `icons_check.mjs`, `holdings_check.mjs`, `dialogs_check.mjs`, `rules_check.mjs`, `overview_check.mjs`, each wrapped by a `test_<name>.py`. The node-based tests are skipped when `node` is not on the PATH; the static scans always run. Layout checks that need a real browser (no horizontal overflow, one scroll region on Chat, 44 px targets at 375 px, the progress card visible within 100 ms) were measured in Chrome; the numbers are in the status section of [`ui-v3-plan.md`](../../design/webapp/ui-v3-plan.md).
+`tests/ui/test_ui_*.py` (static scans, contract checks, route list, rule-code coverage, tokens) and node programs that run the real modules against a fake DOM: `harness.mjs`, `flows.mjs`, `chat_flows.mjs`, `f3_flows.mjs` (the existing flows) plus one per new module: `progress_check.mjs`, `icons_check.mjs`, `holdings_check.mjs`, `dialogs_check.mjs`, `rules_check.mjs`, `overview_check.mjs`, each wrapped by a `test_<name>.py`. The node-based tests are skipped when `node` is not on the PATH; the static scans always run. Layout checks that need a real browser (no horizontal overflow, one scroll region on Chat, 44 px targets at 375 px, the progress card visible within 100 ms) were measured in Chrome.
 
 | Contract item | Test |
 | :--- | :--- |
@@ -256,4 +256,4 @@ flowchart TD
 | API strings stay inert text | `test_hostile_api_string_does_not_become_html`, `test_chat_hostile_strings_stay_text_and_fixtures_flow_works` |
 
 ## Previews
-`docs/previews/ui3-<screen>-<width>-<scheme>.png`: Chat (1280 light and dark, 1920, 375, mid-run progress card, wallet sheet), Overview (1280 light and dark, 375), the Add funds and Withdraw dialogs, Rules (1280, 375). The audit of the previous version, with the defects it measured, is in `docs/previews/ux-audit/`.
+`docs/previews/ui3-<screen>-<width>-<scheme>.png`: Chat (1280 light and dark, 1920, 375, mid-run progress card, wallet sheet), Overview (1280 light and dark, 375), the Add funds and Withdraw dialogs, Rules (1280, 375).

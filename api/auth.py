@@ -1,4 +1,4 @@
-"""Wallet sign-in, sessions and step-up challenges (design 6.1 to 6.4, 12.1, 12.2).
+"""Wallet sign-in, sessions and step-up challenges.
 
 Exposes an APIRouter (`router`), the dependencies `require_session` and `require_step_up(action)`,
 and `AuthService`. The application mounts the router and sets `app.state.auth_service`.

@@ -1,4 +1,4 @@
-"""Sign-in and session rows of design 6.4."""
+"""Sign-in and session rows."""
 
 from __future__ import annotations
 

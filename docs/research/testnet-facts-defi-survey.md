@@ -159,7 +159,7 @@ QuoterV2 `quoteExactInputSingle((tokenIn,tokenOut,amountIn,fee,sqrtPriceLimitX96
 ## 10. Cross-cutting notes for the wallet agent
 
 - Do not assume testnet prices are market prices. Both the Uniswap USDC/WETH pool and the Morpho oracles are stubs; use `AaveOracle` as the reference and cap exposure per protocol in the IPS.
-- Every new protocol means a new `SUPPORTED_PROTOCOLS` entry, an address constant, a selector table and an adapter; new spender approvals are a permission-tier change and need owner review per AGENTS.md.
+- Every new protocol means a new `SUPPORTED_PROTOCOLS` entry, an address constant, a selector table and an adapter; new spender approvals are a permission-tier change and need owner review.
 - Dust and cap risks: Aave WBTC is at its cap; Morpho markets can drain; the faucet cooldown on the Aave faucet was reported as 3,600 s in the earlier note, so repeated mints in tests may fail.
 
 ## Sources

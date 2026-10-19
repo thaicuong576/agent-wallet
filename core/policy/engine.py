@@ -86,8 +86,8 @@ def evaluate(
 ) -> dict[str, Any]:
     """Pure evaluation function returning a Decision dict.
 
-    Evaluates ACCESS, LIMIT, ALLOC, and RISK rule families, and owner-only function
-    rules per design 7.3. Does not mutate inputs, perform I/O, make network requests,
+    Evaluates ACCESS, LIMIT, ALLOC, and RISK rule families, and the owner-only function
+    rules. Does not mutate inputs, perform I/O, make network requests,
     or call any LLM.
     """
     if state:

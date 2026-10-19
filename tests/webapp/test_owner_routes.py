@@ -1,7 +1,7 @@
 """Owner routes in multi mode: tier, stop, decisions, portfolio, ips and approvals per session.
 
 Every route authenticates with the session cookie only and acts on the session owner's tenant
-(design 6.2, 12.2). No network: in-test eth_account wallets, the fake chain and the recording
+. No network: in-test eth_account wallets, the fake chain and the recording
 sender (the fake signer hook) from `tests/webapp/test_jobs.py`.
 """
 

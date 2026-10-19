@@ -13,7 +13,7 @@ from core.storage.interfaces import JobInProgress, RateLimited
 
 @dataclass(frozen=True)
 class JobLimits:
-    """Every job limit in one place (design 3, 7.3, 10)."""
+    """Every job limit in one place."""
 
     runs_per_hour: int = 6
     chat_inquiries_per_hour: int = 60

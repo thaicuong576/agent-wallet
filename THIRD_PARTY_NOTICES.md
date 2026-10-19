@@ -85,7 +85,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## 3. Token marks
 
 - **Files:** `ui/assets/tokens/*.svg` (USDC, USDT, ETH, WBTC, LINK)
-- **Note:** These marks belong to their respective issuers. They are shown only to identify the testnet assets in the interface and do not imply endorsement.
+- **Source:** [spothq/cryptocurrency-icons](https://github.com/spothq/cryptocurrency-icons) at commit `1a63530be6e374711a8554f31b17e4cb92c25fa5`, licensed CC0 1.0 Universal. Per-file sources: [`docs/architecture/webapp/icons.md`](docs/architecture/webapp/icons.md).
+- **Note:** CC0 covers the files, not the issuers' trademark rights. The marks are shown only to identify the testnet assets in the interface and do not imply endorsement.
 
 ## 4. Python dependencies
 

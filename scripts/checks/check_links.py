@@ -88,7 +88,7 @@ def extract_anchors(content: str) -> set[str]:
 def find_repo_root(start: pathlib.Path | None = None) -> pathlib.Path:
     current = (start or pathlib.Path.cwd()).resolve()
     for parent in [current, *current.parents]:
-        if (parent / ".git").exists() or (parent / "PLAN.md").exists():
+        if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
             return parent
     return current
 

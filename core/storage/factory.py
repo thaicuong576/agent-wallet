@@ -1,4 +1,4 @@
-"""Backend selection by ``DATABASE_URL`` (design 5 and 15.2).
+"""Backend selection by ``DATABASE_URL``.
 
 Unset selects SQLite (local, replay, tests); set selects Postgres. The SQLite side is built by the
 caller (``sqlite_factory``) because its intent store may only be imported inside ``core.gateway``

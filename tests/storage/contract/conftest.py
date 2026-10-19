@@ -1,4 +1,4 @@
-"""Backend fixture of the storage contract suite (design 5.3).
+"""Backend fixture of the storage contract suite.
 
 Every test here runs on ``sqlite`` and on ``postgres``. The ``postgres`` parameter is skipped
 unless ``TEST_DATABASE_URL`` is set (CI service container, local compose).

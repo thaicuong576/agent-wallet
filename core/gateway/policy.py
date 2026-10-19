@@ -111,7 +111,7 @@ class EnginePolicy:
         )
 
         # Check approval threshold. Owner functions (mint, transfer) are owner-origin actions, not
-        # agent spend: they never escalate on the IPS approval threshold (design 7.3).
+        # agent spend: they never escalate on the IPS approval threshold.
         if (order or {}).get("function") in ("mint", "transfer"):
             return decision
 

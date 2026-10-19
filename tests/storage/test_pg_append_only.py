@@ -1,4 +1,4 @@
-"""Append-only tables and the chain under concurrency (design 5.2, 19, 20)."""
+"""Append-only tables and the chain under concurrency."""
 
 from __future__ import annotations
 

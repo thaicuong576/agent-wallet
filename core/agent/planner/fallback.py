@@ -18,7 +18,7 @@ _DEPOSIT_WORDS = re.compile(r"\b(put|supply|deposit|invest|lend|earn|stake|work)
 
 
 class FallbackPlanner:
-    """Deterministic, rule-based planner used when the LLM is unavailable (design 10).
+    """Deterministic, rule-based planner used when the LLM is unavailable.
 
     It reads only the portfolio state and the IPS per-transaction limit, never Reader facts, so
     untrusted text cannot steer it. If idle USDC in the wallet is above a floor it proposes

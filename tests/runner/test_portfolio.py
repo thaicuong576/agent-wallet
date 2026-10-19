@@ -209,7 +209,7 @@ def test_replay_portfolio_reader_missing_fixture() -> None:
 
 
 def test_missing_price_omits_position_and_engine_denies() -> None:
-    """Unknown token or missing price denies, never zero (design section 10).
+    """Unknown token or missing price denies, never zero.
 
     When a token lacks a reference price (such as WETH in v1), it is omitted from
     portfolio state positions. Any order proposing an action with that token cannot
@@ -257,7 +257,7 @@ def test_missing_price_omits_position_and_engine_denies() -> None:
 
 
 def test_price_source_labelled_mainnet_reference() -> None:
-    """Records and eval report say prices are reference values (design section 10)."""
+    """Records and eval report say prices are reference values."""
     rpc = make_mock_rpc()
     reader = PortfolioReader(rpc=rpc, wallet=TEST_WALLET, ledger=FakeLedger())
     snapshot = reader.read(datetime.now(UTC))

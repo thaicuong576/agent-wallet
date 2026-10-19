@@ -1,4 +1,4 @@
-// Wallet adapter interface (design 14.1). Implementations: injected.js (EIP-1193), test.js (stub).
+// Wallet adapter interface. Implementations: injected.js (EIP-1193), test.js (stub).
 export const BASE_SEPOLIA_ID = 84532;
 
 export class WalletAdapter {

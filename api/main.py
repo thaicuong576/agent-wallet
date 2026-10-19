@@ -4,7 +4,7 @@
 jobs) from the environment; any other value keeps the single-owner token mode of the original
 API. Nothing here touches the network or creates a keystore at import time.
 
-Storage (design 5, 13, 15): `DATABASE_URL` set selects Postgres, unset selects the SQLite backend
+Storage: `DATABASE_URL` set selects Postgres, unset selects the SQLite backend
 under `AGENT_WALLET_DATA_DIR`. With Postgres the app applies migrations only when
 `DATABASE_MIGRATE_URL` is set; otherwise it checks the schema version and refuses to start when
 the database is behind (fail closed).

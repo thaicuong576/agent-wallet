@@ -1,4 +1,4 @@
-"""Agent key custody: generate, encrypt, store, decrypt once, rotate (design section 4).
+"""Agent key custody: generate, encrypt, store, decrypt once, rotate.
 
 Importable only by core.gateway modules (boundary-tested). The key, the keystore JSON and the
 secret never appear in repr, str, logs or exception text: every failure raises a fixed message.
