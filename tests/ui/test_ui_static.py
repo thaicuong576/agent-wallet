@@ -47,14 +47,31 @@ def test_fixture_files_are_served_and_valid_json(client: TestClient, name: str) 
 def test_bare_domain_redirects_to_ui(client: TestClient) -> None:
     res = client.get("/", follow_redirects=False)
     assert res.status_code == 307
-    assert res.headers["location"] == "/ui/"
+    assert res.headers["location"] == "/chat"
+
+
+SCREENS = ["/chat", "/chat/t1", "/overview", "/activity", "/rules", "/setup"]
+
+
+@pytest.mark.parametrize("path", SCREENS)
+def test_clean_screen_paths_serve_the_app(client: TestClient, path: str) -> None:
+    res = client.get(path, headers={"Accept": "text/html,application/xhtml+xml,*/*;q=0.8"})
+    assert res.status_code == 200
+    assert res.text == (UI / "index.html").read_text(encoding="utf-8")
+    assert 'src="/ui/main.js"' in res.text
+
+
+def test_api_calls_to_screen_paths_still_reach_the_api(client: TestClient) -> None:
+    # GET /chat is also the chat-history API; a JSON request must not get the HTML page.
+    res = client.get("/chat", headers={"Accept": "application/json"})
+    assert "text/html" not in res.headers.get("content-type", "")
 
 
 def test_ui_root_serves_index(client: TestClient) -> None:
     res = client.get("/ui/")
     assert res.status_code == 200
     assert 'id="view"' in res.text
-    assert 'src="main.js"' in res.text
+    assert 'src="/ui/main.js"' in res.text
 
 
 def test_no_banner_element_and_testnet_custody_are_chip_footer_and_setup_text() -> None:

@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import pathlib
+import re
 import sys
 import threading
 import time
@@ -26,7 +27,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import RedirectResponse, Response
+from starlette.responses import FileResponse, RedirectResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from api.app import create_app
@@ -486,7 +487,32 @@ app.mount("/ui", NoCacheStaticFiles(directory=UI_DIR, html=True), name="ui")
 @app.get("/", include_in_schema=False)
 def root_redirect() -> RedirectResponse:
     """The bare domain opens the web app instead of a 404."""
-    return RedirectResponse(url="/ui/", status_code=307)
+    return RedirectResponse(url="/chat", status_code=307)
+
+
+_INDEX_HTML = UI_DIR / "index.html"
+_SCREEN_RE = re.compile(r"^/(chat|overview|activity|rules|setup)(/[A-Za-z0-9_.~%-]+)?/?$")
+_API_UNDER_CHAT = ("/chat/threads", "/chat/suggestions", "/chat/stream")
+
+
+@app.middleware("http")
+async def clean_screen_paths(request, call_next):
+    """Clean URLs for the single-page app (/chat, /chat/<thread>, /overview, ...).
+
+    A browser navigation (Accept: text/html) to a screen path gets the app page; the client router
+    picks the view. API calls to the same paths (GET /chat sends Accept: application/json) and the
+    API's own /chat/* routes are untouched. Assets stay under /ui/.
+    """
+    path = request.url.path
+    if (
+        request.method in ("GET", "HEAD")
+        and _SCREEN_RE.match(path)
+        and not path.startswith(_API_UNDER_CHAT)
+        and "text/html" in request.headers.get("accept", "")
+    ):
+        headers = {"Cache-Control": "no-cache"}
+        return FileResponse(_INDEX_HTML, media_type="text/html", headers=headers)
+    return await call_next(request)
 
 __all__ = [
     "NoCacheStaticFiles",
