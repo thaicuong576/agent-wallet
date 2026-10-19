@@ -125,7 +125,9 @@ a { color: var(--link); }
   align-items: center;
   gap: 8px;
 }
-.logo { width: 22px; height: 22px; border-radius: var(--r-ctl); background: var(--primary); display: inline-block; }
+/* Brand mark; gaps are transparent, so dark mode only swaps the horse to light ink. */
+.logo { width: 24px; height: 28px; background: url(../assets/brand/icon-light.svg) center / contain no-repeat; display: inline-block; flex: none; }
+@media (prefers-color-scheme: dark) { .logo { background-image: url(../assets/brand/icon-dark.svg); } }
 .tabs { display: flex; gap: 4px; flex: 1 1 auto; min-width: 0; overflow-x: auto; }
 .tabs a {
   padding: 8px 14px 11px;
