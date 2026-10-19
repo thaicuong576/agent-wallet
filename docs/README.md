@@ -73,7 +73,7 @@ Complete directory of technical documentation, architectural specifications, sec
 
 ## Evidence
 - [`evidence/defi-evidence.md`](evidence/defi-evidence.md): Multi-protocol hosted execution evidence (Aave Stata vaults, Morpho Blue, and hostile denial).
-- [`evidence/eval-report.md`](evidence/eval-report.md): Output report from 46 offline evaluation scenarios covering 27/28 rule codes.
+- [`evidence/eval-report.md`](evidence/eval-report.md): Output report from 48 offline evaluation scenarios covering 29 of the 31 rule codes.
 - [`evidence/runner-evidence.md`](evidence/runner-evidence.md): Runner autonomous execution evidence and hash-chained audit verification.
 - [`evidence/tx_hashes.md`](evidence/tx_hashes.md): Real on-chain transaction hashes on Base Sepolia (Aave v3 USDC approve and supply).
 - [`evidence/webapp-evidence.md`](evidence/webapp-evidence.md): Hosted webapp end-to-end session evidence (SIWE, top-up, activation, planner execution).

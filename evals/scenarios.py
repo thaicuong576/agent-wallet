@@ -53,7 +53,7 @@ def _load_base_risk_inputs() -> dict[str, Any]:
 
 
 def get_all_scenarios() -> list[Scenario]:
-    """Return all 46 evaluation scenarios in deterministic order."""
+    """Return all 48 evaluation scenarios in deterministic order."""
     scenarios: list[Scenario] = []
 
     # =========================================================================
@@ -494,6 +494,44 @@ def get_all_scenarios() -> list[Scenario]:
             },
             expected_outcome="denied",
             expected_rule_codes=["TIER.GLOBAL_STOP"],
+        )
+    )
+
+    # REGISTRY (2: the policy allows, the protocol registry still refuses)
+    ips_registry = _load_base_ips()
+    ips_registry["universe"]["protocols"] = ["aave-v3", "uniswap-v3", "moonwell"]
+    scenarios.append(
+        Scenario(
+            id="deny-access-protocol-not-enabled",
+            category="deny",
+            description=(
+                "Protocol moonwell is in the IPS universe but has no registered adapter "
+                "(ACCESS.PROTOCOL_NOT_ENABLED)"
+            ),
+            inputs={
+                "ips": ips_registry,
+                "order": _make_base_order(protocol="moonwell"),
+            },
+            expected_outcome="denied",
+            expected_rule_codes=["ACCESS.PROTOCOL_NOT_ENABLED"],
+        )
+    )
+    ips_registry_morpho = _load_base_ips()
+    ips_registry_morpho["universe"]["protocols"] = ["aave-v3", "uniswap-v3", "morpho-blue"]
+    scenarios.append(
+        Scenario(
+            id="deny-access-market-not-allowed",
+            category="deny",
+            description=(
+                "Morpho Blue supply names no market, so the registry cannot pick one "
+                "(ACCESS.MARKET_NOT_ALLOWED)"
+            ),
+            inputs={
+                "ips": ips_registry_morpho,
+                "order": _make_base_order(protocol="morpho-blue"),
+            },
+            expected_outcome="denied",
+            expected_rule_codes=["ACCESS.MARKET_NOT_ALLOWED"],
         )
     )
 

@@ -658,11 +658,14 @@ button.solid-danger:hover { filter: brightness(0.92); }
 @media (min-width: 901px) {
   .hdr { flex-wrap: nowrap; gap: 8px 16px; min-height: 63px; }
   .hdr-right { flex-wrap: nowrap; gap: 8px; }
-  .hdr-right .pill { white-space: nowrap; }
+  .hdr-right .pill { white-space: nowrap; flex: none; }
+  #mode-chip { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .brand, .btn-stop, button.logout { white-space: nowrap; flex: none; }
+  .tabs a { padding-inline: 10px; }
   body.screen-chat .hdr { max-width: 1600px; }
-  .pill.addr { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .pill.addr { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
-  body.screen-chat { height: 100dvh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+  body.screen-chat { height: 100dvh; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   body.screen-chat main { max-width: 1600px; min-height: 0; overflow: hidden; padding-bottom: 0; }
   body.screen-chat .foot { max-width: 1600px; padding-top: 6px; }
   body.screen-chat .chat-layout { height: 100%; min-height: 0; align-items: stretch; grid-template-columns: 240px minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr); }
@@ -739,7 +742,7 @@ button.solid-danger:hover { filter: brightness(0.92); }
 
 /* ---- phone (900px and below): Chat is one scroll region with a pinned composer; wallet sheet ---- */
 @media (max-width: 900px) {
-  body.screen-chat { height: 100dvh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+  body.screen-chat { height: 100dvh; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   body.screen-chat main { min-height: 0; overflow: hidden; padding: 8px 12px 0; }
   body.screen-chat .chat-layout { height: 100%; grid-template-rows: auto minmax(0, 1fr); }
   body.screen-chat .side { grid-row: 1; }

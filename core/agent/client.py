@@ -1,4 +1,4 @@
-"""LLM client protocol and implementations for agent-wallet."""
+"""LLM client protocol and implementations for BaKhi Wallet."""
 
 from __future__ import annotations
 

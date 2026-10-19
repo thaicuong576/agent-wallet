@@ -17,7 +17,11 @@ class TxBuildError(Exception):
 
 
 def build_calls(
-    order: dict[str, Any], wallet_address: str, *, owner_address: str | None = None
+    order: dict[str, Any],
+    wallet_address: str,
+    *,
+    owner_address: str | None = None,
+    rpc: Any = None,
 ) -> list[Any]:
     """Dispatch to the registered spec for the order's protocol.
 
@@ -27,7 +31,7 @@ def build_calls(
     spec = registry.get(str(order.get("protocol")))
     if spec is None:
         raise TxBuildError(f"protocol '{order.get('protocol')}' is not enabled")
-    return spec.build_calls(order, BuildContext(wallet_address, owner_address))
+    return spec.build_calls(order, BuildContext(wallet_address, owner_address, rpc))
 
 
 class AaveTxBuilder:
@@ -136,10 +140,13 @@ class AaveTxBuilder:
         # 4. Protocol call translation
         try:
             owner = owner_address or self.owner_address
+            kwargs: dict[str, Any] = {}
             if owner is not None:
-                calls = self.build_calls(order, self.wallet, owner_address=owner)
-            else:
-                calls = self.build_calls(order, self.wallet)
+                kwargs["owner_address"] = owner
+            if self.build_calls is build_calls:
+                # The registry dispatcher forwards this builder's RPC to specs that read the chain.
+                kwargs["rpc"] = self.rpc
+            calls = self.build_calls(order, self.wallet, **kwargs)
         except Exception as err:
             raise TxBuildError(f"build_calls failed: {err}") from err
 

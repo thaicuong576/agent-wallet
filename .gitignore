@@ -12,3 +12,6 @@ data/
 .ruff_cache/
 .data/
 docs/evidence/.loop-progress.jsonl
+
+# Built submission package
+dist/

@@ -43,7 +43,7 @@ flowchart LR
 | Audit | `core/audit` | Append-only SQLite hash chain, verifier, JSONL export | [`audit-log.md`](../architecture/core/audit-log.md) |
 | Interface | `api`, `ui` | REST API from the OpenAPI contract; web app with chat as home, portfolio, activity, rules, owner sign-in, step-up signatures | [`api.md`](../architecture/webapp/api.md), [`ui.md`](../architecture/webapp/ui.md), [`webapp.md`](../architecture/webapp/webapp.md) |
 | Hosting and storage | `core/storage`, `Dockerfile` | Multi-owner mode: per-owner agent wallet, encrypted keystore, Postgres (row level security) or SQLite, jobs, chat threads | [`custody-tenancy.md`](../architecture/webapp/custody-tenancy.md), [`storage.md`](../architecture/webapp/storage.md), [`deployment.md`](../guides/deployment.md) |
-| Evaluation | `evals` | Offline replay harness, 46 scenarios, 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report), report | [`evals.md`](../architecture/agent/evals.md) |
+| Evaluation | `evals` | Offline replay harness: 48 scenarios replaying 29 of the 31 rule codes, with a generated report | [`evals.md`](../architecture/agent/evals.md) |
 
 ### 2b. Hosted web app, protocol registry and trust boundary
 
@@ -73,7 +73,8 @@ flowchart LR
 - **Trust boundary today.** The owner keeps the rules and the kill switch: tier, preset, approvals and releasing a stop need a fresh owner signature bound to that action and its parameters. The server holds the agent's key (generated server-side, encrypted at rest, never returned by a route) and can only use it through the gateway, which enforces the owner's IPS. A compromised server could sign anything its keys allow, so the keys hold testnet value only. This is stated on every page and in known risks K7 and K13.
 - **Path to mainnet (out of scope for this submission).** Replace the server-held key with a smart account whose session key is limited by the same policy (ERC-4337 or a comparable account standard), or with threshold signing, so the server can no longer sign outside the owner's limits even if compromised. The policy engine, tiers, registry and audit log stay unchanged; only the signer behind the gateway changes.
 - **Protocol registry.** A protocol is a spec registered in code (`core/protocols/registry.py`): the order carries enums and amounts only, never an address. Spenders, targets, fee tiers and market parameters live in the spec; the gateway re-checks that the protocol and market are enabled after the policy decision (`ACCESS.PROTOCOL_NOT_ENABLED`, `ACCESS.MARKET_NOT_ALLOWED`) and the IPS universe must list the protocol. Presets (`conservative`, `diversified`) are files under `contracts/presets/`; choosing one needs an owner signature bound to the preset.
-- **Valuation.** Every USD figure goes through one function over a token registry; a token without a readable price is denied, never valued at zero. Swaps compute the minimum output from the executable pool quote minus slippage, with a guard refusing pools more than 3% worse than the oracle fair value.
+- **Valuation.** Every USD figure goes through one function over a token registry; a token without a readable price is never valued at zero, and an order in it is denied. Swaps compute the minimum output from the executable pool quote minus slippage, with a guard refusing pools more than 3% worse than the oracle fair value.
+- **Instruction check.** Before a plan reaches the gateway, a code check compares the amounts in the proposed orders with the amounts in the owner's message (`core/agent/planner/amount_check.py`). A mismatch stops the plan with nothing proposed. This was added after a live run where the model turned "5000 USDC" into a 5 USDC order (`06-execution-evidence.md`, Case 5).
 
 ## 3. Core algorithm: one order, end to end
 `Gateway.propose(order)`:
@@ -87,6 +88,7 @@ flowchart LR
    - ALLOC: weight per asset, minimum stable weight, rebalance band (inside the band means `no_action`).
    - RISK: pool TVL, reward share of APY, APY stability, depeg, utilization, slippage, cost against benefit, data freshness. Missing or incomplete risk inputs deny with `RISK.DATA_STALE`.
    - Result is one of `allow`, `deny`, `escalate` (above `approval.escalate_above_usd`) or `no_action`.
+   - **Registry re-check**: an `allow` or `escalate` for a protocol with no registered spec, or a market the spec does not list, becomes a deny (`ACCESS.PROTOCOL_NOT_ENABLED`, `ACCESS.MARKET_NOT_ALLOWED`). The registry can only narrow the decision.
 5. **Escalate**: the order is queued as `pending_approval`; only the owner can approve. The policy is evaluated again when the order returns, so an approval cannot turn a `deny` into an execution.
 6. **Simulate before sign**: the calls are simulated as the signer's own address with `eth_simulateV1`; dependent calls (approve then supply) are simulated as one bundle. Failure, or a simulator that cannot do bundles, means nothing is signed.
 7. **Sign and send** with the signer, which refuses any chain id other than 84532.
@@ -101,14 +103,14 @@ Each record carries `prev_hash` and `hash = SHA-256(canonical JSON of the record
 The Reader converts untrusted text to a closed, schema-bound facts object; free text never reaches the Planner as instructions. The Planner's output must validate against the order schema, and even a perfectly valid order proposed under attack is still judged by the policy engine against the owner's universe. The model has no key and no tool that signs.
 
 ## 4. Security design
-Summarised here, argued in full in [`security/self-assessment.md`](05-security-self-assessment.md):
+Summarised here, argued in full in [`05-security-self-assessment.md`](05-security-self-assessment.md):
 
 - **Least authority**: `TierView` (read) and `OwnerControls` (write) are separate objects; agent-facing packages cannot import the latter (AST test).
 - **Single path to the signer**: only `core.gateway` imports `core.signer` (test + CI).
 - **Fail closed**: missing data, unreadable tier, unset owner token, unsupported simulation all deny.
 - **Testnet containment**: chain id check in the signer; testnet addresses only.
 - **Secrets**: `.env` ignored, names only in `.env.example`, secret scan in CI.
-- **Evidence over claims**: every control names its test; the eval harness exercises 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report).
+- **Evidence over claims**: every control names its test; the eval harness replays 29 of the 31 rule codes (the other two are listed with their unit tests in `06-execution-evidence.md`, section 3).
 
 ## 5. Data model
 ```mermaid
@@ -127,10 +129,10 @@ See `README.md` (quick start) and section 5 of the self-assessment. In short:
 
 ```sh
 python -m pytest -q          # full suite
-python -m evals.run          # 46 offline scenarios, writes docs/evidence/eval-report.md
+python -m evals.run          # 48 offline scenarios, writes docs/evidence/eval-report.md
 python -m core.audit.verify docs/evidence/audit-chain.jsonl
 ```
-Live evidence on Base Sepolia: `docs/evidence/tx_hashes.md`.
+Live evidence on Base Sepolia: 25 transactions indexed in [`06-execution-evidence.md`](06-execution-evidence.md).
 
 ## 7. Limits of this version
 Reference prices (not market prices), a single RPC endpoint, custodial testnet keys without an HSM (see 2b for the mainnet path), and testnet protocol quirks: Morpho markets are user-created with constant oracles, the Aave oracle is admin-set, and a Uniswap pool can be mispriced. Risk inputs without a testnet source (reward share, APY deviation, cross-exchange depeg) stay labelled reference (K5, K21). Job cancellation state is in-process, correct for the single instance we run (K23). The status and plan for each are in the known-risk list.

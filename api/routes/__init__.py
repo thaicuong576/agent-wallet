@@ -1,4 +1,4 @@
-"""Route modules for agent-wallet API."""
+"""Route modules for the BaKhi Wallet API."""
 
 from api.routes.decisions import router as decisions_router
 from api.routes.health import router as health_router

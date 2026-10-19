@@ -9,8 +9,8 @@
     "deny": {
       "failed": 0,
       "pass_rate": 1.0,
-      "passed": 20,
-      "total": 20
+      "passed": 22,
+      "total": 22
     },
     "escalate": {
       "failed": 0,
@@ -49,8 +49,10 @@
   "rule_coverage": {
     "covered": [
       "ACCESS.FUNCTION_NOT_ALLOWED",
+      "ACCESS.MARKET_NOT_ALLOWED",
       "ACCESS.OWNER_ONLY_FUNCTION",
       "ACCESS.PROTOCOL_NOT_ALLOWED",
+      "ACCESS.PROTOCOL_NOT_ENABLED",
       "ACCESS.RECIPIENT_NOT_ALLOWED",
       "ACCESS.TOKEN_NOT_ALLOWED",
       "ACCESS.UNLIMITED_APPROVAL",
@@ -78,8 +80,10 @@
     ],
     "mapping": {
       "ACCESS.FUNCTION_NOT_ALLOWED": "deny-access-function-not-allowed",
+      "ACCESS.MARKET_NOT_ALLOWED": "deny-access-market-not-allowed",
       "ACCESS.OWNER_ONLY_FUNCTION": "deny-access-owner-only-function",
       "ACCESS.PROTOCOL_NOT_ALLOWED": "deny-access-protocol-not-allowed",
+      "ACCESS.PROTOCOL_NOT_ENABLED": "deny-access-protocol-not-enabled",
       "ACCESS.RECIPIENT_NOT_ALLOWED": "deny-access-recipient-not-allowed",
       "ACCESS.TOKEN_NOT_ALLOWED": "deny-access-token-not-allowed",
       "ACCESS.UNLIMITED_APPROVAL": "deny-access-unlimited-approval",
@@ -105,8 +109,9 @@
       "TIER.PROPOSE_ONLY": "tier_and_stop-02-t1-propose-only",
       "TIER.READ_ONLY": "tier_and_stop-01-t0-read-only"
     },
-    "total_catalog": 28,
+    "total_catalog": 31,
     "uncovered": [
+      "RISK.PRICE_UNAVAILABLE",
       "TIER.POLICY_CHANGED"
     ]
   },
@@ -472,6 +477,38 @@
       "scenario_id": "deny-tier-global-stop"
     },
     {
+      "actual_outcome": "denied",
+      "actual_rule_codes": [
+        "ACCESS.PROTOCOL_NOT_ENABLED"
+      ],
+      "category": "deny",
+      "description": "Protocol moonwell is in the IPS universe but has no registered adapter (ACCESS.PROTOCOL_NOT_ENABLED)",
+      "details": "outcome=denied, rules=['ACCESS.PROTOCOL_NOT_ENABLED'], signed=0",
+      "error": null,
+      "expected_outcome": "denied",
+      "expected_rule_codes": [
+        "ACCESS.PROTOCOL_NOT_ENABLED"
+      ],
+      "passed": true,
+      "scenario_id": "deny-access-protocol-not-enabled"
+    },
+    {
+      "actual_outcome": "denied",
+      "actual_rule_codes": [
+        "ACCESS.MARKET_NOT_ALLOWED"
+      ],
+      "category": "deny",
+      "description": "Morpho Blue supply names no market, so the registry cannot pick one (ACCESS.MARKET_NOT_ALLOWED)",
+      "details": "outcome=denied, rules=['ACCESS.MARKET_NOT_ALLOWED'], signed=0",
+      "error": null,
+      "expected_outcome": "denied",
+      "expected_rule_codes": [
+        "ACCESS.MARKET_NOT_ALLOWED"
+      ],
+      "passed": true,
+      "scenario_id": "deny-access-market-not-allowed"
+    },
+    {
       "actual_outcome": "pending_approval",
       "actual_rule_codes": [
         "TIER.APPROVAL_REQUIRED"
@@ -786,13 +823,13 @@
   ],
   "schema_version": 1,
   "summary": {
-    "coverage_rate": 0.9643,
+    "coverage_rate": 0.9355,
     "failed": 0,
     "failing_scenarios": [],
     "pass_rate": 1.0,
-    "passed": 46,
-    "rule_codes_covered": 27,
-    "rule_codes_total": 28,
-    "total": 46
+    "passed": 48,
+    "rule_codes_covered": 29,
+    "rule_codes_total": 31,
+    "total": 48
   }
 }

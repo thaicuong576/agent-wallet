@@ -71,7 +71,7 @@ def test_api_layer_sends_cookie_and_csrf_and_maps_problems() -> None:
 def test_sign_in_signs_the_exact_message_and_shows_the_agent_address() -> None:
     f = flows()["signIn"]
     assert f["wallet"] == ["connect", "ensureBaseSepolia", "signMessage"]
-    assert f["signedMessage"] == "agent-wallet wants you to sign in.\nNonce: " + "n" * 32
+    assert f["signedMessage"] == "BaKhi Wallet wants you to sign in.\nNonce: " + "n" * 32
     assert f["verifyBody"] == {
         "address": "0x" + "11" * 20,
         "nonce": "n" * 32,
