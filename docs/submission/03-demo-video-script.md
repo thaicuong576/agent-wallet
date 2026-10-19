@@ -25,7 +25,7 @@ BaKhi Wallet (team BaKhi) demo video script: comprehensive shot list, exact clic
 5. [ ] **Preset Selected:**
    Ensure the agent is activated with the `diversified` preset (enables Aave v3, Aave Stata vaults, Morpho Blue, and Uniswap v3).
 6. [ ] **Browser Tabs Prepared:**
-   - Tab 1: Hosted Web App (`https://bakhi-wallet.eddiephung.me/ui/`).
+   - Tab 1: Hosted Web App (`https://bakhi-wallet.eddiephung.me/chat`).
    - Tab 2: Base Sepolia Block Explorer (`https://sepolia.basescan.org`).
    - Tab 3: Local terminal open to repo root for instant verification demo if needed.
 

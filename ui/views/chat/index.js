@@ -4,6 +4,7 @@
 // is labelled as such; the step cards, not the prose, are the record of what happened.
 import { ROUTES } from "../../lib/api.js";
 import { threadFromHash } from "../../main.js";
+import { currentHash, go } from "../../lib/route.js";
 import { fetchEventSource } from "../../lib/sse.js";
 import { ACTIVE_PHASES, uncertainCard } from "../cards.js";
 import { historyRail, sidePanel } from "../side.js";
@@ -95,7 +96,7 @@ export function render(ctx) {
   let busy = false;
   let frozen = false;
   let newThreadId = null;
-  const fromHash = threadFromHash(globalThis.location ? globalThis.location.hash : "");
+  const fromHash = threadFromHash(currentHash());
   let threadId = fromHash !== null ? fromHash : (ctx.state.threadId ?? null);
   if (threadId === "default") threadId = null;
   ctx.state.threadId = threadId;
@@ -113,15 +114,13 @@ export function render(ctx) {
   function updateHash(id) {
     const clean = id === "default" || !id ? null : id;
     const target = clean ? "#/chat/" + encodeURIComponent(clean) : "#/chat";
-    if (globalThis.location && globalThis.location.hash !== target) {
-      globalThis.location.hash = target;
-    }
+    if (globalThis.location && currentHash() !== target) go(target);
   }
   updateHash(threadId);
 
   function onHashChange() {
     if (root.isConnected === false) return;
-    const next = threadFromHash(globalThis.location ? globalThis.location.hash : "");
+    const next = threadFromHash(currentHash());
     const clean = next === "default" || !next ? null : next;
     if (clean !== threadId) {
       selectThread(clean);
@@ -129,6 +128,7 @@ export function render(ctx) {
   }
   if (globalThis.addEventListener) {
     globalThis.addEventListener("hashchange", onHashChange);
+    globalThis.addEventListener("popstate", onHashChange);
   }
 
   function updateCounter() {

@@ -1,6 +1,12 @@
 // Token and protocol avatars. Pure node builders: the caller passes `el` (same signature as ctx.el).
 // No network, no storage, no HTML strings. Every token here is a Base Sepolia test token.
 
+// Pages at clean paths (/chat, ...) are not under /ui/, so local images need the /ui/ prefix there.
+function assetBase() {
+  const p = (globalThis.location && globalThis.location.pathname) || "";
+  return p && !p.startsWith("/ui") ? "/ui/" : "";
+}
+
 export const TOKEN_META = {
   USDC: { name: "USD Coin (test token)", file: "usdc", testnet: true },
   USDT: { name: "Tether (test token)", file: "usdt", testnet: true },
@@ -86,7 +92,7 @@ export function tokenAvatar(el, symbol, opts) {
 
   if (meta.file) {
     const img = el("img", "token-img");
-    img.setAttribute("src", `assets/tokens/${meta.file}.svg`);
+    img.setAttribute("src", `${assetBase()}assets/tokens/${meta.file}.svg`);
     img.setAttribute("alt", "");
     img.setAttribute("width", String(PX[size]));
     img.setAttribute("height", String(PX[size]));

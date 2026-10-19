@@ -2,6 +2,8 @@
 // `fixtures: true` answers from ui/fixtures/*.json and an in-memory state, with no backend.
 // The session is an HttpOnly cookie set by the server: nothing is stored or read here.
 
+import { uiBase } from "./route.js";
+
 const ROUTES = {
   nonce: "/auth/nonce",
   verify: "/auth/verify",
@@ -187,7 +189,7 @@ export function createApi({
 
   async function file(name) {
     if (!fx.cache.has(name)) {
-      const res = await doFetch("fixtures/" + name + ".json");
+      const res = await doFetch(uiBase() + "fixtures/" + name + ".json");
       if (!res.ok) throw new ApiError(res.status, "", "Fixture " + name + " is missing");
       fx.cache.set(name, await res.json());
     }

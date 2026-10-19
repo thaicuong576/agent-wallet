@@ -2,6 +2,7 @@
 // API wiring. Every API string is written with textContent. There is no notice bar: testnet and
 // custody are the header chip, the footer line and the Setup text, all static markup.
 import { createApi, ApiError } from "./lib/api.js";
+import { currentHash, go, interceptLinks, upgrade } from "./lib/route.js";
 import { explainError } from "./lib/explain.js";
 import { applyTopbar, retryText } from "./lib/gauges.js";
 import { discoverInjected } from "./wallet/injected.js";
@@ -52,9 +53,7 @@ export function makeCtx({ api, wallet, sleep }) {
     wallet,
     state,
     describeError,
-    go: (hash) => {
-      if (globalThis.location) globalThis.location.hash = hash;
-    },
+    go: (hash) => go(hash),
     onChange: (fn) => listeners.add(fn),
     changed: () => listeners.forEach((fn) => fn()),
     wait,
@@ -247,7 +246,7 @@ function boot() {
   function showRoute(force) {
     const me = ctx.state.me;
     const tier = ctx.state.tier && ctx.state.tier.tier;
-    const name = routeFor(globalThis.location.hash, { signedIn: Boolean(me), tier });
+    const name = routeFor(currentHash(), { signedIn: Boolean(me), tier });
     for (const a of document.querySelectorAll("#tabs a")) {
       if (a.getAttribute("href") === "#/" + name) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
@@ -264,10 +263,16 @@ function boot() {
   (async () => {
     const wallet = fixtures ? new TestWallet() : await discoverInjected(globalThis);
     ctx = makeCtx({ api, wallet });
-    const fromHash = threadFromHash(globalThis.location ? globalThis.location.hash : "");
+    upgrade();
+    const fromHash = threadFromHash(currentHash());
     if (fromHash) ctx.state.threadId = fromHash;
     ctx.onChange(topbar);
-    globalThis.addEventListener("hashchange", () => showRoute(false));
+    globalThis.addEventListener("hashchange", () => {
+      upgrade();
+      showRoute(false);
+    });
+    globalThis.addEventListener("popstate", () => showRoute(false));
+    interceptLinks(document);
     await ctx.refreshSession(); // decides the home view before the first paint
     if (ctx.state.me) {
       try {
