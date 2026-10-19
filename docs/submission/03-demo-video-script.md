@@ -4,14 +4,14 @@ BaKhi Wallet (team BaKhi) demo video script: comprehensive shot list, exact clic
 
 - **Target Duration:** 4 minutes 45 seconds (hard ceiling: 5:00).
 - **Target Network:** Base Sepolia (chain ID `84532`).
-- **Hosted App:** `https://agent-wallet-6vuy.onrender.com`
+- **Hosted App:** `https://bakhi-wallet.eddiephung.me`
 
 ---
 
 ## 1. Pre-Flight Checklist (Run 10 Minutes Before Recording)
 
 1. [ ] **Wake the Host:**
-   Send a request to `https://agent-wallet-6vuy.onrender.com/health/deep`. Ensure HTTP 200 is returned. The Render free tier instance takes up to 60 seconds to spin up from idle; never record on a cold instance.
+   Send a request to `https://bakhi-wallet.eddiephung.me/health/deep`. Ensure HTTP 200 is returned. The Render free tier instance takes up to 60 seconds to spin up from idle; never record on a cold instance.
 2. [ ] **Wallet Preparation:**
    Use a dedicated throwaway testnet wallet. Ensure it holds at least **0.005 Base Sepolia ETH** for gas top-ups.
 3. [ ] **Agent Wallet State:**
@@ -25,7 +25,7 @@ BaKhi Wallet (team BaKhi) demo video script: comprehensive shot list, exact clic
 5. [ ] **Preset Selected:**
    Ensure the agent is activated with the `diversified` preset (enables Aave v3, Aave Stata vaults, Morpho Blue, and Uniswap v3).
 6. [ ] **Browser Tabs Prepared:**
-   - Tab 1: Hosted Web App (`https://agent-wallet-6vuy.onrender.com/ui/`).
+   - Tab 1: Hosted Web App (`https://bakhi-wallet.eddiephung.me/ui/`).
    - Tab 2: Base Sepolia Block Explorer (`https://sepolia.basescan.org`).
    - Tab 3: Local terminal open to repo root for instant verification demo if needed.
 
@@ -199,7 +199,7 @@ flowchart TD
 
 | Failure Scenario | Immediate Symptoms | Recovery Action |
 | :--- | :--- | :--- |
-| **Cold Start Timeout** | First request hangs or takes >30 seconds. | **Do not restart recording.** Open Tab 1 to `https://agent-wallet-6vuy.onrender.com/health/deep` 2 minutes before take. Wait for `{"status":"ok"}`. |
+| **Cold Start Timeout** | First request hangs or takes >30 seconds. | **Do not restart recording.** Open Tab 1 to `https://bakhi-wallet.eddiephung.me/health/deep` 2 minutes before take. Wait for `{"status":"ok"}`. |
 | **RPC Endpoint Lag** | Simulation or block receipt takes >15s. | Acknowledge naturally: *"Base Sepolia is queuing our simulation; the gateway will complete verification momentarily."* Do not click repeatedly. |
 | **Model Returns `no_action`** | Model explains rationale but proposes no order steps. | Acknowledge honestly: *"The planner assessed current market conditions and found no rebalancing required."* Rephrase prompt with exact action: *"Deposit exactly 5 USDC into Aave v3 pool."* |
 | **Quota Bucket Exceeded** | HTTP 429: "Action quota exceeded (6/hour)". | Switch to demonstrating the offline eval harness via terminal: `python -m evals.run`, which replays identical scenarios with zero network dependency. |

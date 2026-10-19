@@ -10,7 +10,7 @@ The owner key never leaves this process; the server only sees signatures. Dry ru
 signs in and reads state: no transaction is sent. `--execute` sends the top-up and runs the jobs
 and needs AGENT_WALLET_LIVE_CONFIRM=I_APPROVE_WEBAPP_EVIDENCE_ON_BASE_SEPOLIA.
 
-    python scripts/evidence/webapp_evidence.py --url https://agent-wallet-6vuy.onrender.com
+    python scripts/evidence/webapp_evidence.py --url https://bakhi-wallet.eddiephung.me
     python scripts/evidence/webapp_evidence.py --url ... --execute
 """
 

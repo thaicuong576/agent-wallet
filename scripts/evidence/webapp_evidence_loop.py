@@ -4,7 +4,7 @@ Runs scenario steps across several hours with chat action throttling and policy
 transaction rate limits (TX_CAP_PER_HOUR) to produce real on-chain transactions
 and verify safety invariants against rate limits.
 
-    python scripts/evidence/webapp_evidence_loop.py --url https://agent-wallet-6vuy.onrender.com
+    python scripts/evidence/webapp_evidence_loop.py --url https://bakhi-wallet.eddiephung.me
     python scripts/evidence/webapp_evidence_loop.py --url ... --execute
 """
 
