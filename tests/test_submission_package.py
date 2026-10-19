@@ -1,5 +1,6 @@
 """Test the build_submission_package script produces the required folders and files."""
 
+import shutil
 from pathlib import Path
 
 from scripts.submission.build_submission_package import build_package
@@ -35,6 +36,11 @@ def test_build_package_produces_six_folders_and_expected_files(tmp_path: Path):
         assert folder_name in top_readme_text
     assert "https://github.com/thaicuong576/agent-wallet" in top_readme_text
     assert "https://agent-wallet-6vuy.onrender.com" in top_readme_text
+    assert "enforced by code" in top_readme_text
+    assert "mathematically enforced" not in top_readme_text
+    assert "1,279+" not in top_readme_text
+    assert "all 10 verified on-chain txs" not in top_readme_text
+    assert "verified on-chain txs" in top_readme_text
 
     # 3. Check specific files in each folder
     # 01-technical-documentation
@@ -65,6 +71,14 @@ def test_build_package_produces_six_folders_and_expected_files(tmp_path: Path):
     assert "https://github.com/thaicuong576/agent-wallet" in readme_04_text
     assert "https://agent-wallet-6vuy.onrender.com" in readme_04_text
     assert "python -m pytest" in readme_04_text
+    assert "1,279+" not in readme_04_text
+    assert "source.zip" in readme_04_text
+    assert "source at commit" in readme_04_text
+
+    if shutil.which("git"):
+        source_zip = dir_04 / "source.zip"
+        assert source_zip.is_file()
+        assert source_zip.stat().st_size > 0
 
     # 05-security-self-assessment
     dir_05 = out_dir / "05-security-self-assessment"
@@ -77,6 +91,7 @@ def test_build_package_produces_six_folders_and_expected_files(tmp_path: Path):
         "06-execution-evidence.md",
         "tx_hashes.md",
         "defi-evidence.md",
+        "defi-evidence-loop.md",
         "runner-evidence.md",
         "webapp-evidence.md",
         "eval-report.md",
@@ -84,6 +99,7 @@ def test_build_package_produces_six_folders_and_expected_files(tmp_path: Path):
         "audit-chain.jsonl",
         "audit-chain.verify.txt",
         "runner-audit-chain.jsonl",
+        "README.md",
     ]
     for ef in expected_evidence_files:
         p = dir_06 / ef
