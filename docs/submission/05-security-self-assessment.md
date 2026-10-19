@@ -2,7 +2,7 @@
 
 Scope: BaKhi Wallet (team BaKhi) as built in this repository, testnet only (Base Sepolia, chain 84532). This report covers the permission-tier implementation and the known-risk list that the competition asks for. It states what is enforced and which test proves it, and it lists what is not done yet. Status values are `enforced` (code and test exist), `partial`, `closed`, and `accepted`.
 
-Last updated against `main` following the multi-owner webapp architecture, protocol registry expansions (Aave Stata, Morpho Blue, Uniswap v3), split chat quota buckets, Server-Sent Events streaming, concurrent portfolio RPC reads, and UI v3. Webapp controls are in section 3b and risks K1 to K26 in section 4.
+Last updated 2026-10-19 against `main`. Core controls are in section 3, webapp controls in section 3b, and risks K1 to K26 in section 4.
 
 ## 1. Principles
 1. **The LLM proposes, code decides.** The model never holds a key, never sees credentials, and cannot call the signer.
@@ -52,13 +52,13 @@ Authority changes are guarded by strict cryptographic and architectural mechanis
 | **C3** | Key read from `AGENT_WALLET_PRIVATE_KEY` at construction; never in `repr`, `str`, logs or records; 64-hex strings redacted in error details | enforced | `tests/signer/test_signer.py`, `tests/gateway/test_gateway.py` |
 | **C4** | Simulate before sign from the signer's own address; failed or unsupported simulation never signs; dependent calls simulated as one atomic bundle (`eth_simulateV1`) | enforced | `tests/gateway/test_gateway.py`, `tests/e2e/test_gateway_e2e.py` |
 | **C5** | Allowances are exact-amount only (`ACCESS.UNLIMITED_APPROVAL` denied) | enforced | `tests/policy/test_access_rules.py`, eval scenario `deny-access-unlimited-approval` |
-| **C6** | Universe, per-transaction, per-day and per-hour limits, allocation and risk rules across 31 rule codes | enforced | `tests/policy/test_limit_rules.py`, `tests/policy/test_alloc_rules.py`, `tests/policy/test_risk_rules.py`, 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report) |
+| **C6** | Universe, per-transaction, per-day and per-hour limits, allocation and risk rules; 31 rule codes in `contracts/rule-codes.json` | enforced | `tests/policy/test_limit_rules.py`, `tests/policy/test_alloc_rules.py`, `tests/policy/test_risk_rules.py`; the eval harness replays 29 of the 31 codes (`docs/evidence/eval-report.md`) |
 | **C7** | Policy engine is pure: zero I/O, zero float arithmetic (exact `Decimal`/integers), zero state mutation | enforced | `tests/policy/test_engine_purity.py` |
 | **C8** | Audit log is an append-only SHA-256 hash chain; tampering, deletion and reordering are detected and first bad `seq` is reported | enforced | `tests/audit/test_audit_log.py`, eval integrity scenarios, `docs/evidence/audit-chain.jsonl` verified by `python -m core.audit.verify` |
 | **C9** | Concurrent writers cannot corrupt or fork the audit chain (`BEGIN IMMEDIATE`, multi-process stress tests) | enforced | `tests/audit/test_sink_concurrency.py` |
 | **C10** | Prompt-injection defence: Reader returns structured facts only; Planner output must validate against order schema; out-of-universe actions fail closed in policy engine | enforced | `tests/agent/test_boundaries.py`, `tests/agent/test_injection_corpus.py`, 12 injection eval scenarios |
 | **C11** | Secrets hygiene: `.env` ignored in git, environment variable names only in `.env.example`, automated secret scanner in CI | enforced | `scripts/checks/check_no_secrets.py`, CI workflow |
-| **C12** | Owner token lives in page memory only; API strings are rendered as text, never HTML (XSS prevention) | enforced | `tests/ui/test_ui.py` |
+| **C12** | No token is stored or exposed by the page; API strings are rendered as text, never HTML (XSS prevention) | enforced | `tests/ui/test_ui_static.py::test_hostile_api_string_does_not_become_html`, `tests/ui/test_ui_static.py::test_no_token_is_stored_or_exposed_by_the_page` |
 | **C13** | Emergency stop and tier state are shared by API and runner through persistent storage | enforced | `tests/tiers/test_shared_file.py`, `tests/e2e/test_runner_stop.py` |
 | **C14** | Concurrent proposes are serialised by a cross-process lock held from limit read to audit append; timeout denies with nothing signed | enforced | `tests/gateway/test_lock.py` |
 
@@ -79,7 +79,7 @@ Authority changes are guarded by strict cryptographic and architectural mechanis
 | **W11** | Preset choice is a widening action: `PUT /tier` with a preset needs a step-up signature bound to the tier and that exact `preset_id`; a signature for the tier alone or for another preset is refused | enforced | `tests/webapp/test_owner_routes.py::test_choosing_a_preset_needs_a_signature_bound_to_that_preset` |
 | **W12** | Owner cancel stops further orders of a plan before they reach the gateway, never calls the signer, never undoes an order already submitted; remaining steps are recorded as skipped | enforced | `tests/webapp/test_job_phases.py` |
 | **W13** | Chat thread routing & persistence: threads are owner-scoped with row-level security (migration 0005); foreign thread id returns 404; active thread persists across page reloads and remounts; thread titles are set by code, not by the model | enforced | `tests/webapp/test_chat.py`, `tests/storage/contract/test_chat.py`, `tests/storage/test_migration_0005.py` |
-| **W14** | Valuation fails closed: every USD value goes through one token registry; a token with no readable price is denied (`RISK.PRICE_UNAVAILABLE`); swaps compute minimum output from executable pool quote minus slippage with an oracle price deviation guard | enforced | `tests/protocols/test_registry.py`, `tests/protocols/test_uniswap_v3.py` |
+| **W14** | Valuation fails closed: every USD value goes through one token registry; a token with no readable price is never valued at zero (it is left out of the portfolio, and an order in it is denied under `LIMIT.PER_TX` with `price_missing` evidence); swaps take their minimum output from the executable pool quote minus slippage, and the builder refuses a pool quote more than 3% below the oracle fair value or a pair the oracle cannot price (`RISK.PRICE_UNAVAILABLE`), so nothing is signed | enforced | `tests/protocols/test_registry.py`, `tests/policy/test_limit_rules.py`, `tests/protocols/test_uniswap_v3.py` |
 | **W15** | Server-Sent Events (SSE) streaming: `GET /chat/stream/{job_id}` streams real-time phase updates (`planning`, `simulating`, `executing`) with periodic keep-alive pings; client automatically falls back to HTTP polling on network disconnect | enforced | `tests/webapp/test_sse.py`, `tests/ui/test_sse.py`, `docs/architecture/webapp/chat-sse.md` |
 | **W16** | Concurrent portfolio reads & RPC keep-alive: `PortfolioReader.read` queries protocol positions concurrently via `ThreadPoolExecutor` (max 8 workers) with HTTPS connection reuse and retry, reducing latency while preserving fail-closed semantics | enforced | `tests/runner/test_portfolio.py`, `tests/test_http_stdlib.py`, `docs/architecture/protocols/rpc-latency.md` |
 | **W17** | UI v3 overview & holdings: comprehensive dashboard featuring asset breakdown, token SVG icons, real-time progress card, balance-validated funds top-up & withdrawal dialogs, and interactive rules explorer | enforced | `tests/ui/test_overview.py`, `tests/ui/test_holdings.py`, `tests/ui/test_dialogs.py`, `tests/ui/test_progress.py`, `tests/ui/test_icons.py`, `tests/ui/test_rules_extras.py` |
@@ -99,7 +99,7 @@ Authority changes are guarded by strict cryptographic and architectural mechanis
 | **K9** | Browser-based audit chain verification in UI is convenience only | Low | accepted | UI explicitly notes that authoritative verification is performed via the Python CLI (`python -m core.audit.verify`). |
 | **K10** | Single-process SQLite file locking (`BEGIN IMMEDIATE`) cannot scale horizontally across hosts | Low | accepted | Production multi-tenant mode utilizes PostgreSQL with row-level locks, transactional triggers, and RLS (`tests/storage`). |
 | **K11** | LLM provider outage or API rate limits | Low | accepted | Replay mode (`ScriptedClient`, fixtures) runs the entire system offline; `FallbackPlanner` handles basic balance and allocation inquiries locally. |
-| **K12** | No third-party professional audit or formal verification | Medium | accepted | Comprehensive self-assessment, 1,482 unit/e2e tests, and a 46-scenario evaluation harness serve as verification evidence. |
+| **K12** | No third-party professional audit or formal verification | Medium | accepted | This self-assessment, 1,523 unit, e2e and contract tests, and a 48-scenario evaluation harness serve as verification evidence. |
 | **K13** | Custodial agent keys: server holds encrypted testnet agent keys; server compromise exposes keys | High (mainnet) | accepted for testnet | Testnet only, clearly disclosed on every page; keys encrypted at rest in the standard Ethereum keystore format (key derived from a host secret). Roadmap Phase 2 implements ERC-4337 smart accounts and scoped session keys. |
 | **K14** | Keystore secret and session secret stored in host environment variables | Medium | accepted | Secrets are managed via platform secrets management (Render/Supabase) outside git. Losing the keystore secret requires generating fresh testnet agent wallets. |
 | **K15** | Free hosting cold starts and in-process job queue restarts | Low | accepted | Automated keep-warm via `/health/deep`; `mark_interrupted_on_startup` safely cleans pending jobs; actions are idempotent by `order_id`. |
@@ -108,31 +108,31 @@ Authority changes are guarded by strict cryptographic and architectural mechanis
 | **K18** | Signature phishing risks via Web3 wallet popups | Low | accepted | SIWE messages and step-up requests explicitly state domain, chain ID, action parameters, and purpose ("Testnet only. This signature does not move funds"). |
 | **K19** | Expanding protocol integrations introduces new contract addresses and spenders | Medium | enforced, owner review | Spenders and target contracts live in immutable code specs (never chosen by LLM); approvals are exact-amount only; unregistered protocols are denied (`ACCESS.PROTOCOL_NOT_ENABLED`). Modifying specs requires review under repo conventions. |
 | **K20** | Choosing the diversified preset widens approved tokens (USDT, WBTC, WETH) and protocols | Medium | enforced, owner signature | Preset selection requires an explicit EIP-191 step-up signature bound to the preset ID and hash (`PUT /tier`). Callers default to `conservative` without signature. |
-| **K21** | Risk rules for new protocols reading stale or uncalibrated reference data | High | closed | Closed by `RiskRouter` (`core/risk/router.py`), which reads live on-chain metrics (e.g. Morpho utilization at 93.56% triggers `RISK.DATA_STALE`/utilization deny in live evidence). |
+| **K21** | Risk rules for new protocols reading stale or uncalibrated reference data | High | closed | Closed by `RiskRouter` (`core/risk/router.py`), which reads risk inputs from chain and denies when they are missing or stale. In the hosted runs the Morpho USDC/cbETH supply was denied with `RISK.DATA_STALE`; the run notes record a live utilization of 93.56%, above the 90% ceiling (`docs/submission/06-execution-evidence.md`, Case 1). |
 | **K22** | Testnet DEX pool mispricing and artificial liquidity quirks | Medium | accepted for testnet | Swaps compute the minimum output from the executable pool quote minus slippage; a guard refuses pools more than 3% worse than the oracle fair value; every bundle is simulated before signing. |
 | **K23** | In-flight job cancellation state maintained in process memory | Low | accepted | Valid for single-instance deployment; horizontally scaled production would store cancellation flags in the shared database. |
 | **K24** | Chat quota exhaustion from conversational balance or status inquiries | Low | closed | Quota accounting is split into `chat_action` (6/hour) and `chat_inquiry` (60/hour). Inquiries generating zero orders automatically refund the action bucket (`tests/webapp/test_chat.py`). |
-| **K25** | SSE streaming disconnects or proxy buffering on mobile connections | Low | closed | Implemented custom SSE client (`ui/sse.js`) with automatic reconnection backoff, keep-alive pings, and transparent fallback to standard HTTP polling (`tests/webapp/test_sse.py`). |
-| **K26** | After a supply that the policy engine denies, an exact-amount token allowance for the listed spender can remain from the earlier approve step (seen on Morpho USDC/cbETH) | Low | planned | The amount equals the denied order, the spender is allow-listed, and the agent wallet holds only testnet funds. Planned fix: evaluate approve and supply as one plan so a denied supply never leaves an approval. |
+| **K25** | SSE streaming disconnects or proxy buffering on mobile connections | Low | closed | Implemented SSE client (`ui/lib/sse.js`) with automatic reconnection backoff, keep-alive pings, and transparent fallback to standard HTTP polling (`tests/webapp/test_sse.py`). |
+| **K26** | After a supply that the policy engine denies, an exact-amount token allowance for the listed spender can remain from the earlier approve step (seen on Morpho USDC/cbETH in both hosted runs) | Low | planned | The amount equals the denied order, the spender is allow-listed, and the agent wallet holds only testnet funds. Planned fix: evaluate approve and supply as one plan so a denied supply never leaves an approval. |
 
 ## 5. How to verify yourself (5 commands for judges)
 
-A judge or auditor can independently verify the entire security and functional posture of this submission using these 5 commands:
+A judge can check the main claims of this report with these 5 commands, offline and without keys:
 
 ```sh
-# 1. Run the comprehensive test suite (1,482 unit, e2e, boundary, and contract tests pass)
+# 1. Run the test suite (1,523 unit, e2e, boundary and contract tests)
 python -m pytest -q
 
-# 2. Run the offline evaluation harness (replays 46 scenarios, verifies 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report), injection defense, zero keys)
+# 2. Run the offline evaluation harness (48 scenarios, 29 of 31 rule codes, injection defence, no keys)
 python -m evals.run
 
-# 3. Verify the cryptographic SHA-256 audit log hash chain of real on-chain actions
+# 3. Verify the SHA-256 audit hash chain of the first on-chain actions
 python -m core.audit.verify docs/evidence/audit-chain.jsonl
 
 # 4. Verify that no private keys, seed phrases, or secrets are tracked in the repository
 python scripts/checks/check_no_secrets.py
 
-# 5. Build and verify the complete 6-folder submission package structure
+# 5. Build the 6-folder submission package into dist/submission-package
 python scripts/submission/build_submission_package.py
 ```
 
@@ -140,8 +140,9 @@ python scripts/submission/build_submission_package.py
 - `docs/evidence/tx_hashes.md`: Initial approve and supply on Aave v3 on Base Sepolia.
 - `docs/evidence/runner-evidence.md`: Agent runner execution and hostile-note policy denial.
 - `docs/evidence/webapp-evidence.md`: Webapp sign-in, top-up, and planner-proposed transactions.
-- `docs/evidence/defi-evidence.md`: Multi-protocol execution (Aave Stata vault deposit, Morpho Blue approval, and utilization denial).
-- `docs/submission/06-execution-evidence.md`: Master index of all 10 verified on-chain transactions with BaseScan links and receipt status `0x1`.
+- `docs/evidence/defi-evidence.md`: First multi-protocol run (Aave Stata vault deposit, Morpho Blue approval, and the cbETH supply denial).
+- `docs/evidence/defi-evidence-loop.md`: Multi-protocol loop on 2026-10-18 (Aave v3, Uniswap v3, Aave Stata, Morpho Blue, withdrawals, hostile instructions).
+- `docs/submission/06-execution-evidence.md`: Index of all 25 on-chain transactions with BaseScan links and receipt status `0x1`.
 
 ## 6. Out of scope
 Mainnet key management, custody of third-party user funds, smart-contract account abstraction deployment (ERC-4337), MEV protection, and high-frequency automated arbitrage.

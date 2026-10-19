@@ -36,6 +36,9 @@ class BuildContext:
 
     wallet: str
     owner_address: str | None = None
+    # JSON-RPC caller of the transaction builder, for specs that read the chain while building
+    # (the Uniswap pool quote). None falls back to the spec's own default endpoint.
+    rpc: Any = None
 
 
 class PositionReader(Protocol):

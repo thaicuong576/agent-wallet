@@ -137,7 +137,7 @@ function server(script = {}) {
       const nonce = "n".repeat(32);
       return reply(200, {
         nonce,
-        message: "agent-wallet wants you to sign in.\nNonce: " + nonce,
+        message: "BaKhi Wallet wants you to sign in.\nNonce: " + nonce,
         expires_at: "2026-10-15T12:05:00Z",
       });
     }
@@ -193,7 +193,7 @@ function server(script = {}) {
     if (key === "POST /auth/step-up") {
       return reply(200, {
         challenge_id: "f".repeat(32),
-        message: "agent-wallet asks you to authorise one action.\nAction: " + body.action,
+        message: "BaKhi Wallet asks you to authorise one action.\nAction: " + body.action,
         expires_at: "2026-10-15T12:02:00Z",
       });
     }

@@ -337,7 +337,7 @@ def build_step_up_message(
 ) -> str:
     return "\n".join(
         [
-            "agent-wallet asks you to authorise one action.",
+            "BaKhi Wallet asks you to authorise one action.",
             f"Domain: {domain}",
             f"Address: {address}",
             f"Action: {action}",

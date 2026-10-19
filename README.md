@@ -38,14 +38,14 @@ python -m venv .venv && . .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt
 make check                                  # lint, tests, links, secret scan (offline)
 make demo                                   # starts API server on http://127.0.0.1:8000
-# Open http://127.0.0.1:8000/ui/?fixtures=1&demo=1 in browser for zero-key demo
+# Open http://127.0.0.1:8000/chat?fixtures=1&demo=1 in browser for zero-key demo
 ```
 With keys: copy `.env.example` to `.env`, set `BASE_SEPOLIA_RPC_URL`, `OPENAI_API_KEY`, and run `make run`. See [`docs/guides/deployment.md`](docs/guides/deployment.md).
 
 ## Running Tests
 ```sh
-make test                                   # 1,482 tests: unit, policy, gateway, storage, UI
-make eval                                   # 46 replay scenarios covering 27 of the 28 codes in the evaluation report
+make test                                   # 1,523 tests: unit, policy, gateway, storage, UI
+make eval                                   # 48 replay scenarios covering 29 of the 31 rule codes
 python -m core.audit.verify docs/evidence/audit-chain.jsonl  # verifies audit hash chain
 ```
 Detailed testing guide and suite breakdowns: [`docs/guides/testing.md`](docs/guides/testing.md).
@@ -59,16 +59,16 @@ Detailed testing guide and suite breakdowns: [`docs/guides/testing.md`](docs/gui
 - Latency visibility & UI cache control: [`docs/architecture/webapp/timing-logs.md`](docs/architecture/webapp/timing-logs.md), [`docs/guides/deployment.md`](docs/guides/deployment.md)
 
 ## On-Chain Evidence
-Real testnet transactions executed on Base Sepolia (chain ID 84532):
+25 testnet transactions on Base Sepolia (chain ID 84532), each with receipt status `0x1`, across Aave v3, Aave Stata, Morpho Blue, Uniswap v3 and native ETH top-up. The full index with BaseScan links, the audit chain checks and the cases where the agent was refused is in [`docs/submission/06-execution-evidence.md`](docs/submission/06-execution-evidence.md). A few examples:
+
 | Action | Protocol | Transaction Hash | Evidence Source |
 | :--- | :--- | :--- | :--- |
 | Approve 1 USDC | Aave v3 | [`0xba75...0221`](https://sepolia.basescan.org/tx/0xba75953fca67a96112ec7f11bfeeb03235629e0cc7415033ddb7a6b244630221) | [`docs/evidence/tx_hashes.md`](docs/evidence/tx_hashes.md) |
-| Supply 1 USDC | Aave v3 | [`0x7c81...f233`](https://sepolia.basescan.org/tx/0x7c81b0ad32c8213081a0e142ee50e5de72f750ad23425c9267ecb81a0ea6f233) | [`docs/evidence/tx_hashes.md`](docs/evidence/tx_hashes.md) |
-| Gas Top-up | Base Sepolia | [`0xf9db...0e9a`](https://sepolia.basescan.org/tx/0xf9db01704315836598e0496a7ee9233caf5aedc25ab16eec6002bbd9d3af0e9a) | [`docs/evidence/webapp-evidence.md`](docs/evidence/webapp-evidence.md) |
-| Approve 5 USDC | Stata Vault | [`0xd10c...7274`](https://sepolia.basescan.org/tx/0xd10c778b9b496a0b185a01679a59466a957883f2b01619f683fe8c0b68ca7274) | [`docs/evidence/defi-evidence.md`](docs/evidence/defi-evidence.md) |
-| Supply 5 USDC | Stata Vault | [`0xa61e...0221`](https://sepolia.basescan.org/tx/0xa61e6dcae14132cd74efe19bdd7fb38f16e5d34e1a825625f3745383df960221) | [`docs/evidence/defi-evidence.md`](docs/evidence/defi-evidence.md) |
-| Approve 5 USDC | Morpho Blue | [`0x03de...2ecc`](https://sepolia.basescan.org/tx/0x03dec0e246b5d355731020567f94a2aed72a11490bdd6a2060b44fe63c282ecc) | [`docs/evidence/defi-evidence.md`](docs/evidence/defi-evidence.md) |
-| Supply 10 USDC (Planner) | Aave v3 | [`0xcc49...44ff`](https://sepolia.basescan.org/tx/0xcc49ca6da6435519fb15291b95887bbcd16f9934ce81076efff93836ed4044ff) | [`docs/evidence/webapp-evidence.md`](docs/evidence/webapp-evidence.md) |
+| Supply 10 USDC (planner) | Aave v3 | [`0xcc49...44ff`](https://sepolia.basescan.org/tx/0xcc49ca6da6435519fb15291b95887bbcd16f9934ce81076efff93836ed4044ff) | [`docs/evidence/webapp-evidence.md`](docs/evidence/webapp-evidence.md) |
+| Swap USDC to WBTC | Uniswap v3 | [`0xe5b0...eda4`](https://sepolia.basescan.org/tx/0xe5b0dae4156a7eff167de570c59445a31c62da02d9c3e6a293088095c894eda4) | [`docs/evidence/defi-evidence-loop.md`](docs/evidence/defi-evidence-loop.md) |
+| Deposit 5 USDC | Aave Stata | [`0xa61e...0221`](https://sepolia.basescan.org/tx/0xa61e6dcae14132cd74efe19bdd7fb38f16e5d34e1a825625f3745383df960221) | [`docs/evidence/defi-evidence.md`](docs/evidence/defi-evidence.md) |
+| Supply USDC/WBTC market | Morpho Blue | [`0x20ef...213b`](https://sepolia.basescan.org/tx/0x20ef510012788bd10dd604a20cb004daf945381a3f14693ff2e3db9b47fc213b) | [`docs/evidence/defi-evidence-loop.md`](docs/evidence/defi-evidence-loop.md) |
+| Withdraw | Morpho Blue | [`0x3f15...012f`](https://sepolia.basescan.org/tx/0x3f15f2f249897a8caf14f9816c8e4db92cda0e6128f4d72e55a54ad326c9012f) | [`docs/evidence/defi-evidence-loop.md`](docs/evidence/defi-evidence-loop.md) |
 
 ## Repository Structure
 
@@ -87,11 +87,11 @@ Real testnet transactions executed on Base Sepolia (chain ID 84532):
 │   ├── signer/   # Isolated local key signer restricted exclusively to Base Sepolia
 │   ├── simulate/ # RPC transaction bundle simulation (eth_call) before signing
 │   ├── storage/  # Dual-backend persistence (SQLite and PostgreSQL with RLS)
-│   └── tiers/    # Permission tier state machine (T0-T2), emergency stop, approvals
+│   └── tiers/    # Permission tiers (T0-T2), emergency stop, approval queue (T3 rule)
 ├── docs/         # Documentation index, architecture specs, guides, research, and evidence
-├── evals/        # 46 offline evaluation scenarios covering 27 of the 28 codes in the evaluation report (the 28th, `TIER.POLICY_CHANGED`, is a status; three newer codes are not yet part of the report)
+├── evals/        # 48 offline evaluation scenarios covering 29 of the 31 rule codes
 ├── scripts/      # Operational scripts: checks, evidence generation, submission packaging
-├── tests/        # Comprehensive pytest test suite (1,460+ tests across all layers)
+├── tests/        # Comprehensive pytest test suite (1,523 tests across all layers)
 └── ui/           # Zero-build single-page webapp console (plain HTML, CSS, ES modules)
 ```
 
@@ -110,4 +110,4 @@ See [`docs/README.md`](docs/README.md) for the complete documentation index.
 - Render free-tier instances sleep after 15 minutes of inactivity; first request may take ~50s.
 
 ## Licence & Notices
-Licensed under MIT. Open-source licenses and third-party notices: [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+Licensed under the MIT License, see [`LICENSE`](LICENSE). Code adapted from other open-source projects is listed with its license in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

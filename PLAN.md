@@ -42,14 +42,14 @@ Submit all 6 required items for Topic F (Agent Wallet) before **20 Oct 2026, 23:
 - No secret in the diff; `.env` stays ignored.
 
 ## Phases and sprints
-Today is 14 Oct; 6 days remain. One sprint per phase. Up to 3 workers run in parallel (slots are set during `/fleet-setup`).
+The plan started on 14 Oct with 6 days to the deadline (20 Oct). One sprint per phase. Up to 3 workers run in parallel (slots are set during `/fleet-setup`).
 
 | Phase | Sprint | Status | Done when | Specs |
 | :--- | :--- | :--- | :--- | :--- |
 | P0 Foundations | 14–15 Oct | **Completed** | Research tickets answered (RPC simulation, Aave address, Uniswap liquidity); scaffold merged; funded testnet wallet; **first tx hash** through the gateway | S1 |
 | P1 Safe core | 16–17 Oct | **Completed** | Policy engine and tier tests pass 100%; audit log detects a tampered line; gateway blocks a violating order | S2, S3 |
 | P2 Intelligence and proof | 17–18 Oct | **Completed** | Risk scoring, Planner and Reader, eval harness produce a report; all 4 decision branches have a test | S4, S5, S6 |
-| P3 Package | 19–20 Oct | **Completed** | Minimal UI, README, deploy guide, architecture and security docs, tx evidence, deck, video, repo public, submitted | S7, S8 |
+| P3 Package | 19–20 Oct | **In progress** (submission due 20 Oct) | Minimal UI, README, deploy guide, architecture and security docs, tx evidence, deck, video, repo public, submitted | S7, S8 |
 
 Critical path: scaffold → gateway → policy engine → eval harness → submission pack. Risk scoring, Planner/Reader and the UI hang off it and can run in parallel once the gateway interface is fixed.
 
@@ -71,7 +71,7 @@ Full specs are written for P0 and P1 first; P2 and P3 specs are written after P1
 | Date | Decision | Why | Revisit |
 | :--- | :--- | :--- | :--- |
 | 14 Oct | Core stack is Python 3.11 (FastAPI, web3.py, pytest, SQLite) | Matches the approved blueprint; a Cloudflare Workers spike showed warm requests at 3 to 9 ms CPU but cold requests at 30 to 125 ms, too thin a margin on the free plan | Only if the Workers Paid plan is taken |
-| 14 Oct | Hosting is **not decided**; candidates are Render or Railway (also Azure from the student pack) | Hosting is optional for judging and does not block the core; the scaffold keeps the host swappable (Dockerfile, env-only config, `/health`, storage behind an interface) | Phase P3, tickets S7 and S8 |
+| 14 Oct | Hosting is **not decided**; candidates are Render or Railway (also Azure from the student pack) | Hosting is optional for judging and does not block the core; the scaffold keeps the host swappable (Dockerfile, env-only config, `/health`, storage behind an interface) | Decided: Render (Docker image) with Postgres on Supabase, served at bakhi-wallet.eddiephung.me |
 
 ## Risks and open questions
 | Risk | Effect | Owner | Check by |

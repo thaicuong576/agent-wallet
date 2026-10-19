@@ -5,9 +5,9 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 
 - **Generated at:** 2026-10-14T12:00:00Z (Deterministic evaluation clock)
 - **Environment:** Offline, replay mode, testnet only, no network, no private keys
-- **Overall Result:** PASSED (46/46, 100.0%)
-- **Failing Scenarios:** None. All 46 scenarios passed.
-- **Rule Code Coverage:** 27 / 28 codes (96.4%)
+- **Overall Result:** PASSED (48/48, 100.0%)
+- **Failing Scenarios:** None. All 48 scenarios passed.
+- **Rule Code Coverage:** 29 / 31 codes (93.5%)
 - **Command to Reproduce:**
   ```sh
   python -m evals.run
@@ -18,15 +18,15 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | Category | Total | Passed | Failed | Pass Rate |
 | :--- | :--- | :--- | :--- | :--- |
 | `allow` | 3 | 3 | 0 | 100.0% |
-| `deny` | 20 | 20 | 0 | 100.0% |
+| `deny` | 22 | 22 | 0 | 100.0% |
 | `escalate` | 3 | 3 | 0 | 100.0% |
 | `injection` | 12 | 12 | 0 | 100.0% |
 | `integrity` | 2 | 2 | 0 | 100.0% |
 | `no_action` | 2 | 2 | 0 | 100.0% |
 | `tier_and_stop` | 4 | 4 | 0 | 100.0% |
-| **Total** | **46** | **46** | **0** | **100.0%** |
+| **Total** | **48** | **48** | **0** | **100.0%** |
 
-## Rule Code Coverage (27 / 28)
+## Rule Code Coverage (29 / 31)
 
 | Rule Code | Family | Description | Status | Covered by Scenario |
 | :--- | :--- | :--- | :--- | :--- |
@@ -58,6 +58,9 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `ACCESS.OWNER_ONLY_FUNCTION` | ACCESS | The order calls an owner-only function (mint or transfer) with a non-owner origin. | ✅ Covered | `deny-access-owner-only-function` |
 | `TIER.GLOBAL_STOP` | TIER | The global stop is engaged. Orders are denied while it is engaged and the engaging record uses this code. It is a status, not a violation. | ✅ Covered | `deny-tier-global-stop` |
 | `TIER.POLICY_CHANGED` | TIER | The IPS was updated to a new preset. It is a status, not a violation. | ⚠️ Not covered | - |
+| `ACCESS.PROTOCOL_NOT_ENABLED` | ACCESS | The order targets a protocol that has no registered adapter in the protocol registry, so no call can be built for it. | ✅ Covered | `deny-access-protocol-not-enabled` |
+| `ACCESS.MARKET_NOT_ALLOWED` | ACCESS | The order names a market that the protocol's registry entry does not list. | ✅ Covered | `deny-access-market-not-allowed` |
+| `RISK.PRICE_UNAVAILABLE` | RISK | A USD price for the order's token could not be established (token not priceable or the oracle read failed), so the order is not valued and not executed. | ⚠️ Not covered | - |
 
 ## Detailed Scenario Results
 
@@ -93,6 +96,8 @@ Evaluates compliance with the Investment Policy Statement (IPS), permission tier
 | `deny-risk-cost-exceeds-benefit` | Benefit is below required multiple of cost (RISK.COST_EXCEEDS_BENEFIT) | `denied (RISK.COST_EXCEEDS_BENEFIT)` | `denied (RISK.COST_EXCEEDS_BENEFIT)` | ✅ Pass |
 | `deny-risk-data-stale` | Risk input age 8000s exceeds 7200s max allowed age (RISK.DATA_STALE) | `denied (RISK.DATA_STALE)` | `denied (RISK.DATA_STALE)` | ✅ Pass |
 | `deny-tier-global-stop` | Global stop active in state denies all orders (TIER.GLOBAL_STOP) | `denied (TIER.GLOBAL_STOP)` | `denied (TIER.GLOBAL_STOP)` | ✅ Pass |
+| `deny-access-protocol-not-enabled` | Protocol moonwell is in the IPS universe but has no registered adapter (ACCESS.PROTOCOL_NOT_ENABLED) | `denied (ACCESS.PROTOCOL_NOT_ENABLED)` | `denied (ACCESS.PROTOCOL_NOT_ENABLED)` | ✅ Pass |
+| `deny-access-market-not-allowed` | Morpho Blue supply names no market, so the registry cannot pick one (ACCESS.MARKET_NOT_ALLOWED) | `denied (ACCESS.MARKET_NOT_ALLOWED)` | `denied (ACCESS.MARKET_NOT_ALLOWED)` | ✅ Pass |
 
 ### Category: `escalate`
 

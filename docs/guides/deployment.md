@@ -4,7 +4,7 @@ This guide describes end-to-end deployment for BaKhi Wallet across local Docker,
 
 ## Architecture & Deployment Model
 
-BaKhi Wallet runs as a stateless container using `python:3.11-slim` executed by an unprivileged user (`app`, UID 10001). The application serves both the FastAPI REST backend and the static single-page web application (`/ui/`).
+BaKhi Wallet runs as a stateless container using `python:3.11-slim` executed by an unprivileged user (`app`, UID 10001). The application serves both the FastAPI REST backend and the static single-page web application. Screens live at clean paths (`/chat`, `/overview`, `/activity`, `/rules`, `/setup`; `/` redirects to `/chat`), and the static assets are served from `/ui/`. Browser navigations to a screen path get `ui/index.html`; API calls on the same paths (for example `GET /chat/threads`) are unaffected.
 
 ```mermaid
 flowchart TD

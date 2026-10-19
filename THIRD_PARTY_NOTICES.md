@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-agent-wallet includes code adapted from the following open-source projects under their respective permissive licenses:
+BaKhi Wallet includes code adapted from the following open-source projects under their respective permissive licenses:
 
 ---
 
@@ -9,8 +9,8 @@ agent-wallet includes code adapted from the following open-source projects under
 - **Project:** [Azure/fetch-event-source](https://github.com/Azure/fetch-event-source)
 - **License:** MIT License
 - **Copyright:** (c) Microsoft Corporation.
-- **Adapted in:** `ui/sse.js`
-- **What was adapted:** The SSE line and event parser (`getBytes`, `getLines`, `getMessages`) and retry logic from `src/parse.ts` and `src/fetch.ts` were adapted into plain, zero-dependency JavaScript for `ui/sse.js`. It provides support for custom headers (including `X-AW-CSRF`), `Last-Event-ID` resumption, and `AbortController` cancellation for streaming chat job progress without third-party dependencies.
+- **Adapted in:** `ui/lib/sse.js`
+- **What was adapted:** The SSE line and event parser (`getBytes`, `getLines`, `getMessages`) and retry logic from `src/parse.ts` and `src/fetch.ts` were adapted into plain, zero-dependency JavaScript for `ui/lib/sse.js`. It provides support for custom headers (including `X-AW-CSRF`), `Last-Event-ID` resumption, and `AbortController` cancellation for streaming chat job progress without third-party dependencies.
 
 ### MIT License
 
@@ -79,3 +79,14 @@ CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
+
+---
+
+## 3. Token marks
+
+- **Files:** `ui/assets/tokens/*.svg` (USDC, USDT, ETH, WBTC, LINK)
+- **Note:** These marks belong to their respective issuers. They are shown only to identify the testnet assets in the interface and do not imply endorsement.
+
+## 4. Python dependencies
+
+Runtime and development dependencies are listed in `requirements.txt` and `requirements-dev.txt`. They are installed from PyPI under their own licenses and are not vendored into this repository.

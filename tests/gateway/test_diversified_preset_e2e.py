@@ -18,6 +18,7 @@ from core.gateway import Gateway, InMemoryAuditSink, InvalidOrder
 from core.gateway.policy import EnginePolicy
 from core.gateway.txbuilder import AaveTxBuilder
 from core.policy.ips import load_ips
+from core.protocols.uniswap_v3 import QUOTER_V2
 from core.signer import FakeSigner
 from core.simulate import SimulationResult
 
@@ -49,6 +50,12 @@ def make_mock_rpc(oracle_prices: dict[str, int] | None = None) -> Callable[[str,
         if method == "eth_call":
             call = params[0]
             data = call.get("data", "")
+            if call.get("to", "").lower() == QUOTER_V2.lower():
+                # QuoterV2.quoteExactInputSingle for USDC -> WBTC: 0.5% below the oracle value.
+                amount_in = int(data[10 + 128 : 10 + 192], 16)
+                wbtc_price = prices.get("WBTC", 80_000 * 10**8)
+                out = amount_in * 10**8 * 10**8 // (wbtc_price * 10**6) * 995 // 1000
+                return "0x" + out.to_bytes(32, "big").hex() + "00" * 96
             if data.startswith("0xb3596f07"):  # AaveOracle.getAssetPrice(address)
                 asset = "0x" + data[10:][24:64].lower()
                 # WBTC address on Base Sepolia

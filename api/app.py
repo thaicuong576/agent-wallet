@@ -1,4 +1,4 @@
-"""FastAPI application factory for agent-wallet matching contracts/openapi.yaml."""
+"""FastAPI application factory for BaKhi Wallet matching contracts/openapi.yaml."""
 
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ def create_app(
             }
 
     app = FastAPI(
-        title="agent-wallet API",
+        title="BaKhi Wallet API",
         version="1.0.0",
         summary="The single contract between the minimal UI, the eval harness and the backend.",
     )

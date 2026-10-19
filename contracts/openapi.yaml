@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: agent-wallet API
+  title: BaKhi Wallet API
   version: "1.0.0"
   summary: The single contract between the minimal UI, the eval harness and the backend.
   description: >

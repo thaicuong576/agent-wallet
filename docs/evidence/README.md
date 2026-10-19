@@ -16,8 +16,8 @@ This directory contains on-chain receipts, audit logs, and evaluation reports ve
 - [`tx_hashes.md`](tx_hashes.md): Initial Base Sepolia on-chain transactions (Aave v3 approve and supply from 2026-10-14).
 - [`runner-evidence.md`](runner-evidence.md): Autonomous agent runner execution trace and hostile prompt injection policy denial.
 - [`webapp-evidence.md`](webapp-evidence.md): Hosted webapp verification (Sign-In with Ethereum, native ETH top-up, and planner-proposed transactions).
-- [`eval-report.md`](eval-report.md): Offline evaluation harness report (46 scenarios, 100% pass rate, covering rule catalog).
-- [`eval-results.json`](eval-results.json): Structured JSON results of all 46 evaluation scenarios.
+- [`eval-report.md`](eval-report.md): Offline evaluation harness report (48 scenarios, 100% pass rate, 29 of the 31 rule codes).
+- [`eval-results.json`](eval-results.json): Structured JSON results of all 48 evaluation scenarios.
 - [`audit-chain.jsonl`](audit-chain.jsonl): Initial SHA-256 hash-chained audit log records.
 - [`audit-chain.verify.txt`](audit-chain.verify.txt): Verification proof output from `python -m core.audit.verify docs/evidence/audit-chain.jsonl`.
 - [`runner-audit-chain.jsonl`](runner-audit-chain.jsonl): SHA-256 hash chain for runner session including benign and intercepted actions.
