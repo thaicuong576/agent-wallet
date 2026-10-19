@@ -73,7 +73,7 @@ def _rule_codes(record: Mapping[str, Any]) -> list[str]:
 
 
 def classify(records: list[dict[str, Any]], kind: str) -> tuple[str, str | None]:
-    """Map the gateway's records to a job status and error code (design 10 table)."""
+    """Map the gateway's records to a job status and error code."""
     for rec in records:
         if rec.get("outcome") == "failed":
             code = str((rec.get("execution") or {}).get("error_code") or "EXECUTION_FAILED")

@@ -29,7 +29,7 @@ DESIGN_ROUTES = {
     "/emergency-stop/release",
     "/orders/{order_id}/approve",
     "/orders/{order_id}/reject",
-    # Webapp v2 (docs/design/webapp/v2-contract.md)
+    # Webapp v2 routes (contracts/openapi.yaml)
     "/chat/threads",
     "/chat/suggestions",
     "/limits",

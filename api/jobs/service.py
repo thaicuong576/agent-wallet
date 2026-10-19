@@ -407,7 +407,7 @@ class JobService:
         return self._owner_job(tenant, job_id, kind, args["order"])
 
     def _gas_gate(self, tenant: Tenant) -> Outcome | None:
-        """Below the gas floor nothing is proposed (design 8.1)."""
+        """Below the gas floor nothing is proposed."""
         try:
             balance, floor = self._gas_state(tenant.agent_address)
         except Exception:  # noqa: BLE001
@@ -432,7 +432,7 @@ class JobService:
         return None
 
     def _owner_job(self, tenant: Tenant, job_id: str, kind: str, order: dict[str, Any]) -> Outcome:
-        # `transfer` must work under the owner's stop (design 7.3); the gateway still decides.
+        # `transfer` must work under the owner's stop; the gateway still decides.
         code = self._stopped(tenant, owner_stop_counts=False)
         if code is not None:
             return Outcome("denied", code)

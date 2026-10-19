@@ -6,8 +6,6 @@ Owning modules:
 - `core/agent/planner/`: `FallbackPlanner` (keyword routing, swap support).
 - `core/storage`: `JobStore` implementations (`SqliteJobs`, `PgJobStore`).
 
-Specification: [Chat pipeline specification](../../design/webapp/chat-v3-spec.md).
-
 ## Purpose
 
 1. **Two Quota Buckets:** Separates chat quota into `chat_action` (shares 6/hr limit with `run`) and `chat_inquiry` (own limit 60/hr). Chat jobs that finish with zero gateway proposals are recorded as inquiries and refund the action bucket.

@@ -1,4 +1,4 @@
-"""Small capped connection pool (design 5.2). No psycopg_pool, no session state.
+"""Small capped connection pool. No psycopg_pool, no session state.
 
 Every use is one transaction: the pool commits on success and rolls back on error, so nothing
 depends on a connection keeping state between uses. That is what makes it safe behind a

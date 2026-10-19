@@ -1,6 +1,6 @@
 # Storage: Protocols, SQLite and Postgres adapters, contract suite
 
-Storage architecture (Protocols, SQLite adapters and Postgres backend) of the webapp design (`docs/design/webapp/system-design.md`, sections 5 and 13).
+Storage architecture (Protocols, SQLite adapters and Postgres backend) of the webapp.
 
 ## Structure
 

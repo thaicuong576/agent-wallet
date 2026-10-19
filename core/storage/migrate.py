@@ -1,4 +1,4 @@
-"""Plain versioned SQL migrations for the Postgres backend (design 5.2).
+"""Plain versioned SQL migrations for the Postgres backend.
 
 Files are ``core/storage/migrations/NNNN_name.sql`` (e.g. ``0006_chat_intent.sql`` adds
 ``intent``). Each is applied in one transaction that first takes a transaction-scoped

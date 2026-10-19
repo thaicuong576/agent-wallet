@@ -1,4 +1,4 @@
-"""Step-up rows of design 6.2 and 6.4."""
+"""Step-up challenges: binding, expiry and single use."""
 
 from __future__ import annotations
 

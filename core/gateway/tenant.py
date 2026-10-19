@@ -1,10 +1,10 @@
 """Per-owner tenancy: one directory, one set of stores, one cached signer, one Gateway.
 
-This is the only gateway module the API may import (design 5, 13). Callers outside core.gateway
+This is the only gateway module the API may import. Callers outside core.gateway
 get an address and a ready Gateway, never a key, a keystore or a path built from their input.
 
-Every per-owner object is built from ``backend.open_tenant(owner)`` (a StorageBackend, design 5
-and 13): SQLite files under DATA_DIR, or rows in Postgres. The gateway keeps its behaviour; only
+Every per-owner object is built from ``backend.open_tenant(owner)`` (a StorageBackend):
+SQLite files under DATA_DIR, or rows in Postgres. The gateway keeps its behaviour; only
 the construction changed.
 
 Layout (SQLite backend): DATA_DIR/owners/<0x lowercase address>/

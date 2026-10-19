@@ -1,4 +1,4 @@
-"""SQLite stores of the webapp side and the SQLite StorageBackend (design 5, 13).
+"""SQLite stores of the webapp side and the SQLite StorageBackend.
 
 Per owner, next to the gateway files: ``DATA_DIR/owners/<0x address>/webapp.sqlite`` holds the job,
 top-up and policy-selection tables. The keystore is a file, ``keystore.json``. Nothing here changes
@@ -46,7 +46,7 @@ def _parse(value: str) -> datetime:
 
 class SqliteJobs:
     """JobStore for one owner's ``webapp.sqlite``. A connection per call; the partial unique index
-    is the atomic one-active-job rule (design 5.1, 10)."""
+    is the atomic one-active-job rule."""
 
     _COLUMNS = frozenset(
         {

@@ -1,4 +1,4 @@
-"""PostgresBackend: the StorageBackend of the hosted and compose deployments (design 5.2)."""
+"""PostgresBackend: the StorageBackend of the hosted and compose deployments."""
 
 from __future__ import annotations
 

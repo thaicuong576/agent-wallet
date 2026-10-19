@@ -71,7 +71,7 @@ class Client:
         return {"message": challenge["message"], "session": v.json()}
 
     def step_up(self, action: str, params: dict[str, Any]) -> dict[str, str]:
-        """Fresh owner signature bound to an action (design 6.2); returns the request header."""
+        """Fresh owner signature bound to an action; returns the request header."""
         r = self.req("POST", "/auth/step-up", json={"action": action, "params": params})
         r.raise_for_status()
         ch = r.json()

@@ -1,4 +1,4 @@
-"""Row-level security and per-owner isolation on Postgres (design 5.2, 5.4, 19)."""
+"""Row-level security and per-owner isolation on Postgres."""
 
 from __future__ import annotations
 

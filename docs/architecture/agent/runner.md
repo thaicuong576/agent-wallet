@@ -1,6 +1,6 @@
 # Runner: Reader, Planner, portfolio and gateway in one cycle
 
-Owner module: `core.runner` (`core/runner/runner.py`). Design: [`docs/design/runner/design.md`](../../design/runner/design.md), sections 4 and 6.
+Owner module: `core.runner` (`core/runner/runner.py`).
 
 `Runner.run_once(untrusted_text, now)` composes the pieces that already exist and adds no decision logic. The LLM proposes, the gateway decides.
 

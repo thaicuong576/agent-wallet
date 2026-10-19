@@ -1,4 +1,4 @@
-"""Headless wallet and app fixtures for the sign-in tests (design 6.4).
+"""Headless wallet and app fixtures for the sign-in tests.
 
 TestWallet signs the exact text the server returns, as a browser wallet would with
 personal_sign. No network, no real keys: every key is generated in the test process.

@@ -12,7 +12,7 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 UI = ROOT / "ui"
 TOKENS = UI / "assets" / "tokens"
-ICONS_DOC = ROOT / "docs" / "design" / "webapp" / "icons.md"
+ICONS_DOC = ROOT / "docs" / "architecture" / "webapp" / "icons.md"
 SHA = "1a63530be6e374711a8554f31b17e4cb92c25fa5"
 NODE = shutil.which("node")
 needs_node = pytest.mark.skipif(NODE is None, reason="node not available")

@@ -335,7 +335,7 @@ def test_withdraw_body_rules(world, alice):
     assert world.env.executor.pending == []
 
 
-# ---------------------------------------------------------------- isolation (design 5.4)
+# ---------------------------------------------------------------- isolation
 
 
 def test_session_a_cannot_read_owner_b_state(world, alice, bob):

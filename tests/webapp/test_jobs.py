@@ -1,4 +1,4 @@
-"""Jobs of design section 10: statuses, error codes, limits, fallback, stops, hostile note.
+"""Jobs: statuses, error codes, limits, fallback, stops, hostile note.
 
 Everything is in-process: `eth_account` wallets, a fake chain RPC, a recording sender (the fake
 signer hook), and a manual executor so no test sleeps or races a worker thread.

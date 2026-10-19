@@ -1,6 +1,6 @@
 # Wallet sign-in, sessions and step-up
 
-Source of truth: `docs/design/webapp/system-design.md` sections 6, 12.1, 12.2, 19 and 20. Testnet
+Testnet
 only. EOAs only; a contract wallet (EIP-1271) is rejected with a clear message.
 
 ## Modules

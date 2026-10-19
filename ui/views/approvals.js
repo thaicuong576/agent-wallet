@@ -1,4 +1,4 @@
-// Orders waiting for the owner. Approve needs a fresh signature, reject does not (design 6.2).
+// Orders waiting for the owner. Approve needs a fresh signature, reject does not.
 // Shown as the "Waiting for your approval" card on Portfolio.
 import { recordCard } from "./cards.js";
 import { loadRecords } from "./jobs.js";

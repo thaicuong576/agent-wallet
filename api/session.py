@@ -1,4 +1,4 @@
-"""Session tokens and auth configuration (design 6.1).
+"""Session tokens and auth configuration.
 
 Token: base64url(json{addr,iat,exp,jti}) "." base64url(HMAC-SHA256(secret, payload part)).
 Configuration is read from the environment on every call so that an unset or short secret

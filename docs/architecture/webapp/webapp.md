@@ -1,6 +1,6 @@
 # Webapp: agent wallet routes, jobs and top-ups
 
-Source of truth: `docs/design/webapp/system-design.md` sections 5, 8, 10, 11, 12 and 13. Testnet only. Custodial: the server holds each agent key (see [`custody-tenancy.md`](custody-tenancy.md)). The LLM proposes; the gateway decides.
+Testnet only. Custodial: the server holds each agent key (see [`custody-tenancy.md`](custody-tenancy.md)). The LLM proposes; the gateway decides.
 
 ## Modules
 

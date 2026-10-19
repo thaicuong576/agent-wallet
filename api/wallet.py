@@ -1,4 +1,4 @@
-"""Webapp wallet and agent routes: /me, /agent, /topups, /presets, /audit/verify (design 8.1, 12.2).
+"""Webapp wallet and agent routes: /me, /agent, /topups, /presets, /audit/verify.
 
 The owner address comes only from the verified session (`require_session`); no route takes an
 owner address as a parameter. Top-ups and their status live in the owner's `TopupStore`
@@ -34,7 +34,7 @@ from core.storage.interfaces import TopupStore
 log = logging.getLogger("agent_wallet.wallet")
 
 EXPLORER_TX_URL = "https://sepolia.basescan.org/tx/"
-GAS_UNITS_FLOOR = 500_000  # design 8.1: gas_floor_wei = 2 x base fee x 500,000 gas (an estimate)
+GAS_UNITS_FLOOR = 500_000  # gas_floor_wei = 2 x base fee x 500,000 gas (an estimate)
 SUGGESTED_TOPUP_FACTOR = 10  # suggested top-up = 10 x floor
 _TX_HASH = re.compile(r"^0x[0-9a-f]{64}$")
 RpcCall = Callable[[str, list[Any]], Any]
@@ -221,7 +221,7 @@ class WalletService:
 
         return self._cache.get_or_compute(key, version, 600.0, _compute)
 
-    # -- top-ups (design 8.1)
+    # -- top-ups
 
     def register_topup(self, tenant: Tenant, tx_hash: str) -> dict[str, Any]:
         """Check sender, recipient, value and chain of an owner-signed tx, then store it pending."""

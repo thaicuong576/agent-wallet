@@ -1,4 +1,4 @@
-"""Postgres adapters behind the storage Protocols (design 5.2).
+"""Postgres adapters behind the storage Protocols.
 
 All SQL is a string literal with bound parameters (``tests/storage/test_pg_no_string_sql.py``).
 Every tenant statement runs in a transaction bound to its owner (``PgPool.tenant``), so row-level

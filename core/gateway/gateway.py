@@ -555,7 +555,7 @@ class Gateway:
             current_tier, emergency_stop = self._read_tier_and_stop()
 
             # 4. Check global stop (fast denial), emergency stop and read-only tiers. A transfer
-            # to the owner is exempt from the owner stop and from T0/T1 (design 7.3): getting
+            # to the owner is exempt from the owner stop and from T0/T1: getting
             # funds out must work when the agent is stopped; the global stop still denies it.
             owner_transfer = origin == "owner" and order["function"] == "transfer"
             if owner_transfer:

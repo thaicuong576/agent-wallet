@@ -19,7 +19,7 @@ class ActiveJobExists(JobInProgress, ValueError):
 
 
 def validate_owner(owner: str) -> str:
-    """The owner address must already be lowercase and well formed (design 5)."""
+    """The owner address must already be lowercase and well formed."""
     if not isinstance(owner, str) or not _OWNER_RE.match(owner):
         raise ValueError(f"Invalid owner address: {owner!r}")
     return owner

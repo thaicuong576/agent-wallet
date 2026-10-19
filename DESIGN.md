@@ -413,7 +413,7 @@ components:
 
 # BaKhi Wallet design system
 
-> Design system for BaKhi Wallet. **This file is the single source of truth for the webapp's look and feel.** Architecture and behaviour live in [`docs/design/webapp/system-design.md`](docs/design/webapp/system-design.md).
+> Design system for BaKhi Wallet. **This file is the single source of truth for the webapp's look and feel.** Architecture and behaviour live in [`docs/architecture/webapp/ui.md`](docs/architecture/webapp/ui.md).
 
 ## Project adaptations (read first; they win over everything below)
 

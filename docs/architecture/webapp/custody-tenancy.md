@@ -1,6 +1,6 @@
 # Custody, tenancy and storage interfaces
 
-Source of truth: `docs/design/webapp/system-design.md` sections 4, 5 and 13. Testnet only. This is a
+Testnet only. This is a
 custodial service: the server holds each agent key. Never send real funds.
 
 ## Modules

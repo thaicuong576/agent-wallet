@@ -96,7 +96,7 @@ export function makeCtx({ api, wallet, sleep }) {
     sessionStarted() {
       state.loggedOut = false;
     },
-    // Fresh signature for one named action (design 6.2). Returns the X-Step-Up header value.
+    // Fresh signature for one named action. Returns the X-Step-Up header value.
     async stepUp(action, params) {
       if (!wallet || !state.me) throw new Error("Connect your wallet first.");
       const ch = await api.stepUp(action, params);

@@ -1,4 +1,4 @@
-"""SQLite adapters: stores behind the storage Protocols (design 5.1)."""
+"""SQLite adapters: stores behind the storage Protocols."""
 
 from __future__ import annotations
 

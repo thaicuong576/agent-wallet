@@ -47,19 +47,7 @@ Complete directory of technical documentation, architectural specifications, sec
 - [`architecture/webapp/chat-quota-voice.md`](architecture/webapp/chat-quota-voice.md): Chat inquiry rate limits, prompt quotas, and agent voice guidelines.
 - [`architecture/webapp/chat-thread-lifecycle.md`](architecture/webapp/chat-thread-lifecycle.md): Conversation thread lifecycle, monotonic update tokens, and multi-thread state.
 - [`architecture/webapp/timing-logs.md`](architecture/webapp/timing-logs.md): Latency visibility, structured timing instrumentation, and UI cache control architecture.
-
-## Design
-- [`design/contracts-proposal.md`](design/contracts-proposal.md): Early design proposal for data contracts and schemas.
-- [`design/runner/design.md`](design/runner/design.md): Detailed runner component design and state machine.
-- [`design/runner/proposal.md`](design/runner/proposal.md): Initial proposal for autonomous background runner execution.
-- [`design/webapp/chat-v3-spec.md`](design/webapp/chat-v3-spec.md): Technical specification for the chat SSE event stream.
-- [`design/webapp/icons.md`](design/webapp/icons.md): Asset provenance, licensing (CC0), and color contrast for token/protocol icons.
-- [`design/webapp/product.md`](design/webapp/product.md): Product vision, user journeys, and problem framing for agent wallet.
-- [`design/webapp/proposal.md`](design/webapp/proposal.md): Architectural proposal for multi-owner webapp interface.
-- [`design/webapp/system-design.md`](design/webapp/system-design.md): Frontend system design, typography, spacing tokens, and screen layouts.
-- [`design/webapp/ui-contract.md`](design/webapp/ui-contract.md): Approved frontend contract specifying screen behaviors and route states.
-- [`design/webapp/ui-v3-plan.md`](design/webapp/ui-v3-plan.md): Implementation plan and audit findings for UI v3 overhaul.
-- [`design/webapp/v2-contract.md`](design/webapp/v2-contract.md): Webapp v2 route contracts and event specifications.
+- [`architecture/webapp/icons.md`](architecture/webapp/icons.md): Token and protocol icons: sources, CC0 licence, and fallback avatars.
 
 ## Research
 - [`research/evidence-aave-stata.md`](research/evidence-aave-stata.md): Research on Aave Stata static aToken testnet deployment.
@@ -84,6 +72,3 @@ Complete directory of technical documentation, architectural specifications, sec
 - [`submission/03-demo-video-script.md`](submission/03-demo-video-script.md): Deliverable 03 demo video recording script and walkthrough plan.
 - [`submission/05-security-self-assessment.md`](submission/05-security-self-assessment.md): Deliverable 05 covering security self-assessment, threat model, and mitigations.
 - [`submission/06-execution-evidence.md`](submission/06-execution-evidence.md): Deliverable 06 execution evidence summary with verified on-chain transactions.
-
-## Competition
-- [`competition/problem-description.md`](competition/problem-description.md): Official FinTechathon 2026 Topic F (Agent Wallet) problem description and requirements.

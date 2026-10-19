@@ -1,4 +1,4 @@
-// The only module that talks to the network. Every path is a design 12.2 route.
+// The only module that talks to the network. Every path is listed in ROUTES.
 // `fixtures: true` answers from ui/fixtures/*.json and an in-memory state, with no backend.
 // The session is an HttpOnly cookie set by the server: nothing is stored or read here.
 

@@ -1,4 +1,4 @@
-"""No string-built SQL in the storage package (design 5.2, 19, 20)."""
+"""No string-built SQL in the storage package."""
 
 from __future__ import annotations
 

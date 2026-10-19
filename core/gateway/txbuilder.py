@@ -207,7 +207,7 @@ class AaveTxBuilder:
         except Exception as err:
             raise TxBuildError(f"eth_getBalance failed: {err}") from err
 
-        # Gas floor (design 8.1). A plain ETH transfer also has to leave the fee payable, so its
+        # Gas floor. A plain ETH transfer also has to leave the fee payable, so its
         # value counts toward what the wallet must hold.
         total_gas_cost = sum(t["gas"] * t["maxFeePerGas"] for t in txs)
         required = total_gas_cost + sum(t["value"] for t in txs)
