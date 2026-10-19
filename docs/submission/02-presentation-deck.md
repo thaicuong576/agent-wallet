@@ -50,13 +50,13 @@ Speaker pacing: ~130–140 words per minute.
 ## Slide 3: Live Hosted Product
 - **Title:** Live Product: Full-Stack Web3 Application
 - **Exact on-slide text:**
-  - Live on Base Sepolia: `https://agent-wallet-6vuy.onrender.com`
+  - Live on Base Sepolia: `https://bakhi-wallet.eddiephung.me`
   - Conversational interface with real-time Server-Sent Events (SSE) streaming progress.
   - Multi-tenant architecture: Sign-In with Ethereum (SIWE), per-owner agent address, encrypted keystores.
   - Portfolio overview with asset breakdowns, protocol holdings, and activity logs.
 - **Visual:** Screenshot of UI v3 Overview dashboard (`docs/previews/ui3-overview-1280-light.png` or `docs/previews/ui3-chat-progress-1280-light.png`), highlighting the "Base Sepolia Testnet" chip and holdings table.
 - **Speaker script (0:45):**
-  "Our system is not a mock. It is fully deployed and accessible right now at `agent-wallet-6vuy.onrender.com`.
+  "Our system is not a mock. It is fully deployed and accessible right now at `bakhi-wallet.eddiephung.me`.
   Users sign in with their standard Web3 wallet using Sign-In with Ethereum. The server provisions a unique, isolated agent address for that owner.
   Our v3 frontend features an overview dashboard with token holdings and real-time SSE progress streaming. When you instruct the agent in chat, you watch it progress through planning, policy checks, bundle simulation, and on-chain execution. Safety framing is prominent on every screen: the testnet badge, reference valuations, and emergency controls are always visible."
 - **Judging criterion served:** Innovation & Interaction / Task Completion (real product UX).
@@ -281,7 +281,7 @@ Speaker pacing: ~130–140 words per minute.
 - **Title:** Conclusion & Independent Verification
 - **Exact on-slide text:**
   - **Open Source:** `https://github.com/thaicuong576/agent-wallet`
-  - **Live Web App:** `https://agent-wallet-6vuy.onrender.com`
+  - **Live Web App:** `https://bakhi-wallet.eddiephung.me`
   - Five commands to verify our entire submission:
     ```sh
     python -m pytest -q                                # 1,482 unit, e2e, and contract tests pass

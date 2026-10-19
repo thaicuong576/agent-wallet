@@ -35,7 +35,7 @@ def test_build_package_produces_six_folders_and_expected_files(tmp_path: Path):
     for folder_name in EXPECTED_FOLDERS:
         assert folder_name in top_readme_text
     assert "https://github.com/thaicuong576/agent-wallet" in top_readme_text
-    assert "https://agent-wallet-6vuy.onrender.com" in top_readme_text
+    assert "https://bakhi-wallet.eddiephung.me" in top_readme_text
     assert "enforced by code" in top_readme_text
     assert "mathematically enforced" not in top_readme_text
     assert "1,279+" not in top_readme_text
@@ -69,7 +69,7 @@ def test_build_package_produces_six_folders_and_expected_files(tmp_path: Path):
     assert readme_04.stat().st_size > 0
     readme_04_text = readme_04.read_text(encoding="utf-8")
     assert "https://github.com/thaicuong576/agent-wallet" in readme_04_text
-    assert "https://agent-wallet-6vuy.onrender.com" in readme_04_text
+    assert "https://bakhi-wallet.eddiephung.me" in readme_04_text
     assert "python -m pytest" in readme_04_text
     assert "1,279+" not in readme_04_text
     assert "source.zip" in readme_04_text

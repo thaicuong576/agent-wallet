@@ -189,7 +189,7 @@ def build_package(
 FinTechathon 2026 — Topic F ("Agent Wallet")
 
 - GitHub Repository: https://github.com/thaicuong576/agent-wallet
-- Hosted Application: https://agent-wallet-6vuy.onrender.com
+- Hosted Application: https://bakhi-wallet.eddiephung.me
 - Target Network: Base Sepolia Testnet (Chain ID 84532)
 - Source Archive: source.zip (source tree at commit {commit_id})
 
@@ -279,7 +279,7 @@ FinTechathon 2026 — Topic F ("Agent Wallet")
 This package consolidates the complete submission materials for BaKhi Wallet, an autonomous
 AI wallet agent operating on Base Sepolia inside an Investment Policy enforced by code.
 
-Hosted Application: https://agent-wallet-6vuy.onrender.com
+Hosted Application: https://bakhi-wallet.eddiephung.me
 GitHub Repository:  https://github.com/thaicuong576/agent-wallet
 Target Network:     Base Sepolia (Chain ID 84532)
 

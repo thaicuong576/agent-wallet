@@ -49,7 +49,7 @@ All settings are configured through environment variables (declared in `.env.exa
 | `AGENT_WALLET_KEYSTORE_SECRET` | (unset) | 256-bit secret used to encrypt custodial agent keys at rest | Yes for multi mode |
 | `AGENT_WALLET_KEYSTORE_KDF` | `scrypt` | Key derivation function (`scrypt` or `pbkdf2`; use `pbkdf2` on 512MB RAM hosts) | Recommended `pbkdf2` on free tiers |
 | `AGENT_WALLET_SESSION_SECRET` | (unset) | Secret used to sign HttpOnly session cookies | Yes for multi mode |
-| `AGENT_WALLET_PUBLIC_ORIGIN` | (unset) | Allowed public origin URL (e.g. `https://agent-wallet-6vuy.onrender.com`) | Yes for hosted webapp |
+| `AGENT_WALLET_PUBLIC_ORIGIN` | (unset) | Allowed public origin URL (e.g. `https://bakhi-wallet.eddiephung.me`) | Yes for hosted webapp |
 | `AGENT_WALLET_CHAT_INQUIRIES_PER_HOUR` | `60` | Rate limit for chat jobs that propose 0 orders | No |
 | `AGENT_WALLET_LOG_LEVEL` | `INFO` | Log level for `agent_wallet` loggers (`DEBUG`, `INFO`, `WARNING`, `ERROR`) | No |
 | `IPS_PATH` | `contracts/presets/conservative.json` | Path to Investment Policy Statement JSON | No |
@@ -127,7 +127,7 @@ AGENT_WALLET_MODE=multi
 AGENT_WALLET_KEYSTORE_KDF=pbkdf2
 AGENT_WALLET_KEYSTORE_SECRET=<random-high-entropy-string>
 AGENT_WALLET_SESSION_SECRET=<random-high-entropy-string>
-AGENT_WALLET_PUBLIC_ORIGIN=https://agent-wallet-6vuy.onrender.com
+AGENT_WALLET_PUBLIC_ORIGIN=https://bakhi-wallet.eddiephung.me
 BASE_SEPOLIA_RPC_URL=https://sepolia.base.org
 DATABASE_URL=postgresql://postgres.<project-id>:<password>@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require
 OPENAI_API_KEY=<openai-api-key>
@@ -189,27 +189,27 @@ In `core/storage/migrate.py` and `api/main.py`:
 
 ## 5. Verification: 5 curl Commands
 
-Execute these 5 curl commands against the deployed service URL (`https://agent-wallet-6vuy.onrender.com` or `http://localhost:8000`):
+Execute these 5 curl commands against the deployed service URL (`https://bakhi-wallet.eddiephung.me` or `http://localhost:8000`):
 
 ```sh
 # 1. Shallow Liveness Check: verifies HTTP server is running
-curl -f -s https://agent-wallet-6vuy.onrender.com/health
+curl -f -s https://bakhi-wallet.eddiephung.me/health
 # Expected: {"status":"ok"}
 
 # 2. Deep Readiness & Database Check: executes read against PostgreSQL settings table
-curl -f -s https://agent-wallet-6vuy.onrender.com/health/deep
+curl -f -s https://bakhi-wallet.eddiephung.me/health/deep
 # Expected: {"status":"ok","db":"ok"}
 
 # 3. Protocol Registry: verifies supported DeFi adapters and spender contracts
-curl -f -s https://agent-wallet-6vuy.onrender.com/protocols
+curl -f -s https://bakhi-wallet.eddiephung.me/protocols
 # Expected: JSON object listing aave-v3, aave-stata, morpho-blue, uniswap-v3
 
 # 4. Policy Presets Contract: verifies available Investment Policy Statements
-curl -f -s https://agent-wallet-6vuy.onrender.com/presets
+curl -f -s https://bakhi-wallet.eddiephung.me/presets
 # Expected: JSON list with "conservative" and "diversified" preset hashes
 
 # 5. Static Webapp Console: verifies single-page UI is served successfully with no-cache header
-curl -I -s https://agent-wallet-6vuy.onrender.com/ui/index.html | head -n 5
+curl -I -s https://bakhi-wallet.eddiephung.me/ui/index.html | head -n 5
 # Expected: HTTP/1.1 200 OK and Cache-Control: no-cache
 ```
 
@@ -283,7 +283,7 @@ The browser is allowed to store assets locally but is required to revalidate via
 ### 5. CSRF or Origin Header Rejection
 - **Symptom**: API returns `403 Forbidden` on `/auth/verify` or POST routes.
 - **Root Cause**: Browser `Origin` does not match `AGENT_WALLET_PUBLIC_ORIGIN`.
-- **Fix**: Set `AGENT_WALLET_PUBLIC_ORIGIN=https://agent-wallet-6vuy.onrender.com` (matching exact protocol and host).
+- **Fix**: Set `AGENT_WALLET_PUBLIC_ORIGIN=https://bakhi-wallet.eddiephung.me` (matching exact protocol and host).
 
 ### 6. Public RPC Rate Limiting
 - **Symptom**: Transaction simulations or balance checks time out.

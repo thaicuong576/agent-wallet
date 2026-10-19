@@ -44,6 +44,12 @@ def test_fixture_files_are_served_and_valid_json(client: TestClient, name: str) 
     json.loads(res.text)
 
 
+def test_bare_domain_redirects_to_ui(client: TestClient) -> None:
+    res = client.get("/", follow_redirects=False)
+    assert res.status_code == 307
+    assert res.headers["location"] == "/ui/"
+
+
 def test_ui_root_serves_index(client: TestClient) -> None:
     res = client.get("/ui/")
     assert res.status_code == 200

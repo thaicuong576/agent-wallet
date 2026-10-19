@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi.staticfiles import StaticFiles
-from starlette.responses import Response
+from starlette.responses import RedirectResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from api.app import create_app
@@ -481,6 +481,12 @@ app = create_configured_app()
 
 UI_DIR = ROOT_DIR / "ui"
 app.mount("/ui", NoCacheStaticFiles(directory=UI_DIR, html=True), name="ui")
+
+
+@app.get("/", include_in_schema=False)
+def root_redirect() -> RedirectResponse:
+    """The bare domain opens the web app instead of a 404."""
+    return RedirectResponse(url="/ui/", status_code=307)
 
 __all__ = [
     "NoCacheStaticFiles",

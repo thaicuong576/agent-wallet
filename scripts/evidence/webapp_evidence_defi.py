@@ -9,7 +9,7 @@ server-side audit chain check. Output: `docs/evidence/defi-evidence.md`.
 The owner key never leaves this process. Dry run (default) only signs in and reads state.
 `--execute` needs AGENT_WALLET_LIVE_CONFIRM=I_APPROVE_WEBAPP_EVIDENCE_ON_BASE_SEPOLIA.
 
-    python scripts/evidence/webapp_evidence_defi.py --url https://agent-wallet-6vuy.onrender.com
+    python scripts/evidence/webapp_evidence_defi.py --url https://bakhi-wallet.eddiephung.me
     python scripts/evidence/webapp_evidence_defi.py --url ... --execute
 """
 

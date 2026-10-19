@@ -7,7 +7,7 @@
 
 BaKhi Wallet (team BaKhi) is an autonomous AI wallet agent for FinTechathon 2026 (Topic F) managing on-chain assets on Base Sepolia inside an Investment Policy Statement (IPS) set by the owner. A deterministic policy engine evaluates every proposed order before any transaction is signed, ensuring the LLM never controls private keys or exceeds policy limits.
 
-- **Hosted Demo**: <https://agent-wallet-6vuy.onrender.com/ui/> (Base Sepolia testnet, Render free tier)
+- **Hosted Demo**: <https://bakhi-wallet.eddiephung.me/ui/> (Base Sepolia testnet, Render free tier)
 - **Repository**: <https://github.com/thaicuong576/agent-wallet>
 
 ```mermaid
